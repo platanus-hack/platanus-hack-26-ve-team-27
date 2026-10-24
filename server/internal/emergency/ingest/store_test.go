@@ -220,3 +220,55 @@ func TestMigrationChecks(t *testing.T) {
 		t.Fatalf("valid row rejected: %v", err)
 	}
 }
+
+func TestDBStoreListRecent(t *testing.T) {
+	pool := storePool(t)
+	s := NewDBStore(pool)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC)
+
+	got, err := s.ListRecent(ctx, 10)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("empty table: %v, %v", got, err)
+	}
+
+	put := func(id uint64, rec Emergency) {
+		t.Helper()
+		rec.ID, rec.DeviceID = id, storeDeviceID
+		if _, err := s.Update(ctx, id, func(*Emergency) (Emergency, error) { return rec, nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cancelledAt := now.Add(3 * time.Second)
+	put(1, Emergency{Status: StatusOpen, SentAt: now, Channels: []Channel{ChannelSMS}, MinHops: HopsUnknown,
+		FirstReceivedAt: now, UpdatedAt: now})
+	put(0xfedcba9876543210, Emergency{Status: StatusAcked, Seq: 2, SentAt: now, Channels: []Channel{ChannelMesh, ChannelHTTP}, MinHops: 2,
+		Location:        &Location{LatE5: 1043000, LonE5: -6690000, AgeS: 12, SentAt: now},
+		FirstReceivedAt: now, UpdatedAt: now.Add(time.Second)})
+	put(3, Emergency{Status: StatusCancelled, SentAt: now, Channels: []Channel{ChannelHTTP}, MinHops: 0,
+		FirstReceivedAt: now, UpdatedAt: cancelledAt, CancelledAt: &cancelledAt})
+
+	got, err = s.ListRecent(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got[0].ID != 3 || got[1].ID != 0xfedcba9876543210 || got[2].ID != 1 {
+		t.Fatalf("order = %+v, want ids 3, fedcba9876543210, 1 (updated_at DESC)", got)
+	}
+	if got[0].Status != StatusCancelled || got[0].CancelledAt == nil || got[0].MinHops != 0 {
+		t.Errorf("cancelled row = %+v", got[0])
+	}
+	mid := got[1]
+	if mid.Status != StatusAcked || mid.MinHops != 2 || mid.Location == nil || mid.Location.LatE5 != 1043000 ||
+		mid.Location.LonE5 != -6690000 || mid.Location.AgeS != 12 || len(mid.Channels) != 2 || mid.DeviceID != storeDeviceID {
+		t.Errorf("acked row = %+v", mid)
+	}
+	if got[2].MinHops != HopsUnknown || got[2].Location != nil {
+		t.Errorf("bare row = %+v", got[2])
+	}
+
+	got, err = s.ListRecent(ctx, 2)
+	if err != nil || len(got) != 2 || got[0].ID != 3 {
+		t.Fatalf("limit 2 = %+v, %v", got, err)
+	}
+}

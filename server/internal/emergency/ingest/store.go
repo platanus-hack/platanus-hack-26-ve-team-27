@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/devicekeys"
@@ -22,9 +23,69 @@ func (s DBStore) Device(ctx context.Context, keyID uint64) (devicekeys.Device, e
 	return devicekeys.Lookup(ctx, s.pool, keyID)
 }
 
-const selectEmergency = `SELECT device_id, status, seq, sent_at, lat_e5, lon_e5, loc_age_s, location_sent_at,
-	array_to_string(channels, ','), min_hops, first_received_at, updated_at, cancelled_at
-	FROM emergencies WHERE emergency_id = $1`
+const emergencyColumns = `device_id, status, seq, sent_at, lat_e5, lon_e5, loc_age_s, location_sent_at,
+	array_to_string(channels, ','), min_hops, first_received_at, updated_at, cancelled_at`
+
+const selectEmergency = `SELECT ` + emergencyColumns + ` FROM emergencies WHERE emergency_id = $1`
+
+const selectRecent = `SELECT emergency_id, ` + emergencyColumns + ` FROM emergencies ORDER BY updated_at DESC LIMIT $1`
+
+// scanEmergency reads one row of emergencyColumns into an Emergency with the
+// given id.
+func scanEmergency(sc interface{ Scan(...any) error }, id uint64, idDest []any) (Emergency, error) {
+	var (
+		e                      Emergency
+		status, channels       string
+		seq                    int
+		lat, lon, age, minHops sql.NullInt64
+		locAt, cancelledAt     sql.NullTime
+	)
+	dest := append(idDest, &e.DeviceID, &status, &seq, &e.SentAt, &lat, &lon, &age, &locAt,
+		&channels, &minHops, &e.FirstReceivedAt, &e.UpdatedAt, &cancelledAt)
+	if err := sc.Scan(dest...); err != nil {
+		return Emergency{}, err
+	}
+	e.ID, e.Status, e.Seq = id, Status(status), uint16(seq)
+	for _, c := range strings.Split(channels, ",") {
+		e.Channels = append(e.Channels, Channel(c))
+	}
+	e.MinHops = HopsUnknown
+	if minHops.Valid {
+		e.MinHops = int(minHops.Int64)
+	}
+	if lat.Valid {
+		e.Location = &Location{LatE5: int32(lat.Int64), LonE5: int32(lon.Int64), AgeS: uint16(age.Int64), SentAt: locAt.Time}
+	}
+	if cancelledAt.Valid {
+		t := cancelledAt.Time
+		e.CancelledAt = &t
+	}
+	return e, nil
+}
+
+// ListRecent returns up to limit emergencies of any status, most recently
+// updated first (the demo panel, #61). It reads the table directly and takes
+// no lock: the panel only needs a recent snapshot.
+func (s DBStore) ListRecent(ctx context.Context, limit int) ([]Emergency, error) {
+	rows, err := s.pool.QueryContext(ctx, selectRecent, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Emergency
+	for rows.Next() {
+		var hexID string
+		e, err := scanEmergency(rows, 0, []any{&hexID})
+		if err != nil {
+			return nil, err
+		}
+		if e.ID, err = strconv.ParseUint(hexID, 16, 64); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
 
 const upsertEmergency = `INSERT INTO emergencies (emergency_id, device_id, status, seq, sent_at, lat_e5, lon_e5, loc_age_s,
 	location_sent_at, channels, min_hops, first_received_at, updated_at, cancelled_at)
@@ -59,35 +120,12 @@ func (s DBStore) Update(ctx context.Context, emergencyID uint64, apply func(prev
 	key := FormatID(emergencyID)
 
 	var prev *Emergency
-	var (
-		e                      Emergency
-		status, channels       string
-		seq                    int
-		lat, lon, age, minHops sql.NullInt64
-		locAt, cancelledAt     sql.NullTime
-	)
-	err = tx.QueryRowContext(ctx, selectEmergency, key).Scan(&e.DeviceID, &status, &seq, &e.SentAt, &lat, &lon, &age, &locAt,
-		&channels, &minHops, &e.FirstReceivedAt, &e.UpdatedAt, &cancelledAt)
+	e, err := scanEmergency(tx.QueryRowContext(ctx, selectEmergency, key), emergencyID, nil)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 	case err != nil:
 		return Emergency{}, err
 	default:
-		e.ID, e.Status, e.Seq = emergencyID, Status(status), uint16(seq)
-		for _, c := range strings.Split(channels, ",") {
-			e.Channels = append(e.Channels, Channel(c))
-		}
-		e.MinHops = HopsUnknown
-		if minHops.Valid {
-			e.MinHops = int(minHops.Int64)
-		}
-		if lat.Valid {
-			e.Location = &Location{LatE5: int32(lat.Int64), LonE5: int32(lon.Int64), AgeS: uint16(age.Int64), SentAt: locAt.Time}
-		}
-		if cancelledAt.Valid {
-			t := cancelledAt.Time
-			e.CancelledAt = &t
-		}
 		prev = &e
 	}
 
