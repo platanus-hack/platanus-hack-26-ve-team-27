@@ -81,8 +81,6 @@ object AckReader {
             AckInfo(b.getLong(2), b.getShort(10).toInt() and 0xFFFF)
         } catch (_: PayloadException) {
             null
-        } catch (_: IllegalArgumentException) {
-            null
         }
     }
 }

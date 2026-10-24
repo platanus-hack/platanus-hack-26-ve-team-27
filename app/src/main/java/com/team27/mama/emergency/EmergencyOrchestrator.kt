@@ -374,7 +374,7 @@ class EmergencyOrchestrator(
                 }
                 if (!meshRunning) meshRunning = orElse("mesh", false) { mesh.start() }
                 meshQueued = meshRunning && orElse("mesh", false) { mesh.broadcast(text) }
-                if (meshRunning) use(Channel.MESH)
+                if (meshQueued) use(Channel.MESH)
                 if (!meshQueued) meshRunning = false
                 update { it.copy(meshIssue = if (meshQueued) null else MeshIssue.UNAVAILABLE) }
             }

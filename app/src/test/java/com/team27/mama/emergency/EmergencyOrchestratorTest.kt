@@ -529,11 +529,13 @@ class EmergencyOrchestratorTest {
             assertEquals(1, mesh.broadcasts.size)
             assertEquals(MeshIssue.UNAVAILABLE, o.state.value.meshIssue)
             assertEquals(EmergencyPhase.NO_CHANNEL, o.state.value.phase)
+            assertEquals(emptySet<Channel>(), o.state.value.channelsUsed)
             mesh.broadcastResult = true
             at(5_000)
             assertEquals(2, mesh.startCalls)
             assertEquals(2, mesh.broadcasts.size)
             assertNull(o.state.value.meshIssue)
+            assertEquals(setOf(Channel.MESH), o.state.value.channelsUsed)
             assertEquals(EmergencyPhase.SEARCHING_NEARBY, o.state.value.phase)
             at(15_000)
             assertEquals(2, mesh.startCalls)
