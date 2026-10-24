@@ -144,6 +144,12 @@
       "error": "signature"
     },
     {
+      "name": "mesh_seal_no_data",
+      "op": "mesh_payload",
+      "input": "MAMA1:SEAL",
+      "error": "format"
+    },
+    {
       "name": "sms_padded",
       "op": "sms_payload",
       "input": "MAMA1 AQFuZkwnxDVtcwEjRWeJq83vAAAAEADh_5nzUQAqatyBoBuDbuWUTkz8G59I2UZro-vI0F9Tp84oMamtaOI9iyVnc0GXy7Sml4xgsTUa2cZYFkL_av9w-7CpAdjNcBQGLwY=",
