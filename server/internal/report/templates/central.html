@@ -54,7 +54,7 @@
 
 {{define "sec-c-counts" -}}
 {{range .Counts -}}
-<div data-key="n-{{.State}}" data-live-children class="c-count c-count-{{.State}}{{if .N}} on{{end}}"><span data-key="v-{{.N}}" data-reveal class="c-count-n">{{.N}}</span><span data-key="l" class="c-count-label">{{.Label}}</span></div>
+<div data-key="n-{{.State}}" data-live-children class="c-count c-count-{{.State}}{{if .N}} on{{end}}"><span data-key="v-{{.N}}" data-reveal class="c-count-n">{{.N}}</span><span data-key="l-{{.Label}}" class="c-count-label">{{.Label}}</span></div>
 {{end -}}
 {{- end}}
 
@@ -128,20 +128,20 @@
     <div class="panel-body" data-live="route">{{template "sec-route" .}}</div>
     <div class="c-points" data-autoscroll><table class="points"><thead><tr><th>Hora</th><th>Precisión</th><th>Movimiento</th><th></th></tr></thead><tbody data-live="points">{{template "sec-points" .}}</tbody></table></div>
   </section>
+  <section class="panel c-context" aria-labelledby="h-context">
+    <h2 id="h-context">Contexto de la llamada</h2>
+    <div class="panel-body" data-live="c-context">{{template "sec-c-context" .}}</div>
+  </section>
   <div class="c-stack">
-    <section class="panel c-context" aria-labelledby="h-context">
-      <h2 id="h-context">Contexto</h2>
-      <div class="panel-body" data-live="c-context">{{template "sec-c-context" .}}</div>
-    </section>
     <section class="panel panel-family" aria-labelledby="h-family">
       <h2 id="h-family">Personas notificadas</h2>
       <div class="panel-body" data-live="c-family">{{template "sec-c-family" .}}</div>
     </section>
+    <section class="panel c-timeline" aria-labelledby="h-time">
+      <h2 id="h-time">Línea de tiempo</h2>
+      <div class="panel-body" data-autoscroll><div class="timeline"><div class="rail" aria-hidden="true"></div><ol data-live="timeline">{{template "sec-timeline" .}}</ol></div></div>
+    </section>
   </div>
-  <section class="panel c-timeline" aria-labelledby="h-time">
-    <h2 id="h-time">Línea de tiempo</h2>
-    <div class="panel-body" data-autoscroll><div class="timeline"><div class="rail" aria-hidden="true"></div><ol data-live="timeline">{{template "sec-timeline" .}}</ol></div></div>
-  </section>
 </main>
 </div>
 </body>

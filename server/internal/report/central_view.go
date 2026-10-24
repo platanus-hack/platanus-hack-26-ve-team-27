@@ -39,19 +39,26 @@ func caseStateLabel(state string) string {
 	return "Cerrado"
 }
 
-// caseCountLabel names a counter.
-func caseCountLabel(state string) string {
+// caseCountLabel names a counter of n cases.
+func caseCountLabel(state string, n int) string {
+	one := n == 1
+	pick := func(singular, plural string) string {
+		if one {
+			return singular
+		}
+		return plural
+	}
 	switch state {
 	case CaseCancelled:
-		return "Cancelados"
+		return pick("Cancelado", "Cancelados")
 	case CaseAlert:
-		return "Alertas"
+		return pick("Alerta", "Alertas")
 	case CaseCalling:
 		return "En llamada"
 	case CaseActive:
-		return "Activos"
+		return pick("Activo", "Activos")
 	}
-	return "Cerrados"
+	return pick("Cerrado", "Cerrados")
 }
 
 // callIsActive reports whether a call is still being placed or talked.
@@ -238,7 +245,7 @@ func caseCounts(rows []CaseRow) []CaseCount {
 	}
 	out := make([]CaseCount, 0, len(caseStates))
 	for _, s := range caseStates {
-		out = append(out, CaseCount{State: s, Label: caseCountLabel(s), N: n[s]})
+		out = append(out, CaseCount{State: s, Label: caseCountLabel(s, n[s]), N: n[s]})
 	}
 	return out
 }

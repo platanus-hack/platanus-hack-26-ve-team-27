@@ -337,7 +337,7 @@ func TestCentralListStreamsANewCase(t *testing.T) {
 	if !strings.Contains(list, "c-row-llamada c-row-new") || !strings.Contains(list, "data-new") || !strings.Contains(html.UnescapeString(list), "Sonando") {
 		t.Errorf("the new row lacks its state or new tag:\n%s", list)
 	}
-	if !strings.Contains(second.Sections["c-counts"], `data-key="v-1" data-reveal class="c-count-n">1</span><span data-key="l" class="c-count-label">En llamada`) {
+	if !strings.Contains(second.Sections["c-counts"], `data-key="v-1" data-reveal class="c-count-n">1</span><span data-key="l-En llamada" class="c-count-label">En llamada`) {
 		t.Errorf("counters: %s", second.Sections["c-counts"])
 	}
 }

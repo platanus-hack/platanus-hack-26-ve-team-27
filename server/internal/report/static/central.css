@@ -267,6 +267,9 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
 .c-timeline .ev-meta time { font-size: 13px; }
 .c-timeline .clock { font-size: 11px; line-height: 16px; padding: 0 6px; }
 .c-timeline .quote { font-size: 13px; padding: 6px 10px; }
+/* the quote's "▶ Escuchar:" is text, not the player's round button */
+.quote .play { display: inline; width: auto; height: auto; padding: 0; border-radius: 0; background: none; color: inherit; font-weight: 700; }
+.c-points .coords { white-space: nowrap; font-size: 11px; }
 
 /* listening: the call is on and nothing is transcribed yet */
 .c-listening { display: none; align-items: center; justify-content: center; gap: 6px; flex: 1; min-height: 72px; }
@@ -293,7 +296,7 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
 .c-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
 .c-field { padding: 8px 12px; border-radius: var(--r-s); background: var(--surface-container); min-width: 0; }
 .c-field dt { font-weight: 500; font-size: 12px; line-height: 16px; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-variant); }
-.c-field dd { margin: 2px 0 0; font-weight: 700; font-size: 15px; line-height: 20px; overflow-wrap: anywhere; }
+.c-field dd { margin: 2px 0 0; font-weight: 700; font-size: 16px; line-height: 22px; overflow-wrap: anywhere; }
 .c-field.unknown dd { font-weight: 400; color: var(--on-surface-variant); }
 .c-skel { display: block; height: 14px; margin-top: 4px; border-radius: 7px; background: linear-gradient(90deg, var(--surface-high) 0%, var(--surface-highest) 50%, var(--surface-high) 100%); background-size: 200% 100%; animation: shimmer 1.8s linear infinite; }
 .c-fields.waiting .c-field:nth-child(2) .c-skel { width: 70%; }
@@ -347,6 +350,8 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
 }
 @media (max-width: 599px) {
   .c-back span, .pdf-text { display: none; }
+  .c-case-page .wordmark > span { display: none; }
+  .c-top-right { gap: 6px; }
   .c-back { padding: 0 10px; }
   .c-counts { grid-template-columns: repeat(5, minmax(84px, 1fr)); }
   .c-name { font-size: 18px; }
@@ -385,20 +390,21 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
 
   .c-grid {
     display: grid; margin: 0; gap: 14px; min-height: 0;
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, .9fr);
-    grid-template-areas: "call route stack time";
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "call route context side";
   }
   .c-grid .panel-call { grid-area: call; }
   .c-grid .c-place { grid-area: route; }
-  .c-grid .c-stack { grid-area: stack; }
-  .c-grid .c-timeline { grid-area: time; }
+  .c-grid .c-context { grid-area: context; }
+  .c-grid .c-stack { grid-area: side; }
   .c-stack .panel-family { grid-area: auto; }
   .c-grid .panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .c-grid .panel-body { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; }
-  .c-stack { display: grid; grid-template-rows: minmax(0, auto) minmax(0, 1fr); }
-  .c-stack .c-context { max-height: 58vh; }
-  .c-stack .c-context .panel-body { flex: 0 1 auto; }
-  .c-stack .panel-family { min-height: 150px; }
+  .c-context .c-fields { grid-template-columns: minmax(0, 1fr); }
+  .c-context .c-situation { font-size: 18px; line-height: 25px; }
+  .c-stack { display: grid; grid-template-rows: minmax(0, auto) minmax(140px, 1fr); }
+  .c-stack .panel-family { max-height: 52vh; }
+  .c-stack .panel-family .panel-body { flex: 0 1 auto; }
   .c-place .panel-body { flex: 1 1 auto; overflow: hidden; min-height: 110px; }
   .c-place .route { flex: 1 1 auto; min-height: 0; aspect-ratio: auto; height: 100%; }
   .c-place .c-points { flex: 0 1 auto; max-height: 38%; }
@@ -428,6 +434,9 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
 }
 
 @media (min-width: 1024px) and (max-width: 1360px) {
+  .c-points .points { font-size: 12px; }
+  .c-points .points th { font-size: 11px; }
+  .c-points .points td { padding-right: 6px; }
   .c-cols, .c-row { grid-template-columns: 222px minmax(0, 1.2fr) minmax(0, 1.3fr) 104px minmax(0, 1.1fr) 100px 16px; column-gap: 14px; }
   .c-name { font-size: 18px; }
   .c-what { font-size: 15px; line-height: 20px; }
