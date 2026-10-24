@@ -135,10 +135,10 @@ func (stubReports) Audio(context.Context, string, int) ([]byte, report.Recording
 }
 
 func TestReportRoutesOnlyWhenEnabledWithADatabase(t *testing.T) {
-	if h, c := newReports(config.Config{}, nil); h != nil || c != nil {
+	if h, c := newReports(config.Config{}, nil, nil); h != nil || c != nil {
 		t.Error("newReports with INCIDENT_REPORT_ENABLED off is not nil")
 	}
-	if h, c := newReports(config.Config{Report: config.Report{Enabled: true, TTLDays: 30}}, nil); h != nil || c != nil {
+	if h, c := newReports(config.Config{Report: config.Report{Enabled: true, TTLDays: 30}}, nil, nil); h != nil || c != nil {
 		t.Error("newReports without a database is not nil")
 	}
 	if reportHook(nil) != nil {
@@ -170,5 +170,31 @@ func TestReportRoutesOnlyWhenEnabledWithADatabase(t *testing.T) {
 func TestChannelName(t *testing.T) {
 	if channelName(config.Config{Notifier: config.NotifierSMS}) != "SMS" || channelName(config.Config{Notifier: config.NotifierKapso}) != "WhatsApp" {
 		t.Error("channelName")
+	}
+}
+
+// The report's key never stops the boot: unset or malformed gives no key
+// (unsealed reports), and with the offline channel on it is that key.
+func TestReportSigningKey(t *testing.T) {
+	on := config.Config{Report: config.Report{Enabled: true}}
+	if reportSigningKey(on, nil) != nil {
+		t.Error("no seed: want no key")
+	}
+	bad := on
+	bad.Emergency.Ed25519Seed = "not base64"
+	if reportSigningKey(bad, nil) != nil {
+		t.Error("malformed seed: want no key, not an exit")
+	}
+	good := on
+	good.Emergency.Ed25519Seed = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+	if k := reportSigningKey(good, nil); k == nil {
+		t.Error("seed set: want a key")
+	}
+	if reportSigningKey(config.Config{Emergency: good.Emergency}, nil) != nil {
+		t.Error("report off: want no key")
+	}
+	offline := testOffline(t)
+	if k := reportSigningKey(on, offline); !k.Equal(offline.keys.Signing) {
+		t.Error("offline channel on: want its key, the one GET /config publishes")
 	}
 }

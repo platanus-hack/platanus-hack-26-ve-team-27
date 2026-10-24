@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"database/sql"
 	"fmt"
@@ -43,7 +44,7 @@ func main() {
 
 	pool := openAndMigrate(cfg.DatabaseURL)
 	notifier := newNotifier(cfg, pool)
-	reports, closer := newReports(cfg, pool)
+	reports, closer := newReports(cfg, pool, reportSigningKey(cfg, offline))
 	calls := newCallRoutes(cfg, pool)
 	// The post-call hooks, in order (call.Hooks). #21 adds "duress detector
 	// -> save verdict -> notify" first, so the report closes after them.
@@ -195,10 +196,12 @@ func newCallRoutes(cfg config.Config, pool *sql.DB) *call.Routes {
 }
 
 // newReports builds the incident report page (#76) and the closer that
-// stores each call's recording, or nils when INCIDENT_REPORT_ENABLED is off
-// or there is no database: then GET /i/{token} answers 404 and finished
-// calls are left alone. Nothing about the report ever stops the boot.
-func newReports(cfg config.Config, pool *sql.DB) (*report.Handler, *report.Closer) {
+// stores each call's recording and seals the report with signing (nil: no
+// seal, the page says "Sin sellar"). Both are nil when
+// INCIDENT_REPORT_ENABLED is off or there is no database: then GET
+// /i/{token} answers 404 and finished calls are left alone. Nothing about
+// the report ever stops the boot.
+func newReports(cfg config.Config, pool *sql.DB, signing ed25519.PrivateKey) (*report.Handler, *report.Closer) {
 	if !cfg.Report.Enabled {
 		log.Print("report: incident report page is off (INCIDENT_REPORT_ENABLED is not true)")
 		return nil, nil
@@ -211,18 +214,45 @@ func newReports(cfg config.Config, pool *sql.DB) (*report.Handler, *report.Close
 		log.Print("report: WARNING: PUBLIC_URL (or RENDER_EXTERNAL_URL) is not set; report links will be bare paths")
 	}
 	store := report.NewDBStore(pool)
-	closer := &report.Closer{Store: store}
+	closer := &report.Closer{Store: store, Signer: signing}
 	if cfg.ElevenLabs.APIKey != "" {
 		closer.Audio = &report.ElevenLabsAudio{APIKey: cfg.ElevenLabs.APIKey}
 	} else {
 		log.Print("report: WARNING: ELEVENLABS_API_KEY is not set; call recordings are not stored")
 	}
+	if signing == nil {
+		log.Print("report: WARNING: no server signing key; reports stay unsealed (\"Sin sellar\")")
+	}
 	log.Printf("report: incident report page is on; links live %d days", cfg.Report.TTLDays)
-	return report.NewHandler(store, report.Options{Channel: channelName(cfg)}), closer
+	h := report.NewHandler(store, report.Options{Channel: channelName(cfg), CanSeal: signing != nil}).RecoverWith(closer)
+	return h, closer
+}
+
+// reportSigningKey is the key that seals reports: the offline channel's when
+// it is on (the key GET /config publishes; locally it may be ephemeral),
+// else EMERGENCY_ED25519_SEED. Unset or malformed gives nil and a warning,
+// never an exit: the report works unsealed. No key is generated here, so
+// Render never seals with an ephemeral key.
+func reportSigningKey(cfg config.Config, offline *offlineEmergency) ed25519.PrivateKey {
+	if !cfg.Report.Enabled {
+		return nil
+	}
+	if offline != nil {
+		return offline.keys.Signing
+	}
+	key, err := serverkeys.SigningKey(cfg.Emergency)
+	if err != nil {
+		log.Printf("report: WARNING: %v; reports stay unsealed", err)
+		return nil
+	}
+	if key == nil {
+		log.Print("report: WARNING: EMERGENCY_ED25519_SEED is not set; reports stay unsealed")
+	}
+	return key
 }
 
 // reportHook is the post-call hook that closes the report: it stores the
-// recording in the background. nil without a closer.
+// recording and seals, in the background. nil without a closer.
 func reportHook(c *report.Closer) func(context.Context, call.Finished) {
 	if c == nil {
 		return nil

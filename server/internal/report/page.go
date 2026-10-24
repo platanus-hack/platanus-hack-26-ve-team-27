@@ -72,8 +72,9 @@ type Source interface {
 
 // Handler serves the report routes. Create it with NewHandler.
 type Handler struct {
-	src  Source
-	opts Options
+	src    Source
+	opts   Options
+	closer *Closer
 }
 
 // NewHandler serves reports from src. opts.Token is ignored (each request
@@ -82,10 +83,19 @@ func NewHandler(src Source, opts Options) *Handler {
 	return &Handler{src: src, opts: opts}
 }
 
-// Register mounts GET /i/{token}, its recording and the static files.
+// RecoverWith lets a page view restart an unfinished close (Closer.Recover).
+func (h *Handler) RecoverWith(c *Closer) *Handler {
+	h.closer = c
+	return h
+}
+
+// Register mounts GET /i/{token}, its recording, the sealed document and
+// signature, and the static files.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+PagePrefix+"{token}", h.page)
 	mux.HandleFunc("GET "+PagePrefix+"{token}/audio.mp3", h.audio)
+	mux.HandleFunc("GET "+PagePrefix+"{token}/ficha.json", h.document)
+	mux.HandleFunc("GET "+PagePrefix+"{token}/ficha.sig", h.signature)
 	mux.HandleFunc("GET "+StaticPrefix+"{file}", serveStatic)
 }
 
@@ -123,9 +133,44 @@ func (h *Handler) page(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	h.closer.Recover(rec)
 	opts := h.opts
 	opts.Token = token
 	render(w, http.StatusOK, "page", Build(rec, opts))
+}
+
+// document serves the sealed ficha.json byte for byte: the signature covers
+// these exact bytes. 404 until the report is sealed.
+func (h *Handler) document(w http.ResponseWriter, r *http.Request) {
+	rec, _, ok := h.load(w, r)
+	if !ok {
+		return
+	}
+	if rec.Seal == nil {
+		notFound(w)
+		return
+	}
+	download(w, "application/json", "ficha.json", rec.Seal.Document)
+}
+
+// signature serves ficha.sig: the seal's signature in Base64.
+func (h *Handler) signature(w http.ResponseWriter, r *http.Request) {
+	rec, _, ok := h.load(w, r)
+	if !ok {
+		return
+	}
+	if rec.Seal == nil {
+		notFound(w)
+		return
+	}
+	download(w, "text/plain; charset=utf-8", "ficha.sig", EncodeSignature(rec.Seal.Signature))
+}
+
+func download(w http.ResponseWriter, typ, name string, b []byte) {
+	w.Header().Set("Content-Type", typ)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Content-Length", strconv.Itoa(len(b)))
+	_, _ = w.Write(b)
 }
 
 // audio serves a call's recording from our own server (never a link to

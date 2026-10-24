@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -375,9 +376,14 @@ func sealView(rec Record, opts Options) SealView {
 			JSONURL:     DocumentPath(opts.Token),
 			SigURL:      SignaturePath(opts.Token),
 		}
-		for i, c := range rec.Calls {
-			if c.Recording != nil {
-				v.Recordings = append(v.Recordings, SealRecording{Call: i + 1, SHA256: hex.EncodeToString(c.Recording.SHA256[:])})
+		// The hashes the seal covers come from the sealed bytes, not from
+		// the rows, which may have changed since.
+		var d document
+		if json.Unmarshal(s.Document, &d) == nil {
+			for i, c := range d.Calls {
+				if c.Recording != nil {
+					v.Recordings = append(v.Recordings, SealRecording{Call: i + 1, SHA256: c.Recording.SHA256})
+				}
 			}
 		}
 		return v

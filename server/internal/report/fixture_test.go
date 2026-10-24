@@ -40,8 +40,7 @@ func testTranscript() []contract.TranscriptTurn {
 // message, the recording and the seal. Times are UTC; VET is UTC-4.
 func sealedRecord() Record {
 	audio := sha256.Sum256([]byte("fake mp3"))
-	pub := ed25519.NewKeyFromSeed(make([]byte, 32)).Public().(ed25519.PublicKey)
-	return Record{
+	rec := Record{
 		Incident: Incident{
 			ID:          testIncidentID,
 			DeviceID:    "3f1c9a52-7b1e-4c8a-9a0e-2d6b8f4e1a77",
@@ -71,13 +70,24 @@ func sealedRecord() Record {
 			VerdictAt:      ptr(at("2026-10-24T13:11:07Z")),
 			Recording:      &Recording{ContentType: "audio/mpeg", SHA256: audio, Size: 993280, StoredAt: at("2026-10-24T13:11:20Z")},
 		}},
-		Seal: &Seal{
-			SealedAt:  at("2026-10-24T13:11:25Z"),
-			Document:  []byte(`{"format":"MAMA-incident-report-v1"}`),
-			Signature: make([]byte, 64),
-			PublicKey: pub,
-		},
 	}
+	key := testKey()
+	sealedAt := at("2026-10-24T13:11:25Z")
+	doc, err := Document(rec, sealedAt, key.Public().(ed25519.PublicKey))
+	if err != nil {
+		panic(err)
+	}
+	rec.Seal = &Seal{SealedAt: sealedAt, Document: doc, Signature: Sign(doc, key), PublicKey: key.Public().(ed25519.PublicKey)}
+	return rec
+}
+
+// testKey is a fixed server key for tests (seed 0x01 x 32).
+func testKey() ed25519.PrivateKey {
+	seed := make([]byte, ed25519.SeedSize)
+	for i := range seed {
+		seed[i] = 1
+	}
+	return ed25519.NewKeyFromSeed(seed)
 }
 
 // openRecord is the same incident before the recording and the seal.

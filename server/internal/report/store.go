@@ -321,3 +321,18 @@ func (s DBStore) Audio(ctx context.Context, token string, n int) ([]byte, Record
 	r.Size = int64(len(audio))
 	return audio, r, nil
 }
+
+// SaveSeal stores the incident's seal unless it already has one, and
+// reports whether this one was stored.
+func (s DBStore) SaveSeal(ctx context.Context, incidentID string, seal Seal) (bool, error) {
+	res, err := s.pool.ExecContext(ctx, `
+		INSERT INTO incident_seals (incident_id, sealed_at, document, signature, public_key)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (incident_id) DO NOTHING`,
+		incidentID, seal.SealedAt, seal.Document, seal.Signature, []byte(seal.PublicKey))
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}

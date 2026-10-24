@@ -359,6 +359,15 @@ default; then every route below answers `404`). Code:
   support; `N` is the call's 1-based number in request order, and without it
   the newest recorded call. No recording: `404`, and the page says "Audio no
   disponible" and keeps the transcript.
+- **Seal.** After the recording, and after waiting up to 60 s for the
+  call's verdict and `notified_at`, the server seals a `call` report once:
+  pure Ed25519 by the `GET /config` key over `MAMA-incident-report-v1 ||
+  ficha.json`. `GET /i/{token}/ficha.json` serves the exact signed bytes and
+  `GET /i/{token}/ficha.sig` the signature in Base64 (both `404` until
+  sealed). `go run ./cmd/verify-ficha ficha.json ficha.sig <key>` checks
+  them. Without `EMERGENCY_ED25519_SEED` (or the offline channel's key)
+  reports stay "Sin sellar" and the server still boots. Format, timing and
+  limits: [`docs/adr/0005-incident-report-seal.md`](adr/0005-incident-report-seal.md).
 - **Clocks.** Each timeline row says which clock its time comes from: the
   phone (`triggered_at`, `gps_points.recorded_at`), the server
   (`incidents.created_at`, `calls.requested_at`, `verdict_at`, `notified_at`,

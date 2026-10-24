@@ -31,11 +31,15 @@ const webhookBody = `{"type":"post_call_transcription","event_timestamp":1761311
 // callMux is the real call webhook on pool with hook as its post-call hook.
 func callMux(t *testing.T, pool *sql.DB, hook func(context.Context, call.Finished)) *http.ServeMux {
 	t.Helper()
-	rt := call.NewRoutes(config.Config{ElevenLabs: config.ElevenLabs{WebhookSecret: webhookSecret}}, call.NewDBStore(pool))
+	rt := call.NewRoutes(configWithSecret(), call.NewDBStore(pool))
 	rt.SetFinished(call.Hooks(hook))
 	mux := http.NewServeMux()
 	rt.Register(mux)
 	return mux
+}
+
+func configWithSecret() config.Config {
+	return config.Config{ElevenLabs: config.ElevenLabs{WebhookSecret: webhookSecret}}
 }
 
 func postWebhook(t *testing.T, mux *http.ServeMux) {
