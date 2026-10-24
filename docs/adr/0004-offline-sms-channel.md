@@ -34,10 +34,12 @@ provider that can change, and answer so the phone knows it arrived.
    authenticates it.
 5. **Retry policy.** One attempt plus up to three retries, waiting 2 s, 5 s and
    10 s before them (17 s in total). A failed attempt is a sent status other
-   than OK, or an exception from `SmsManager`. A missing permission is not
+   than OK, an exception from `SmsManager`, or no sent status within 30 s
+   (a lost broadcast must not hang the send). A missing permission is not
    retried. The send runs in a coroutine that the caller (#59) owns; it can be
-   cancelled, and `SmsChannel.stop()` ends the send at once, including a
-   backoff in progress. An SMS already handed to the radio cannot be recalled.
+   cancelled, and `SmsChannel.stop()` ends the send at once, cutting the attempt
+   in flight and any backoff. An SMS already handed to the radio cannot be
+   recalled.
 6. **Inbound side on the server.** The SMS provider calls
    `POST /sms/inbound/{provider}`. The `InboundSMSProvider` interface verifies
    the webhook signature and normalizes it to `{from, body}`; Twilio is the
@@ -45,9 +47,16 @@ provider that can change, and answer so the phone knows it arrived.
    merged, `docs/contract.md`, "Inbound SMS"). The body enters the same pipeline
    as `POST /emergencies` (ADR 0003) with channel `sms`.
 7. **Ack by SMS reply.** The server answers the webhook with TwiML carrying
-   the signed ack text `MAMA1 <Base64url>`. The phone listens for that SMS and
-   stops sending (a later slice of #58). Until then nothing stops the channel
-   but its own retry limit.
+   the signed ack text `MAMA1 <Base64url>`. The phone listens for it with a
+   manifest `BroadcastReceiver` for `SMS_RECEIVED` and the `RECEIVE_SMS`
+   permission (asked in setup only with the offline flag on). A text counts only
+   if it is `MAMA1 ` + a 76-byte ack that verifies against the cached server
+   Ed25519 key (`GET /config`); with no key, or anything foreign or invalid, it
+   is ignored silently, with no logging of numbers or bodies. A verified ack is
+   published on an in-app hub (`OfflineAcks`); the SMS channel stops when the
+   ack's `emergency_id` is the one it is sending, and #59 subscribes to the same
+   hub to stop the mesh and HTTP. Without `RECEIVE_SMS` only this early stop is
+   lost: sending is unaffected and the retry limit still ends the channel.
 8. **Behind the offline flags.** The channel exists only in the offline
    emergency path: the build flag `OFFLINE_EMERGENCY_ENABLED` on the app and
    `EMERGENCY_OFFLINE_ENABLED` on the server (#74). With them off, nothing
@@ -62,7 +71,11 @@ provider that can change, and answer so the phone knows it arrived.
   also a public destination: anyone can text it, so only the signature, device
   registration and `emergency_id` binding (ADR 0003) decide what is stored.
 - "Sent" means the radio accepted the SMS, not that the server got it. Only the
-  ack proves delivery; until the ack listener lands, a success does not stop
-  #59 from also using the mesh and HTTP.
+  ack proves delivery; a success alone does not stop #59 from also using the
+  mesh and HTTP, only a verified ack does.
+- `RECEIVE_SMS` joins `SEND_SMS` as a sideload-only permission. The receiver is
+  exported (the system requires it for `SMS_RECEIVED`) and protected with
+  `BROADCAST_SMS`, so only the system can deliver to it; the signature, not the
+  sender number, authenticates the ack.
 - SMS costs money and needs a number and a provider account (Twilio) in every
   deployment; the credentials stay in environment variables.

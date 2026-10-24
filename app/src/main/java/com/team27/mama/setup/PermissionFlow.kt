@@ -2,6 +2,7 @@ package com.team27.mama.setup
 
 import android.Manifest
 import android.os.Build
+import com.team27.mama.BuildConfig
 
 /**
  * One step of the permission part of first-run setup. A step with
@@ -9,7 +10,7 @@ import android.os.Build
  * system settings screen the person turns on by hand (see SystemScreens.kt).
  */
 enum class SetupStep(
-    val permissions: List<String> = emptyList(),
+    private val fixedPermissions: List<String> = emptyList(),
     /** The step only exists from this API level (the permission is implicit before it). */
     val minSdk: Int = Build.VERSION_CODES.BASE,
     /** The step is a MIUI/HyperOS screen with no equivalent on other phones. */
@@ -29,14 +30,29 @@ enum class SetupStep(
     ACCESSIBILITY,
     ;
 
-    val isSystemScreen: Boolean get() = permissions.isEmpty()
+    /**
+     * What the dialog asks. SMS also asks RECEIVE_SMS when the offline emergency flag is on, to hear
+     * the server's ack (#58); without the flag the app never listens, so it never asks.
+     */
+    val permissions: List<String>
+        get() = if (this == SMS && BuildConfig.OFFLINE_EMERGENCY_ENABLED) {
+            fixedPermissions + Manifest.permission.RECEIVE_SMS
+        } else {
+            fixedPermissions
+        }
+
+    val isSystemScreen: Boolean get() = fixedPermissions.isEmpty()
 
     /**
      * Whether [granted] covers this step: every permission, except location,
-     * which counts with only "approximate" (the person's choice on Android 12+).
+     * which counts with only "approximate" (the person's choice on Android 12+),
+     * and SMS, which counts with SEND_SMS alone (RECEIVE_SMS only adds the early stop).
      */
-    fun isGrantedBy(granted: (String) -> Boolean): Boolean =
-        if (this == LOCATION) permissions.any(granted) else permissions.isNotEmpty() && permissions.all(granted)
+    fun isGrantedBy(granted: (String) -> Boolean): Boolean = when (this) {
+        LOCATION -> permissions.any(granted)
+        SMS -> granted(Manifest.permission.SEND_SMS)
+        else -> permissions.isNotEmpty() && permissions.all(granted)
+    }
 
     companion object {
         /**

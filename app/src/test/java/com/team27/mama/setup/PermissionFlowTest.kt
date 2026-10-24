@@ -48,6 +48,14 @@ class PermissionFlowTest {
     }
 
     @Test
+    fun smsStepCountsAsGrantedWithSendSmsAlone() {
+        // RECEIVE_SMS only adds the early stop of the offline SMS channel (#58); denying it must not block setup.
+        assertTrue(SMS.isGrantedBy { it == Manifest.permission.SEND_SMS })
+        assertFalse(SMS.isGrantedBy { it == Manifest.permission.RECEIVE_SMS })
+        assertTrue(Manifest.permission.SEND_SMS in SMS.permissions)
+    }
+
+    @Test
     fun backgroundLocationIsRequestedOnItsOwnRightAfterForeground() {
         val steps = SetupStep.forDevice(sdkInt = 36, isXiaomi = false)
         assertEquals(steps.indexOf(LOCATION) + 1, steps.indexOf(BACKGROUND_LOCATION))

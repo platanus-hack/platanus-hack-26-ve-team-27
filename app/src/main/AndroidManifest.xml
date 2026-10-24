@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.WRITE_CONTACTS" />
     <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- Offline emergency only: hear the server's ack SMS (ADR 0004). Asked in setup only when the flag is on. -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- POST /devices and GET /config. -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -32,6 +34,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The system sends SMS_RECEIVED; BROADCAST_SMS keeps any other app from faking it. Does nothing with the offline flag off. -->
+        <receiver
+            android:name=".emergency.sms.SmsAckReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

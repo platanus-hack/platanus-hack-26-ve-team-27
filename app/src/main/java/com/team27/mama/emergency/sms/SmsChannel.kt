@@ -1,7 +1,11 @@
 package com.team27.mama.emergency.sms
 
 import com.team27.mama.emergency.config.RemoteConfigRepository
+import com.team27.mama.emergency.payload.AckInfo
 import com.team27.mama.emergency.payload.MamaText
+import com.team27.mama.emergency.payload.PayloadCodec
+import com.team27.mama.emergency.payload.PayloadException
+import com.team27.mama.emergency.payload.PayloadFormat
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
@@ -50,7 +54,8 @@ sealed interface SmsSendResult {
  * (the same bytes HTTP and the mesh carry). [send] suspends until the radio accepts the SMS,
  * every attempt fails, or it is stopped.
  *
- * How the ack listener (slice 3) stops it: call [stop] when the server's ack SMS arrives.
+ * How the ack listener stops it: [SmsAckReceiver] publishes the verified ack on [OfflineAcks] and
+ * AppGraph routes it to [onAck], which calls [stop] when the ack is for the emergency being sent.
  * Cancelling the coroutine that runs [send] works too. Either way no further attempt starts and
  * an attempt in flight is cut; an SMS already handed to the radio cannot be recalled.
  *
@@ -67,6 +72,10 @@ class SmsChannel(
     @Volatile
     private var stopSignal = CompletableDeferred<Unit>()
 
+    /** Emergency id of the payload being sent, null when idle or when the payload cannot be decoded. */
+    @Volatile
+    private var sendingEmergencyId: Long? = null
+
     /**
      * Signed payload to SMS. The destination is `remoteConfig.current().smsNumber`, read once per
      * call; a blank number sends nothing. Never throws except for cancellation.
@@ -79,6 +88,15 @@ class SmsChannel(
         if (!sender.canSend()) return SmsSendResult.NoPermission
 
         val stop = CompletableDeferred<Unit>().also { stopSignal = it }
+        sendingEmergencyId = emergencyIdOf(signed)
+        try {
+            return attempts(to, text, stop)
+        } finally {
+            sendingEmergencyId = null
+        }
+    }
+
+    private suspend fun attempts(to: String, text: String, stop: Deferred<Unit>): SmsSendResult {
         var attempts = 0
         while (true) {
             if (stop.isCompleted) return SmsSendResult.Stopped(attempts)
@@ -92,6 +110,19 @@ class SmsChannel(
             if (retry >= backoffMillis.size) return SmsSendResult.Failed(attempts)
             sleeper(backoffMillis[retry], stop)
         }
+    }
+
+    /** Stops the send in progress when [ack] is for its emergency; an ack for any other one is ignored. */
+    fun onAck(ack: AckInfo) {
+        if (sendingEmergencyId == ack.emergencyId) stop()
+    }
+
+    private fun emergencyIdOf(signed: ByteArray): Long? = try {
+        PayloadCodec.decodeBody(signed.copyOfRange(0, PayloadFormat.BODY_SIZE)).emergencyId
+    } catch (e: PayloadException) {
+        null
+    } catch (e: IllegalArgumentException) {
+        null
     }
 
     /**

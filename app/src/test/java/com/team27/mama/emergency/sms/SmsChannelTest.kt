@@ -4,6 +4,7 @@ import com.team27.mama.contract.DeviceRegistration
 import com.team27.mama.contract.RemoteConfig
 import com.team27.mama.emergency.config.InMemoryConfigStore
 import com.team27.mama.emergency.config.RemoteConfigRepository
+import com.team27.mama.emergency.payload.AckInfo
 import com.team27.mama.emergency.payload.Vectors
 import com.team27.mama.emergency.payload.unhex
 import com.team27.mama.server.ServerApi
@@ -162,6 +163,37 @@ class SmsChannelTest {
         assertTrue(sender.cancelled)
         assertEquals(1, sender.calls)
         assertTrue(slept.isEmpty())
+    }
+
+    private fun ackFor(emergencyId: Long) = AckInfo(emergencyId, 0)
+    private val sendingId = java.lang.Long.parseUnsignedLong(Vectors.file.payloads.first().emergencyId, 16)
+
+    @Test fun matchingAckStopsAnAttemptInFlight() = runBlocking {
+        val sender = HangingSender(hangs = Int.MAX_VALUE)
+        val channel = SmsChannel(repo(number), sender, sleeper = sleeper)
+        val result = async { channel.send(signed) }
+        while (sender.calls == 0) yield()
+        channel.onAck(ackFor(sendingId))
+        assertEquals(SmsSendResult.Stopped(1), withTimeout(5_000) { result.await() })
+    }
+
+    @Test fun ackForAnotherEmergencyDoesNotStop() = runBlocking {
+        val sender = HangingSender(hangs = Int.MAX_VALUE)
+        val channel = SmsChannel(repo(number), sender, attemptTimeoutMillis = 100, sleeper = sleeper)
+        val result = async { channel.send(signed) }
+        while (sender.calls == 0) yield()
+        channel.onAck(ackFor(sendingId + 1))
+        // Still sending: it runs through every attempt instead of stopping.
+        assertEquals(SmsSendResult.Failed(4), withTimeout(5_000) { result.await() })
+    }
+
+    @Test fun ackWithNothingInFlightIsIgnored() = runBlocking {
+        val sender = FakeSender(listOf(true))
+        val channel = channel(sender)
+        channel.onAck(ackFor(sendingId))
+        assertEquals(SmsSendResult.Sent(1), channel.send(signed))
+        // Idle again after the send: a late ack must not stop the next one.
+        channel.onAck(ackFor(sendingId))
     }
 
     @Test fun cancellationHaltsRetries() = runBlocking {
