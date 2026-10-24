@@ -35,6 +35,15 @@ class OfflineFallbackTest {
     }
 
     @Test
+    fun onlyAForcedChannelWithoutHttpSkipsTheOnlineAlert() {
+        assertFalse(OfflineFallback.skipsOnlineAlert(ChannelOverride.AUTO, emergencyEnabled = true))
+        assertTrue(OfflineFallback.skipsOnlineAlert(ChannelOverride.NO_INTERNET, emergencyEnabled = true))
+        assertTrue(OfflineFallback.skipsOnlineAlert(ChannelOverride.SMS_ONLY, emergencyEnabled = true))
+        assertTrue(OfflineFallback.skipsOnlineAlert(ChannelOverride.BLE_ONLY, emergencyEnabled = true))
+        ChannelOverride.entries.forEach { assertFalse(OfflineFallback.skipsOnlineAlert(it, emergencyEnabled = false)) }
+    }
+
+    @Test
     fun holdsWhileDeliveringAndReleasesOnAck() = runTest {
         val controls = FakeControls(EmergencyPhase.SEARCHING_NEARBY)
         var released = false

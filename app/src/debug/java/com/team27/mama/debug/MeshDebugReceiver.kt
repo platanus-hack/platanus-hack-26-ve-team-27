@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.team27.mama.MamaApp
+import com.team27.mama.emergency.ChannelOverride
 import com.team27.mama.emergency.EmergencyOrchestrator
 import com.team27.mama.mesh.MeshGateway
 import kotlinx.coroutines.CoroutineScope
@@ -30,6 +31,11 @@ import kotlinx.coroutines.flow.onEach
  *    `adb shell pm grant com.team27.mama android.permission.<name>` for BLUETOOTH_SCAN,
  *    BLUETOOTH_ADVERTISE, BLUETOOTH_CONNECT, ACCESS_FINE_LOCATION and ACCESS_COARSE_LOCATION.
  * 3. Send EMERGENCY_DECLARE, then EMERGENCY_CANCEL when done.
+ *
+ * Demo action (#61): CHANNEL_OVERRIDE with string extra `mode` = AUTO, NO_INTERNET, SMS_ONLY or
+ * BLE_ONLY forces the channels of the next emergency (it is read once, at declare). Anything but
+ * AUTO also skips the trigger's online AlertEvent, so the button goes straight to SMS and/or mesh
+ * even with internet. It lives in memory: an app restart goes back to AUTO.
  *
  * Do not send MESH_STOP during an emergency test: it stops the same gateway singleton the
  * orchestrator broadcasts through.
@@ -62,8 +68,19 @@ class MeshDebugReceiver : BroadcastReceiver() {
                     gateway.stop()
                     Log.i(TAG, "stopped")
                 }
+                ACTION_CHANNEL_OVERRIDE -> {
+                    val graph = (context.applicationContext as MamaApp).graph
+                    val mode = intent.getStringExtra("mode")
+                    val override = ChannelOverride.entries.firstOrNull { it.name.equals(mode, ignoreCase = true) }
+                    if (override == null) {
+                        Log.w(TAG, "override needs string extra 'mode': ${ChannelOverride.entries.joinToString()}")
+                    } else {
+                        graph.channelOverride.value = override
+                        Log.i(TAG, "override=$override emergency=${graph.emergency != null}")
+                    }
+                }
                 ACTION_EMERGENCY_DECLARE -> withEmergency(context) {
-                    Log.i(TAG, "declare=${it.declare()} phase=${it.state.value.phase}")
+                    Log.i(TAG, "declare=${it.declare()} override=${graph(context)?.channelOverride?.value} phase=${it.state.value.phase}")
                 }
                 ACTION_EMERGENCY_CANCEL -> withEmergency(context) {
                     it.cancel()
@@ -79,13 +96,15 @@ class MeshDebugReceiver : BroadcastReceiver() {
 
     /** Only the result and the phase are logged: never the text, the location or a number. */
     private inline fun withEmergency(context: Context, block: (EmergencyOrchestrator) -> Unit) {
-        val emergency = (context.applicationContext as? MamaApp)?.graph?.emergency
+        val emergency = graph(context)?.emergency
         if (emergency == null) {
             Log.w(TAG, "no emergency: build with MAMA_OFFLINE_EMERGENCY=1 (flag off)")
         } else {
             block(emergency)
         }
     }
+
+    private fun graph(context: Context) = (context.applicationContext as? MamaApp)?.graph
 
     private fun startCollectorOnce(gateway: MeshGateway) {
         synchronized(MeshDebugReceiver) {
@@ -104,6 +123,7 @@ class MeshDebugReceiver : BroadcastReceiver() {
         const val ACTION_STOP = "com.team27.mama.debug.MESH_STOP"
         const val ACTION_EMERGENCY_DECLARE = "com.team27.mama.debug.EMERGENCY_DECLARE"
         const val ACTION_EMERGENCY_CANCEL = "com.team27.mama.debug.EMERGENCY_CANCEL"
+        const val ACTION_CHANNEL_OVERRIDE = "com.team27.mama.debug.CHANNEL_OVERRIDE"
 
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         private var collecting = false
