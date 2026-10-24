@@ -13,6 +13,10 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- POST /devices. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Locked-phone trigger spike (#10): the service both triggers start. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <application
         android:allowBackup="false"
@@ -30,6 +34,35 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Spike #10, rebuilt or deleted by #16. -->
+        <service
+            android:name=".spike.VolumePatternService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/volume_pattern_service" />
+        </service>
+        <service
+            android:name=".spike.TriggerSpikeService"
+            android:exported="false"
+            android:foregroundServiceType="location|microphone" />
+        <receiver
+            android:name=".spike.TriggerWidgetProvider"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/trigger_widget" />
+        </receiver>
     </application>
 
 </manifest>
