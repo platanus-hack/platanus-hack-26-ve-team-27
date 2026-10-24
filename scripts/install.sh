@@ -61,8 +61,11 @@ for serial in "${SERIALS[@]}"; do
     failed=1
     continue
   fi
-  "$ADB" -s "$serial" shell monkey -p "$PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null
-  echo "install: launched $PACKAGE on $serial"
+  if "$ADB" -s "$serial" shell monkey -p "$PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1; then
+    echo "install: launched $PACKAGE on $serial"
+  else
+    echo "install: installed on $serial but could not launch it, open MAMÁ from the launcher" >&2
+  fi
 done
 
 exit $failed
