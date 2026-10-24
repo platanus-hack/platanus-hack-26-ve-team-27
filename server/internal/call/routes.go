@@ -12,8 +12,10 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 )
 
-// e164 is a loose E.164 check: "+", a non-zero digit, 7 to 15 digits in all.
-var e164 = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
+// venezuela is the only destination the spike route dials: a +58 number with
+// 10 digits after the country code. A leaked CALL_SPIKE_TOKEN then cannot
+// run up premium-rate or international calls on the Twilio account.
+var venezuela = regexp.MustCompile(`^\+58[0-9]{10}$`)
 
 // Routes holds the call routes. Create it with NewRoutes.
 type Routes struct {
@@ -40,7 +42,7 @@ func NewRoutes(cfg config.ElevenLabs) *Routes {
 // when CALL_SPIKE_TOKEN is set: without it the route does not exist (404).
 func (rt *Routes) Register(mux *http.ServeMux) {
 	if rt.webhook.Secret == "" {
-		log.Print("call: WARNING: ELEVENLABS_WEBHOOK_SECRET is not set; /webhooks/elevenlabs accepts unsigned requests")
+		log.Print("call: WARNING: ELEVENLABS_WEBHOOK_SECRET is not set; /webhooks/elevenlabs answers 503")
 	}
 	mux.Handle("POST /webhooks/elevenlabs", rt.webhook)
 	if rt.spikeToken != "" {
@@ -49,7 +51,7 @@ func (rt *Routes) Register(mux *http.ServeMux) {
 }
 
 type spikeCallRequest struct {
-	To         string `json:"to"`                    // E.164, e.g. +58414...
+	To         string `json:"to"`                    // +58 E.164, e.g. +584141234567
 	IncidentID string `json:"incident_id,omitempty"` // optional, echoed by the webhook
 }
 
@@ -62,8 +64,9 @@ type spikeCallResponse struct {
 }
 
 // handleSpikeCall places one call: Authorization: Bearer <CALL_SPIKE_TOKEN>,
-// body {"to": "+58..."}. 401 bad token, 400 bad body, 502 when ElevenLabs
-// refuses, 200 with the ids and the request time otherwise.
+// body {"to": "+58..."}. 401 bad token, 400 bad body or a non-+58 number,
+// 502 when ElevenLabs refuses (the reason goes to the server log only), 200
+// with the ids and the request time otherwise.
 func (rt *Routes) handleSpikeCall(w http.ResponseWriter, r *http.Request) {
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(rt.spikeToken)) != 1 {
@@ -75,8 +78,8 @@ func (rt *Routes) handleSpikeCall(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
-	if !e164.MatchString(in.To) {
-		http.Error(w, `"to" must be an E.164 number such as +584141234567`, http.StatusBadRequest)
+	if !venezuela.MatchString(in.To) {
+		http.Error(w, `"to" must be a +58 number such as +584141234567`, http.StatusBadRequest)
 		return
 	}
 
@@ -85,7 +88,7 @@ func (rt *Routes) handleSpikeCall(w http.ResponseWriter, r *http.Request) {
 	elapsed := time.Since(start)
 	if err != nil {
 		log.Printf("call spike: place: %v", err)
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		http.Error(w, "call not placed; see the server log", http.StatusBadGateway)
 		return
 	}
 	log.Printf("call spike: placed conversation %s call %s in %d ms", placed.ConversationID, placed.CallSID, elapsed.Milliseconds())

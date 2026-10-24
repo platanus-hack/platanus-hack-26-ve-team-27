@@ -170,11 +170,29 @@ func TestWebhookRejectsATamperedBody(t *testing.T) {
 	}
 }
 
+// signedWebhook returns a Webhook with a fixed clock and a function that
+// posts body signed with its secret.
+func signedWebhook(received func(context.Context, contract.CallWebhook)) (*Webhook, func([]byte) *httptest.ResponseRecorder) {
+	now := time.Unix(1761297100, 0)
+	wh := &Webhook{Secret: "secret", Now: func() time.Time { return now }, Received: received}
+	return wh, func(body []byte) *httptest.ResponseRecorder {
+		return postWebhook(wh, signed("secret", now, body), body)
+	}
+}
+
+func TestWebhookWithoutASecretFailsClosed(t *testing.T) {
+	called := false
+	wh := &Webhook{Received: func(context.Context, contract.CallWebhook) { called = true }}
+	if rec := postWebhook(wh, "", sampleWebhook(t)); rec.Code != http.StatusServiceUnavailable || called {
+		t.Errorf("status = %d, Received called %v; want 503 and not called", rec.Code, called)
+	}
+}
+
 func TestWebhookParsesTheTranscript(t *testing.T) {
 	var got contract.CallWebhook
-	wh := &Webhook{Received: func(_ context.Context, h contract.CallWebhook) { got = h }}
+	_, post := signedWebhook(func(_ context.Context, h contract.CallWebhook) { got = h })
 
-	if rec := postWebhook(wh, "", sampleWebhook(t)); rec.Code != http.StatusOK {
+	if rec := post(sampleWebhook(t)); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	if got.IncidentID() != "9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f" {
@@ -191,15 +209,16 @@ func TestWebhookOtherTypesAnswer200WithoutReceived(t *testing.T) {
 		`{"type":"post_call_audio","data":{}}`,
 	} {
 		called := false
-		wh := &Webhook{Received: func(context.Context, contract.CallWebhook) { called = true }}
-		if rec := postWebhook(wh, "", []byte(body)); rec.Code != http.StatusOK || called {
+		_, post := signedWebhook(func(context.Context, contract.CallWebhook) { called = true })
+		if rec := post([]byte(body)); rec.Code != http.StatusOK || called {
 			t.Errorf("%s: status %d, Received called %v", body, rec.Code, called)
 		}
 	}
 }
 
 func TestWebhookBadJSONIs400(t *testing.T) {
-	if rec := postWebhook(&Webhook{}, "", []byte("{")); rec.Code != http.StatusBadRequest {
+	_, post := signedWebhook(nil)
+	if rec := post([]byte("{")); rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rec.Code)
 	}
 }
@@ -240,6 +259,8 @@ func TestSpikeRoute(t *testing.T) {
 		{"no auth", "", `{"to":"+584141234567"}`, http.StatusUnauthorized},
 		{"wrong token", "Bearer nope", `{"to":"+584141234567"}`, http.StatusUnauthorized},
 		{"not e164", "Bearer tok", `{"to":"04141234567"}`, http.StatusBadRequest},
+		{"not +58", "Bearer tok", `{"to":"+19005551234"}`, http.StatusBadRequest},
+		{"+58 too short", "Bearer tok", `{"to":"+58414123"}`, http.StatusBadRequest},
 		{"bad json", "Bearer tok", `{`, http.StatusBadRequest},
 		{"ok", "Bearer tok", `{"to":"+584141234567","incident_id":"inc-1"}`, http.StatusOK},
 	}
@@ -267,10 +288,10 @@ func TestSpikeRoute(t *testing.T) {
 	}
 }
 
-func TestSpikeRouteReportsAProviderErrorAs502(t *testing.T) {
+func TestSpikeRouteReportsAProviderErrorAs502WithoutDetails(t *testing.T) {
 	srv, _, _ := fakeElevenLabs(t, http.StatusOK, `{"success":false,"message":"Twilio error 13227"}`)
 	rec := postSpike(spikeMux(t, srv.URL, "tok"), "Bearer tok", `{"to":"+584141234567"}`)
-	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "13227") {
-		t.Errorf("status = %d body %q, want 502 with the Twilio error", rec.Code, rec.Body)
+	if rec.Code != http.StatusBadGateway || strings.Contains(rec.Body.String(), "13227") {
+		t.Errorf("status = %d body %q, want 502 without the provider message", rec.Code, rec.Body)
 	}
 }

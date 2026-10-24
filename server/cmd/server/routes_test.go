@@ -46,7 +46,8 @@ func TestCallWebhookIsMounted(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/elevenlabs", strings.NewReader(`{"type":"post_call_audio"}`))
 	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{})).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("POST /webhooks/elevenlabs = %d, want %d", rec.Code, http.StatusOK)
+	// Mounted, and with no secret configured it fails closed.
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("POST /webhooks/elevenlabs = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 }

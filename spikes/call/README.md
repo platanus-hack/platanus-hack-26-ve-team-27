@@ -49,7 +49,7 @@ cloudflared tunnel --url http://localhost:8080   # or: ngrok http 8080
 ```
 
 Check it from outside: `curl -i -X POST https://<tunnel>/webhooks/elevenlabs -d '{"type":"ping"}'`
-answers `401` with a secret set (unsigned), `200` without.
+answers `401` (unsigned request) once the secret is set, `503` while it is not: the webhook refuses everything without a secret.
 
 ## 3. Place 3 calls and time them
 
@@ -62,7 +62,7 @@ Answer the phone and press Enter on the laptop the moment you hear the
 agent's first word. The script prints request, ringing and answer times from
 Twilio's call status, your "first word" time, Twilio's price, ElevenLabs'
 cost fields, and a ready-made row for RESULTS.md. Through the server instead:
-`CALL_SPIKE_TOKEN=... python3 spikes/call/place_call.py +58... --via-server http://localhost:8080`.
+`CALL_SPIKE_TOKEN=... python3 spikes/call/place_call.py +58... --via-server http://localhost:8080`. The route only dials `+58` numbers and keeps ElevenLabs' error text in the server log.
 
 The server log shows the webhook arriving:
 

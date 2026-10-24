@@ -45,27 +45,31 @@ var (
 // valid post_call_transcription; it defaults to logging a summary. The call
 // engine (#18) replaces it with the code that stores the call.
 type Webhook struct {
-	Secret   string // ELEVENLABS_WEBHOOK_SECRET; blank skips the check
+	Secret   string // ELEVENLABS_WEBHOOK_SECRET; blank refuses every request
 	Received func(ctx context.Context, hook contract.CallWebhook)
 	Now      func() time.Time // time.Now when nil
 }
 
 // ServeHTTP verifies the signature over the raw body, then parses it. It
-// answers 401 on a bad signature, 400 on a bad body and 200 otherwise, also
-// for webhook types the server does not use, so ElevenLabs does not retry
-// them.
+// answers 503 when no secret is configured (fail closed: an unsigned call
+// webhook could fake a verdict), 401 on a bad signature, 400 on a bad body
+// and 200 otherwise, also for webhook types the server does not use, so
+// ElevenLabs does not retry them.
 func (wh *Webhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBytes))
 	if err != nil {
 		http.Error(w, "body too large or unreadable", http.StatusRequestEntityTooLarge)
 		return
 	}
-	if wh.Secret != "" {
-		if err := verifySignature(r.Header.Get(SignatureHeader), raw, wh.Secret, wh.now()); err != nil {
-			log.Printf("call webhook: rejected: %v", err)
-			http.Error(w, "invalid signature", http.StatusUnauthorized)
-			return
-		}
+	if wh.Secret == "" {
+		log.Print("call webhook: rejected: ELEVENLABS_WEBHOOK_SECRET is not set")
+		http.Error(w, "webhook secret not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if err := verifySignature(r.Header.Get(SignatureHeader), raw, wh.Secret, wh.now()); err != nil {
+		log.Printf("call webhook: rejected: %v", err)
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
 	}
 
 	var hook contract.CallWebhook
