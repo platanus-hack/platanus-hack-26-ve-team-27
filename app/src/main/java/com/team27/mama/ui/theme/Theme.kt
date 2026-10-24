@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -284,16 +285,20 @@ object MamaSpacing {
 
 /**
  * The MAMÁ wordmark: the ↗ mark from the event logo in a rounded tile, then
- * "MAMÁ". Colors come from the color scheme (primary / onPrimary /
- * onBackground) and the type from MamaTypography, so it follows every palette
- * or font change in this file. [compact] is the top-bar size.
+ * "MAMÁ". Colors come from the color scheme (primary / onPrimary for the
+ * tile, onSurface for the letters) and the type from MamaTypography, so it
+ * follows every palette or font change in this file. [compact] is the
+ * top-bar size.
  */
 @Composable
 fun MamaWordmark(modifier: Modifier = Modifier, compact: Boolean = false) {
     val tile = if (compact) 32.dp else 48.dp
     val text = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge
     Row(
-        modifier = modifier.clearAndSetSemantics { contentDescription = "MAMÁ" },
+        modifier = modifier.clearAndSetSemantics {
+            contentDescription = "MAMÁ"
+            heading()
+        },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(if (compact) MamaSpacing.s else 12.dp),
     ) {
@@ -301,7 +306,7 @@ fun MamaWordmark(modifier: Modifier = Modifier, compact: Boolean = false) {
         Text(
             text = "MAMÁ",
             style = text.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.04.em),
-            color = MaterialTheme.colorScheme.onBackground,
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }

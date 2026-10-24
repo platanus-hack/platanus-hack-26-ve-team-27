@@ -14,7 +14,7 @@ Read this before touching any screen in `app/`. These rules keep the look in one
 - **Red is for errors only** (`error`, `errorContainer`). MAMÁ must look like a family app to whoever is next to the user, never like a panic button. Do not use `error` for emphasis.
 - **Type:** Lexend (SIL OFL 1.1, bundled in `res/font/`, license in `assets/licenses/`), weights 400 / 500 / 700 only. Headlines and display are bold, titles and labels medium, body regular. Pick a style by role; do not override the weight in a screen.
 - **Wordmark:** use `MamaWordmark()` (big, e.g. a splash or empty state) or `MamaWordmark(compact = true)` (inside a `CenterAlignedTopAppBar` title, as the two reference screens do). Use `MamaMark(size)` when you need the arrow tile alone. Never re-type "MAMÁ" with your own style or draw the arrow yourself.
-- **Launcher icon:** `res/mipmap-anydpi-v26/ic_launcher*.xml` with `res/drawable/ic_launcher_foreground.xml` and `ic_launcher_background.xml`. The launcher draws it outside the app, so it cannot read `Theme.kt`: it is the one place with hex colors outside the theme file. If you change `Chartreuse` or `Charcoal`, update those two vectors too.
+- **Launcher icon:** `res/mipmap-anydpi-v26/ic_launcher*.xml` with `res/drawable/ic_launcher_foreground.xml` and `ic_launcher_background.xml`. The launcher draws it outside the app, so it cannot read `Theme.kt`: it is the one place with hex colors outside the theme file. If you change `Chartreuse` or `Charcoal`, update those two vectors too. The window theme (`res/values/themes.xml` and `values-night/`) only sets what Android draws before Compose (light or dark launch frame); it holds no colors.
 - **Icons:** the project has no Material icons dependency. Single-color vectors live in `res/drawable/` with `android:fillColor="@android:color/white"`, and screens tint them through `Icon(painterResource(...))`, which takes `LocalContentColor` (a theme token) by default.
 
 ## Reference screens
@@ -26,13 +26,16 @@ Read this before touching any screen in `app/`. These rules keep the look in one
 - One `headlineMedium`/`displaySmall` sentence that says what is happening, one `bodyLarge` line in `onSurfaceVariant` that says what to do.
 - Grouped rows: a `Card` on `surfaceContainerLow` holding `ListItem`s split by `HorizontalDivider(color = outlineVariant)`. Section labels are `titleSmall` in `primary`.
 - One primary `Button` per screen. Secondary or "undo" actions are a `TextButton` (the trigger screen's "Fue sin querer" stays discreet on purpose).
-- Step state: done = `primary` circle with the check, running = `CircularProgressIndicator`, pending = `surfaceContainerHighest` circle, failed = `errorContainer` row.
+- Step state: done = `primary` circle with the check, running = `CircularProgressIndicator`, pending = `surfaceContainerHighest` circle with an `outline` border, failed = `errorContainer` row with an `error` badge. Merge each row for TalkBack (`Modifier.semantics(mergeDescendants = true) { stateDescription = ... }`).
+- Button labels keep the button's own style (`labelLarge`); do not pass a `style` to a button's `Text`.
+- A bottom action bar pads for the keyboard and the navigation bar together: `Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))` (the activity uses `adjustResize` with edge-to-edge).
+- The trigger confirmation screen can be read by a bystander: neutral words only (no alerta, emergencia, peligro), and never explain the duress phrase or what the family receives there.
 
 ## In screens
 
 - Colors: `MaterialTheme.colorScheme.*` only (`primary`, `onSurface`, `errorContainer`, ...). No `Color(0x...)`, no `Color.Red`, no `colorResource`.
 - Text: `MaterialTheme.typography.*` only (`headlineMedium`, `bodyLarge`, ...). No `fontSize = ...sp`, no `fontFamily`, no `FontWeight` overrides.
-- Corners: `MaterialTheme.shapes.*` only, or the component's default shape.
+- Corners: `MaterialTheme.shapes.*` only, the component's default shape, or `CircleShape` for round badges and avatars.
 - Spacing: prefer the `MamaSpacing` scale (`xs` 4, `s` 8, `m` 16, `l` 24, `xl` 32, `xxl` 48, `screen` 24). Plain `dp` values are fine for component sizes (an icon, a badge), in multiples of 4.
 - Components: Material3 only (`androidx.compose.material3.*`): `Scaffold`, `TopAppBar`, `Button`, `OutlinedButton`, `TextButton`, `Card`, `ListItem`, `Switch`, `OutlinedTextField`, `AlertDialog`, and so on. Do not import `androidx.compose.material.*` (Material2) and do not draw custom buttons from `Box` + `clickable`.
 - If a component needs a non-default color, pass a theme token through its `*Defaults` helper, for example `CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)`.
@@ -57,8 +60,8 @@ Read this before touching any screen in `app/`. These rules keep the look in one
 
 ## Self-check before a PR
 
-This must print only `Theme.kt` lines (or nothing):
+This must print nothing (it skips `Theme.kt`, the only file allowed to match):
 
 ```bash
-grep -rnE 'Color\(0x|Color\.[A-Z]|FontFamily\(|[0-9]\.sp\b|fontSize|FontWeight' app/src/main
+grep -rnE 'Color\(|Color\.[A-Z]|colorResource|FontFamily|FontWeight|fontSize|[0-9]\.sp\b|letterSpacing|TextStyle\(|RoundedCornerShape|androidx\.compose\.material\.' app/src/main/java | grep -v ui/theme/Theme.kt
 ```

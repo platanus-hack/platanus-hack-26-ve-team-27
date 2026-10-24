@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Window theme: only what Android draws before Compose (the launch frame and
+      splash). Light here, dark in values-night/themes.xml, so a dark-mode cold start
+      does not flash white. Every in-app color lives in ui/theme/Theme.kt.
+    -->
+    <style name="Theme.Mama" parent="@android:style/Theme.Material.Light.NoActionBar" />
+</resources>

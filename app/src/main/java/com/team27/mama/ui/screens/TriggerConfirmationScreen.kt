@@ -1,10 +1,10 @@
 package com.team27.mama.ui.screens
 
 import android.content.res.Configuration
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,6 +31,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -41,23 +43,34 @@ import com.team27.mama.ui.theme.MamaWordmark
 
 /*
  * Reference screen for what the user sees right after the trigger (#8):
- * volume up-down-up or the widget. It must look calm to whoever is next to
- * them: no red, no "emergency" words, a call from Mamá is the whole story.
+ * volume up-down-up or the widget. A bystander may read it, so it must look
+ * like "my mom is about to call": no red outside a failure, and no words like
+ * alert, emergency, danger or duress phrase. Never explain on this screen what
+ * the family gets or how the phrase works.
  * #16 shows it from the trigger, #24 drives the step states (sent, calling,
  * notified, failed) and #38 replaces the elapsed placeholder with a real
- * counter. Keep the layout: message, elapsed area, steps, discreet cancel.
+ * counter. The counter and the steps are there for the live demo (#38); keep
+ * their labels neutral. Layout: message, elapsed area, steps, discreet cancel.
  */
 
-/** State of one step. [Failed] uses errorContainer, the only place red appears. */
-private enum class StepState { Done, Running, Pending, Failed }
+/**
+ * State of one step, with what TalkBack announces. [Failed] is the only place
+ * red appears: an errorContainer row with an error badge.
+ */
+private enum class StepState(val spoken: String) {
+    Done("listo"),
+    Running("en curso"),
+    Pending("pendiente"),
+    Failed("no se pudo"),
+}
 
 private data class TriggerStep(val label: String, val state: StepState, val time: String)
 
 // Placeholder data until #24 / #38 feed the real incident timestamps.
 private val placeholderSteps = listOf(
-    TriggerStep("Aviso enviado", StepState.Done, "0,8 s"),
-    TriggerStep("Mamá está llamando", StepState.Running, "…"),
-    TriggerStep("Familia avisada", StepState.Pending, "—"),
+    TriggerStep("Enviado", StepState.Done, "0,8 s"),
+    TriggerStep("Llamada de Mamá", StepState.Running, "…"),
+    TriggerStep("Mensaje a casa", StepState.Pending, "—"),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,8 +94,7 @@ fun TriggerConfirmationScreen(onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 Text(
-                    text = "Contesta como siempre y habla normal. " +
-                        "Si dices tu frase, tu familia se entera al instante.",
+                    text = "Contesta como siempre y habla normal.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -103,8 +115,6 @@ fun TriggerConfirmationScreen(onBack: () -> Unit) {
                 }
             }
 
-            Spacer(Modifier.size(MamaSpacing.s))
-
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -113,7 +123,7 @@ fun TriggerConfirmationScreen(onBack: () -> Unit) {
                     Text("Fue sin querer")
                 }
                 Text(
-                    text = "Tócalo solo si lo activaste por error.",
+                    text = "Tócalo solo si fue un error.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -141,7 +151,7 @@ private fun ElapsedCard(elapsed: String) {
             verticalArrangement = Arrangement.spacedBy(MamaSpacing.xs),
         ) {
             Text(text = elapsed, style = MaterialTheme.typography.displayLarge)
-            Text(text = "desde que lo activaste", style = MaterialTheme.typography.labelLarge)
+            Text(text = "desde que empezó", style = MaterialTheme.typography.labelLarge)
         }
     }
 }
@@ -150,6 +160,7 @@ private fun ElapsedCard(elapsed: String) {
 private fun StepRow(step: TriggerStep) {
     val failed = step.state == StepState.Failed
     ListItem(
+        modifier = Modifier.semantics(mergeDescendants = true) { stateDescription = step.state.spoken },
         headlineContent = { Text(step.label) },
         leadingContent = { StepBadge(step.state) },
         trailingContent = { Text(step.time, style = MaterialTheme.typography.labelLarge) },
@@ -172,19 +183,20 @@ private fun StepBadge(state: StepState) {
             contentColor = MaterialTheme.colorScheme.onPrimary,
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(painterResource(R.drawable.ic_check), contentDescription = "Listo", modifier = Modifier.size(20.dp))
+                Icon(painterResource(R.drawable.ic_check), contentDescription = null, modifier = Modifier.size(20.dp))
             }
         }
         StepState.Running -> CircularProgressIndicator(
             modifier = badge.padding(MamaSpacing.xs),
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.primaryContainer,
-            strokeWidth = 3.dp,
+            strokeWidth = 4.dp,
         )
         StepState.Pending -> Surface(
             modifier = badge,
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.outline),
         ) {}
         StepState.Failed -> Surface(
             modifier = badge,

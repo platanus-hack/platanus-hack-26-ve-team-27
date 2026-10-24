@@ -7,7 +7,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,6 +34,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.team27.mama.R
@@ -53,8 +59,8 @@ private val permissionSteps = listOf(
     SetupStep("Micrófono", "Para escuchar si algo va mal.", done = false),
     SetupStep("Contactos", "Para guardar a Mamá en tu teléfono.", done = false),
     SetupStep("SMS", "Respaldo cuando no hay datos.", done = false),
-    SetupStep("Batería sin límites", "Para que el teléfono no apague a MAMÁ.", done = false),
-    SetupStep("Accesibilidad", "Para notar subir-bajar-subir con el teléfono bloqueado.", done = false),
+    SetupStep("Batería sin límites", "Para que el teléfono no cierre MAMÁ.", done = false),
+    SetupStep("Accesibilidad", "Para detectar los botones de volumen con el teléfono bloqueado.", done = false),
 )
 
 private val familyNumbers = listOf(
@@ -73,11 +79,12 @@ fun SetupScreen(onContinue: () -> Unit) {
                     onClick = onContinue,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .navigationBarsPadding()
+                        // Keyboard + navigation bar: #15 adds text fields above this bar.
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
                         .padding(horizontal = MamaSpacing.screen, vertical = MamaSpacing.m),
                     contentPadding = PaddingValues(vertical = MamaSpacing.m),
                 ) {
-                    Text("Empezar", style = MaterialTheme.typography.titleMedium)
+                    Text("Empezar")
                 }
             }
         },
@@ -97,7 +104,7 @@ fun SetupScreen(onContinue: () -> Unit) {
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                     Text(
-                        text = "Si algún día estás en peligro, presionas subir-bajar-subir y Mamá te llama. " +
+                        text = "Si algún día estás en peligro, presionas volumen arriba-abajo-arriba y Mamá te llama. " +
                             "Quien esté a tu lado solo ve una llamada normal.",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -122,16 +129,18 @@ fun SetupScreen(onContinue: () -> Unit) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                 ) {
-                    familyNumbers.forEach { (name, number) ->
+                    familyNumbers.forEachIndexed { index, (name, number) ->
+                        if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         ListItem(
                             headlineContent = { Text(name) },
                             supportingContent = { Text(number) },
                             colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                         )
                     }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     TextButton(
                         onClick = {},
-                        modifier = Modifier.padding(start = MamaSpacing.s, bottom = MamaSpacing.s),
+                        modifier = Modifier.padding(horizontal = MamaSpacing.xs, vertical = MamaSpacing.xs),
                     ) { Text("Agregar otro número") }
                 }
             }
@@ -198,6 +207,10 @@ private fun SectionLabel(text: String) {
 @Composable
 private fun StepRow(number: Int, step: SetupStep) {
     ListItem(
+        // One TalkBack node per step: "Ubicación, Primero mientras..., listo".
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            stateDescription = if (step.done) "listo" else "pendiente"
+        },
         headlineContent = { Text(step.title) },
         supportingContent = { Text(step.why) },
         leadingContent = {
@@ -211,7 +224,7 @@ private fun StepRow(number: Int, step: SetupStep) {
                     if (step.done) {
                         Icon(
                             painter = painterResource(R.drawable.ic_check),
-                            contentDescription = "Listo",
+                            contentDescription = null,
                             modifier = Modifier.size(20.dp),
                         )
                     } else {
