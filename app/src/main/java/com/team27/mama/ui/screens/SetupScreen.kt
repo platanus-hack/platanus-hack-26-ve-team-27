@@ -5,6 +5,7 @@ import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -74,6 +75,7 @@ import com.team27.mama.setup.SetupStep
 import com.team27.mama.setup.SetupTask
 import com.team27.mama.setup.SetupUiState
 import com.team27.mama.setup.SetupViewModel
+import com.team27.mama.setup.StepAction
 import com.team27.mama.setup.StepStatus
 import com.team27.mama.setup.SystemScreens
 import com.team27.mama.setup.TaskStatus
@@ -190,6 +192,7 @@ fun SetupScreen(viewModel: SetupViewModel = viewModel(), onOpenSettings: (() -> 
     val activity = LocalActivity.current
     var requestedStep by rememberSaveable { mutableStateOf<SetupStep?>(null) }
     val appLabel = stringResource(R.string.app_name)
+    val openAppSettings = { context.openFirst(listOf(SystemScreens.appSettings)) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -202,6 +205,8 @@ fun SetupScreen(viewModel: SetupViewModel = viewModel(), onOpenSettings: (() -> 
         val canAskAgain = activity == null ||
             step.permissions.any { ActivityCompat.shouldShowRequestPermissionRationale(activity, it) }
         viewModel.onPermissionResult(step, granted, canAskAgain)
+        // The system no longer shows the dialog: the app settings page is the only way left.
+        if (viewModel.state.value.permissions.statusOf(step) == StepStatus.BLOCKED) openAppSettings()
     }
 
     // Back from Settings (or a permission dialog): re-read what is granted now.
@@ -210,11 +215,10 @@ fun SetupScreen(viewModel: SetupViewModel = viewModel(), onOpenSettings: (() -> 
         onPauseOrDispose {}
     }
 
-    val openAppSettings = { context.openFirst(listOf(SystemScreens.appSettings)) }
     val actions = SetupActions(
         onStepAction = { step ->
-            when {
-                step.isSystemScreen -> {
+            when (state.permissions.actionFor(step)) {
+                StepAction.SYSTEM_SCREEN -> {
                     val targets = SystemScreens.targetsFor(
                         step = step,
                         appPackage = context.packageName,
@@ -223,8 +227,8 @@ fun SetupScreen(viewModel: SetupViewModel = viewModel(), onOpenSettings: (() -> 
                     )
                     if (context.openFirst(targets)) viewModel.onSystemScreenOpened(step) else viewModel.skip(step)
                 }
-                state.permissions.statusOf(step) == StepStatus.BLOCKED -> openAppSettings()
-                else -> {
+                StepAction.APP_SETTINGS -> openAppSettings()
+                StepAction.REQUEST -> {
                     requestedStep = step
                     permissionLauncher.launch(step.permissions.toTypedArray())
                 }
@@ -273,7 +277,7 @@ private fun SetupContent(
             verticalArrangement = Arrangement.spacedBy(MamaSpacing.m),
         ) {
             when (state.phase) {
-                SetupPhase.PERMISSIONS -> PermissionsPhase(state.permissions)
+                SetupPhase.PERMISSIONS -> PermissionsPhase(state.permissions, actions.onStepAction)
                 SetupPhase.FORM -> FormPhase(state, mamaNumber, actions)
                 SetupPhase.FINISHING -> FinishingPhase(state)
                 SetupPhase.DONE -> DonePhase(state, mamaNumber)
@@ -372,7 +376,7 @@ private fun Header(title: String, body: String, pose: MamaPose) {
 }
 
 @Composable
-private fun PermissionsPhase(flow: PermissionFlow) {
+private fun PermissionsPhase(flow: PermissionFlow, onStepClick: (SetupStep) -> Unit) {
     val current = flow.current
     val currentStatus = current?.let(flow::statusOf)
     Header(
@@ -411,6 +415,8 @@ private fun PermissionsPhase(flow: PermissionFlow) {
                 number = index + 1,
                 title = copy.title,
                 supporting = supporting,
+                // Every step that is not granted opens again, whether it was shown, skipped or denied.
+                onClick = if (flow.canReopen(step)) ({ onStepClick(step) }) else null,
                 state = when (status) {
                     StepStatus.GRANTED, StepStatus.VISITED -> RowState.DONE
                     StepStatus.DENIED, StepStatus.BLOCKED -> RowState.FAILED
@@ -693,12 +699,14 @@ private enum class RowState(val spoken: String) {
 
 /** A numbered step with the UI_RULES step states: done, running, pending, failed (and skipped, shown as pending). */
 @Composable
-private fun StatusRow(number: Int, title: String, supporting: String, state: RowState) {
+private fun StatusRow(number: Int, title: String, supporting: String, state: RowState, onClick: (() -> Unit)? = null) {
     val failed = state == RowState.FAILED
     val colors = MaterialTheme.colorScheme
     ListItem(
         // One TalkBack node per step: "Ubicación, Primero mientras..., listo".
-        modifier = Modifier.semantics(mergeDescendants = true) { stateDescription = state.spoken },
+        modifier = Modifier
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .semantics(mergeDescendants = true) { stateDescription = state.spoken },
         headlineContent = { Text(title) },
         supportingContent = { Text(supporting) },
         leadingContent = {

@@ -170,4 +170,38 @@ class PermissionFlowTest {
             .refreshed { false }
         assertEquals(StepStatus.DENIED, flow.statusOf(SMS))
     }
+
+    @Test
+    fun aVisitedOrSkippedStepCanBeOpenedAgain() {
+        val flow = PermissionFlow.start(listOf(LOCATION, BATTERY, ACCESSIBILITY))
+            .afterVisit(ACCESSIBILITY)
+            .skip(BATTERY)
+            .afterRequest(LOCATION, granted = true, canAskAgain = true)
+        assertFalse(flow.canReopen(LOCATION))
+        assertTrue(flow.canReopen(BATTERY))
+        assertTrue(flow.canReopen(ACCESSIBILITY))
+        assertEquals(StepAction.SYSTEM_SCREEN, flow.actionFor(ACCESSIBILITY))
+        assertEquals(StepAction.SYSTEM_SCREEN, flow.actionFor(BATTERY))
+    }
+
+    @Test
+    fun aDeniedPermissionAsksAgainAndABlockedOneOpensAppSettings() {
+        var flow = PermissionFlow.start(listOf(MICROPHONE))
+            .afterRequest(MICROPHONE, granted = false, canAskAgain = true)
+        assertEquals(StepAction.REQUEST, flow.actionFor(MICROPHONE))
+        flow = flow.afterRequest(MICROPHONE, granted = false, canAskAgain = false)
+        assertEquals(StepAction.APP_SETTINGS, flow.actionFor(MICROPHONE))
+    }
+
+    @Test
+    fun askingAgainAfterSkippingABlockedPermissionBlocksAtOnceWhenTheSystemRefuses() {
+        var flow = PermissionFlow.start(listOf(MICROPHONE, CONTACTS))
+            .afterRequest(MICROPHONE, granted = false, canAskAgain = true)
+            .afterRequest(MICROPHONE, granted = false, canAskAgain = false)
+            .skip(MICROPHONE)
+        assertEquals(StepAction.REQUEST, flow.actionFor(MICROPHONE))
+        flow = flow.afterRequest(MICROPHONE, granted = false, canAskAgain = false)
+        assertEquals(StepStatus.BLOCKED, flow.statusOf(MICROPHONE))
+        assertEquals(StepAction.APP_SETTINGS, flow.actionFor(MICROPHONE))
+    }
 }
