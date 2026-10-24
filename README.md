@@ -55,6 +55,25 @@ The demo phones run the signed release build. The keystore and its passwords liv
 
 Signing credentials are read from, in order: the env vars `MAMA_KEYSTORE_PATH`, `MAMA_KEYSTORE_PASSWORD`, `MAMA_KEY_ALIAS` and `MAMA_KEY_PASSWORD` (when all four are set); a `keystore.properties` at the repo root (keys `storeFile`, `storePassword`, `keyAlias`, `keyPassword`); then `~/.mama-keys/keystore.properties` (only through `scripts/release.sh`). Without any of them the release build fails. It never falls back to debug signing.
 
+### Public download link (GitHub Release)
+
+The submission's deploy URL (`deploy-url` in `platanus-hack-project.jsonc`) is the APK on this repo's latest public Release:
+
+https://github.com/platanus-hack/platanus-hack-26-ve-team-27/releases/latest/download/app-release.apk
+
+The link stays the same across re-publishes: it always serves the Release marked latest. To publish, from a clean checkout of `main` at `origin/main`, with the signing credentials set up as above and `gh auth login` done:
+
+```bash
+git checkout main && git pull
+MAMA_SERVER_URL=https://<render-app>.onrender.com \
+MAMA_TWILIO_NUMBER=+1XXXXXXXXXX \
+scripts/release-apk.sh
+```
+
+`MAMA_SERVER_URL` is the Render **Live URL** (below) and `MAMA_TWILIO_NUMBER` is `TWILIO_PHONE_NUMBER` from the vault. The script builds the APK with both values baked in (first-run setup needs them), then publishes it only if every check passes: both values are set and real (https, E.164), the tree is clean and `HEAD` is `origin/main`, the APK is signed with the team certificate, both values are in its code, and it holds no keystore, env file, signing password or key-shaped string. It creates the Release `apk-<short sha>` on that commit with only `app-release.apk` attached, marks it latest, and downloads the link once to check it serves the new file. Re-running on the same commit replaces the APK. If that last download check fails, the new Release is already public and latest: open the Release page and fix it by hand. `--dry-run` builds and runs every check without publishing, also off `main`.
+
+Re-publish from `main` after the feature freeze (Sun 03:00 VET, before 05:00), then check that the latest Release's tag (`apk-<sha>`) matches `git rev-parse --short origin/main`.
+
 ### Install on the demo Xiaomi and the backup Android
 
 ```bash
