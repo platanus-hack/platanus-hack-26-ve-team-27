@@ -180,6 +180,7 @@ private class SetupActions(
     val onRetry: () -> Unit = {},
     val onEdit: () -> Unit = {},
     val onReviewPermissions: () -> Unit = {},
+    val onContinue: () -> Unit = {},
 )
 
 @Composable
@@ -237,6 +238,8 @@ fun SetupScreen(viewModel: SetupViewModel = viewModel(), onOpenSettings: (() -> 
         onRetry = viewModel::retry,
         onEdit = viewModel::edit,
         onReviewPermissions = viewModel::reviewPermissions,
+        // The app has no other home: MAMÁ works in the background, so leaving the screen is the way on.
+        onContinue = { activity?.finish() },
     )
     val mamaNumber = PhoneNumbers.normalize(BuildConfig.TWILIO_NUMBER)?.let(PhoneNumbers::display)
     SetupContent(state = state, mamaNumber = mamaNumber, actions = actions, onOpenSettings = onOpenSettings)
@@ -340,6 +343,9 @@ private fun BottomActions(state: SetupUiState, actions: SetupActions) {
                     }
                 }
                 SetupPhase.DONE -> {
+                    Button(onClick = actions.onContinue, modifier = buttonModifier, contentPadding = buttonPadding) {
+                        Text("Continuar")
+                    }
                     OutlinedButton(onClick = actions.onEdit, modifier = buttonModifier, contentPadding = buttonPadding) {
                         Text("Cambiar mis datos")
                     }
