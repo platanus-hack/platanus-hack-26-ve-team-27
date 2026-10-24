@@ -7,7 +7,10 @@ import com.team27.mama.onboarding.NetworkStatus
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -62,10 +65,14 @@ class MeshRelay(
     /** Hashes of the texts this phone broadcast itself, oldest first, at most [RelayLimits.MAX_OWN]. In memory only. */
     private val own = LinkedHashSet<String>()
 
-    /** Subscribes to the mesh and starts the upload worker on [scope]; later calls do nothing. */
+    /**
+     * Subscribes to the mesh before returning, so `relay.start(); gateway.start()` misses no
+     * early broadcast, then starts the upload worker on [scope]. Later calls do nothing.
+     */
     fun start() {
         if (!started.compareAndSet(false, true)) return
-        scope.launch { listen() }
+        // UNDISPATCHED runs up to the first suspension, the SharedFlow subscription, on this thread.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { listen() }
         scope.launch { work() }
     }
 
@@ -160,8 +167,11 @@ class MeshRelay(
         val result = try {
             uploader.upload(item.text, item.hops)
         } catch (e: CancellationException) {
-            // Rethrow cancellation explicitly; never treat it as a failed upload.
-            throw e
+            // The relay itself is being cancelled: rethrow. A stray one from the uploader is a failed try,
+            // so it never stops the worker for good.
+            currentCoroutineContext().ensureActive()
+            note(relayHash(item.text), item.hops, "upload cancelled")
+            UploadResult.Failed
         } catch (e: Exception) {
             UploadResult.Failed
         }
@@ -223,6 +233,7 @@ class MeshRelay(
     private companion object {
         /** At most [RelayLimits.MAX_TEXT_CHARS] chars and a SEAL frame with a 146-byte box. */
         fun isRelayable(text: String): Boolean =
+            // Caps parsing cost on junk. parseMesh trims whitespace, so a padded valid SEAL is the only text it alone stops (test: ignoresOversizedPaddedSeal).
             text.length <= RelayLimits.MAX_TEXT_CHARS &&
                 guard(false) { (MamaText.parseMesh(text) as? MeshFrame.Sealed)?.box?.size == RelayLimits.SEALED_BOX_BYTES }
 

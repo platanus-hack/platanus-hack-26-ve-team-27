@@ -261,7 +261,7 @@ class MeshRelayTest {
     }
 
     @Test
-    fun cancellationIsNotAFailure() = runTest {
+    fun cancellingTheScopeStopsTheRelay() = runTest {
         with(RelayTestKit()) {
             network.online = true
             uploader.behaviour = { awaitCancellation() }
@@ -272,21 +272,66 @@ class MeshRelayTest {
             val saves = store.saves
             scope.cancel()
             runCurrent()
+            // Not a failed try: nothing is saved, the item keeps attempts = 0 for the next start.
             assertEquals(saves, store.saves)
             assertEquals(0, saved()!!.pending.single().attempts)
+            assertEquals(1, r.pendingCount.value)
+            r.onNetworkAvailable()
+            advanceTimeBy(3_600_000)
+            runCurrent()
+            mesh.incoming.emit(heard(seal(2)))
+            runCurrent()
+            assertEquals(1, uploader.calls.size)
+            assertEquals(1, r.pendingCount.value)
+            assertEquals(saves, store.saves)
+        }
+    }
+
+    @Test
+    fun strayUploaderCancellationRetriesLikeFailed() = runTest {
+        with(RelayTestKit()) {
+            network.online = true
+            uploader.behaviour = { if (uploader.calls.size == 1) throw CancellationException("stray") else UploadResult.Acked(ACK) }
+            val r = relay()
+            hear(heard(seal(1)))
+            assertEquals(1, uploader.calls.size)
+            val p = saved()!!.pending.single()
+            assertEquals(1, p.attempts)
+            assertEquals(T0 + 5_000, p.nextAttemptAtMs)
+            at(4_999)
+            assertEquals(1, uploader.calls.size)
+            at(5_000)
+            assertEquals(2, uploader.calls.size)
+            assertEquals(1, r.relayedCount.value)
+            assertEquals(0, r.pendingCount.value)
+            assertEquals(listOf(ACK), mesh.sent)
+        }
+    }
+
+    @Test
+    fun startSubscribesBeforeReturning() = runTest {
+        with(RelayTestKit()) {
+            val r = MeshRelay(mesh, uploader, network, store, backgroundScope, { T0 + testScheduler.currentTime })
+            r.start()
+            // No runCurrent(): a dispatched launch would not be subscribed yet and this emit would be dropped.
+            assertEquals(1, mesh.incoming.subscriptionCount.value)
+            mesh.incoming.emit(heard(seal(1)))
+            runCurrent()
             assertEquals(1, r.pendingCount.value)
         }
     }
 
     @Test
-    fun uploaderThrowingCancellationStopsWithoutCountingAFailure() = runTest {
+    fun ignoresOversizedPaddedSeal() = runTest {
         with(RelayTestKit()) {
             network.online = true
-            uploader.behaviour = { throw CancellationException("stop") }
-            relay()
-            hear(heard(seal(1)))
-            assertEquals(1, uploader.calls.size)
-            assertEquals(0, saved()!!.pending.single().attempts)
+            val r = relay()
+            // parseMesh trims whitespace, so only the 512-char cap stops this valid-but-padded SEAL.
+            val padded = seal(1) + " ".repeat(RelayLimits.MAX_TEXT_CHARS)
+            hear(heard(padded))
+            assertTrue(uploader.calls.isEmpty())
+            assertEquals(0, r.pendingCount.value)
+            assertEquals(null, store.json)
         }
     }
 
