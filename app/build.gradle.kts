@@ -6,33 +6,44 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-// Release signing (#2): a gitignored keystore.properties at the repo root
-// (storeFile, storePassword, keyAlias, keyPassword) or the MAMA_KEYSTORE_PATH,
-// MAMA_KEYSTORE_PASSWORD, MAMA_KEY_ALIAS and MAMA_KEY_PASSWORD env vars.
+// Release signing (#2): the MAMA_KEYSTORE_PATH, MAMA_KEYSTORE_PASSWORD, MAMA_KEY_ALIAS
+// and MAMA_KEY_PASSWORD env vars (when all four are set), otherwise a gitignored
+// keystore.properties at the repo root (storeFile, storePassword, keyAlias, keyPassword).
 // Without them the release build fails; it never falls back to debug signing.
-val releaseSigning: Map<String, String>? = run {
+val signingKeys = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+val signingEnv = mapOf(
+    "storeFile" to "MAMA_KEYSTORE_PATH",
+    "storePassword" to "MAMA_KEYSTORE_PASSWORD",
+    "keyAlias" to "MAMA_KEY_ALIAS",
+    "keyPassword" to "MAMA_KEY_PASSWORD",
+)
+val releaseSigningSource: Pair<String, Map<String, String>> = run {
+    val fromEnv = signingKeys.associateWith { providers.environmentVariable(signingEnv.getValue(it)).orNull.orEmpty().trim() }
     val propsFile = rootProject.file("keystore.properties")
-    val values = if (propsFile.isFile) {
-        val props = Properties().apply { propsFile.inputStream().use { load(it) } }
-        listOf("storeFile", "storePassword", "keyAlias", "keyPassword").associateWith { props.getProperty(it).orEmpty() }
-    } else {
-        mapOf(
-            "storeFile" to providers.environmentVariable("MAMA_KEYSTORE_PATH").orNull.orEmpty(),
-            "storePassword" to providers.environmentVariable("MAMA_KEYSTORE_PASSWORD").orNull.orEmpty(),
-            "keyAlias" to providers.environmentVariable("MAMA_KEY_ALIAS").orNull.orEmpty(),
-            "keyPassword" to providers.environmentVariable("MAMA_KEY_PASSWORD").orNull.orEmpty(),
-        )
+    when {
+        fromEnv.values.all(String::isNotBlank) || !propsFile.isFile -> "env vars" to fromEnv
+        else -> {
+            val props = Properties().apply { propsFile.inputStream().use { load(it) } }
+            "keystore.properties" to signingKeys.associateWith { props.getProperty(it).orEmpty().trim() }
+        }
     }
-    values.takeIf { it.values.all(String::isNotBlank) }
 }
-val missingReleaseSigning: String? = when {
-    releaseSigning == null ->
-        "Release signing is not configured. Create keystore.properties at the repo root " +
-            "(storeFile, storePassword, keyAlias, keyPassword) or set MAMA_KEYSTORE_PATH, " +
-            "MAMA_KEYSTORE_PASSWORD, MAMA_KEY_ALIAS and MAMA_KEY_PASSWORD. See README, \"Signed release APK\"."
-    !rootProject.file(releaseSigning.getValue("storeFile")).isFile ->
-        "Release keystore not found at ${rootProject.file(releaseSigning.getValue("storeFile"))}."
-    else -> null
+val releaseSigning: Map<String, String> = releaseSigningSource.second
+val missingReleaseSigning: String? = run {
+    val (source, values) = releaseSigningSource
+    val blank = values.filterValues(String::isBlank).keys
+    when {
+        blank.isNotEmpty() -> {
+            val missing = if (source == "env vars") blank.map(signingEnv::getValue) else blank
+            "Release signing is not configured (missing in $source: ${missing.joinToString()}). " +
+                "Set MAMA_KEYSTORE_PATH, MAMA_KEYSTORE_PASSWORD, MAMA_KEY_ALIAS and MAMA_KEY_PASSWORD, " +
+                "or create keystore.properties at the repo root (storeFile, storePassword, keyAlias, keyPassword). " +
+                "See README, \"Signed release APK\"."
+        }
+        !rootProject.file(values.getValue("storeFile")).isFile ->
+            "Release keystore not found at ${rootProject.file(values.getValue("storeFile"))}."
+        else -> null
+    }
 }
 
 android {
@@ -50,7 +61,7 @@ android {
     }
 
     signingConfigs {
-        if (missingReleaseSigning == null && releaseSigning != null) {
+        if (missingReleaseSigning == null) {
             create("release") {
                 storeFile = rootProject.file(releaseSigning.getValue("storeFile"))
                 storePassword = releaseSigning.getValue("storePassword")
@@ -92,9 +103,11 @@ dependencies {
     testImplementation(libs.junit)
 }
 
-// Fail any release build without signing credentials instead of shipping an unsigned APK.
+// Fail any build that packages or installs a release artifact without signing credentials,
+// instead of shipping an unsigned APK. Release unit tests and compiles still run without them.
+val releaseArtifactTask = Regex("^(assemble|bundle|package|install|sign).*Release.*")
 gradle.taskGraph.whenReady {
-    val wantsRelease = allTasks.any { it.project.path == project.path && it.name.contains("Release") }
+    val wantsRelease = allTasks.any { it.project.path == project.path && releaseArtifactTask.matches(it.name) }
     if (wantsRelease && missingReleaseSigning != null) {
         throw GradleException(missingReleaseSigning)
     }

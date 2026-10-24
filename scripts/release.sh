@@ -2,7 +2,7 @@
 # Build the signed release APK.
 #
 # Signing credentials are resolved in this order (first match wins):
-#   1. MAMA_KEYSTORE_PATH / MAMA_KEYSTORE_PASSWORD / MAMA_KEY_ALIAS / MAMA_KEY_PASSWORD env vars
+#   1. MAMA_KEYSTORE_PATH / MAMA_KEYSTORE_PASSWORD / MAMA_KEY_ALIAS / MAMA_KEY_PASSWORD env vars (all four)
 #   2. keystore.properties at the repo root (gitignored)
 #   3. ~/.mama-keys/keystore.properties (exported as the env vars above)
 # With none of them the Gradle release build fails; it never falls back to debug signing.
@@ -27,8 +27,11 @@ if [[ -z "${MAMA_KEYSTORE_PATH:-}" && ! -f "$ROOT/keystore.properties" && -f "$H
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
     [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" != *=* ]] && continue
     key="${line%%=*}"
     value="${line#*=}"
+    key="$(printf '%s' "$key" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    value="$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
     case "$key" in
       storeFile) export MAMA_KEYSTORE_PATH="$value" ;;
       storePassword) export MAMA_KEYSTORE_PASSWORD="$value" ;;
@@ -36,6 +39,12 @@ if [[ -z "${MAMA_KEYSTORE_PATH:-}" && ! -f "$ROOT/keystore.properties" && -f "$H
       keyPassword) export MAMA_KEY_PASSWORD="$value" ;;
     esac
   done < "$HOME_PROPS"
+  # Resolve "~/..." and paths relative to ~/.mama-keys.
+  case "${MAMA_KEYSTORE_PATH:-}" in
+    "~/"*) export MAMA_KEYSTORE_PATH="$HOME/${MAMA_KEYSTORE_PATH#\~/}" ;;
+    /*|"") ;;
+    *) export MAMA_KEYSTORE_PATH="$(dirname "$HOME_PROPS")/$MAMA_KEYSTORE_PATH" ;;
+  esac
 fi
 
 ./gradlew --no-daemon :app:assembleRelease
@@ -49,7 +58,14 @@ fi
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
 APKSIGNER="$(ls -d "$SDK"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -n 1 || true)"
 if [[ -n "$APKSIGNER" ]]; then
-  "$APKSIGNER" verify --print-certs "$APK" 2>&1 | grep -E 'Signer #1 certificate (DN|SHA-256)'
+  # apksigner runs plain `java`, so put the JDK used for Gradle first on PATH.
+  if [[ -n "${JAVA_HOME:-}" ]]; then export PATH="$JAVA_HOME/bin:$PATH"; fi
+  if ! CERTS="$("$APKSIGNER" verify --print-certs "$APK" 2>&1)"; then
+    echo "$CERTS" >&2
+    echo "release: apksigner verify failed for $APK" >&2
+    exit 1
+  fi
+  printf '%s\n' "$CERTS" | grep -E 'Signer #1 certificate (DN|SHA-256)' || true
 else
   echo "release: apksigner not found under $SDK/build-tools, skipping signature check"
 fi

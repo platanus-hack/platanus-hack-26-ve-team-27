@@ -53,7 +53,7 @@ The demo phones run the signed release build. The keystore and its passwords liv
 
    It writes `app/build/outputs/apk/release/app-release.apk` and prints the signing certificate (`CN=MAMA Team 27, O=Platanus Hack 26, C=VE`).
 
-Signing credentials are read from, in order: the env vars `MAMA_KEYSTORE_PATH`, `MAMA_KEYSTORE_PASSWORD`, `MAMA_KEY_ALIAS` and `MAMA_KEY_PASSWORD`; a `keystore.properties` at the repo root (keys `storeFile`, `storePassword`, `keyAlias`, `keyPassword`); then `~/.mama-keys/keystore.properties` (only through `scripts/release.sh`). Without any of them the release build fails. It never falls back to debug signing.
+Signing credentials are read from, in order: the env vars `MAMA_KEYSTORE_PATH`, `MAMA_KEYSTORE_PASSWORD`, `MAMA_KEY_ALIAS` and `MAMA_KEY_PASSWORD` (when all four are set); a `keystore.properties` at the repo root (keys `storeFile`, `storePassword`, `keyAlias`, `keyPassword`); then `~/.mama-keys/keystore.properties` (only through `scripts/release.sh`). Without any of them the release build fails. It never falls back to debug signing.
 
 ### Install on the demo Xiaomi and the backup Android
 

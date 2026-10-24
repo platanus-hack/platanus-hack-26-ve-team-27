@@ -39,7 +39,12 @@ fi
 
 if [[ ${#SERIALS[@]} -eq 0 ]]; then
   while read -r serial state; do
-    [[ "$state" == "device" ]] && SERIALS+=("$serial")
+    [[ -z "$serial" ]] && continue
+    if [[ "$state" == "device" ]]; then
+      SERIALS+=("$serial")
+    else
+      echo "install: skipping $serial ($state). Unlock it and accept the USB debugging prompt." >&2
+    fi
   done < <("$ADB" devices | tail -n +2)
 fi
 
