@@ -19,4 +19,11 @@ class DelegatingRelayControls(
     override fun setEnabled(value: Boolean) = settings.setEnabled(value)
 }
 
+/**
+ * The settings screen's permission card: the user just [refused] the prompt, or the relay is on
+ * although a mesh permission is no longer [satisfied] (revoked in system settings).
+ */
+fun relayPermissionMissing(enabled: Boolean, satisfied: Boolean, refused: Boolean): Boolean =
+    refused || (enabled && !satisfied)
+
 fun relayedCountText(n: Int): String = if (n == 1) "Reenviaste 1 alerta" else "Reenviaste $n alertas"

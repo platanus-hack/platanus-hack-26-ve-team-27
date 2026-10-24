@@ -22,6 +22,7 @@ import com.team27.mama.emergency.EmergencyControls
 import com.team27.mama.emergency.toStatus
 import com.team27.mama.relay.MeshPermissions
 import com.team27.mama.relay.RelayControls
+import com.team27.mama.relay.relayPermissionMissing
 import com.team27.mama.ui.screens.SettingsScreen
 import com.team27.mama.ui.screens.SetupScreen
 import com.team27.mama.ui.screens.TriggerConfirmationScreen
@@ -58,26 +59,31 @@ fun MamaNavHost(
                 val context = LocalContext.current
                 val enabled by relay.enabled.collectAsState()
                 val count by relay.relayedCount.collectAsState()
-                var permissionMissing by remember { mutableStateOf(false) }
+                var refused by remember { mutableStateOf(false) }
                 val sdk = Build.VERSION.SDK_INT
                 val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
                     if (MeshPermissions.satisfied(sdk) { result[it] == true || isGranted(context, it) }) {
-                        permissionMissing = false
+                        refused = false
                         relay.setEnabled(true)
                     } else {
-                        permissionMissing = true
+                        refused = true
                     }
                 }
                 SettingsScreen(
                     enabled = enabled,
                     relayedCount = count,
-                    permissionMissing = permissionMissing,
+                    // Re-checked on each composition: a permission revoked in system settings shows the card when the screen reopens.
+                    permissionMissing = relayPermissionMissing(
+                        enabled = enabled,
+                        satisfied = MeshPermissions.satisfied(sdk) { isGranted(context, it) },
+                        refused = refused,
+                    ),
                     onEnabledChange = { on ->
                         if (!on) {
-                            permissionMissing = false
+                            refused = false
                             relay.setEnabled(false)
                         } else if (MeshPermissions.satisfied(sdk) { isGranted(context, it) }) {
-                            permissionMissing = false
+                            refused = false
                             relay.setEnabled(true)
                         } else {
                             val missing = MeshPermissions.requested(sdk).filter { !isGranted(context, it) }
