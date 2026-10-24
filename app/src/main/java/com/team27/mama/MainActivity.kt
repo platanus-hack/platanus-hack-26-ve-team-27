@@ -13,7 +13,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MamaTheme {
-                MamaNavHost()
+                MamaNavHost(emergency = (application as MamaApp).graph.emergency)
             }
         }
     }

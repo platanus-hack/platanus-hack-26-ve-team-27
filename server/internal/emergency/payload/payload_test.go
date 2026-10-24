@@ -10,6 +10,7 @@ import (
 	"math/rand/v2"
 	"reflect"
 	"testing"
+	"time"
 )
 
 // testKey derives a deterministic Ed25519 key from a label.
@@ -214,8 +215,8 @@ func TestVerifyBadPublicKeyLength(t *testing.T) {
 }
 
 func TestSignRejectsMismatchedDeviceID(t *testing.T) {
-	if _, err := Sign(devicePayload(), serverKey()); err == nil {
-		t.Fatal("expected error")
+	if _, err := Sign(devicePayload(), serverKey()); !errors.Is(err, ErrSignature) {
+		t.Fatalf("err = %v, want ErrSignature", err)
 	}
 }
 
@@ -251,6 +252,23 @@ func TestDecodersNeverPanic(t *testing.T) {
 		}
 		if _, err := VerifyAck(b, pub(serverKey())); !known(err) {
 			t.Fatalf("VerifyAck len %d: %v", len(b), err)
+		}
+	}
+}
+
+func TestLocAgeOf(t *testing.T) {
+	for _, c := range []struct {
+		age  time.Duration
+		ok   bool
+		want uint16
+	}{
+		{0, false, NoLocation},
+		{-time.Second, true, 0},
+		{12 * time.Second, true, 12},
+		{100000 * time.Second, true, 65534},
+	} {
+		if got := LocAgeOf(c.age, c.ok); got != c.want {
+			t.Errorf("LocAgeOf(%v,%v)=%d want %d", c.age, c.ok, got, c.want)
 		}
 	}
 }

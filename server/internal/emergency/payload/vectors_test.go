@@ -192,6 +192,7 @@ func buildVectors() vectorFile {
 	}
 	add("sms_flipped_signature", "sms_payload", SMSText(flip(signed, 97)), "signature")
 	add("sms_flipped_timestamp", "sms_payload", SMSText(flip(signed, 33)), "signature")
+	add("mesh_seal_no_data", "mesh_payload", "MAMA1:SEAL", "format")
 	add("sms_padded", "sms_payload", SMSPrefix+base64.URLEncoding.EncodeToString(signed), "format")
 	add("sms_newline_inside", "sms_payload", sms[:60]+"\n"+sms[60:], "format")
 	add("sms_wrong_prefix", "sms_payload", "MAMA2 "+base64.RawURLEncoding.EncodeToString(signed), "format")

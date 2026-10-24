@@ -2,6 +2,7 @@ package com.team27.mama.emergency.payload
 
 import java.security.SecureRandom
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.fail
@@ -9,6 +10,15 @@ import org.junit.Test
 
 class PayloadCodecTest {
     private fun ok() = EmergencyPayload(Kind.ALERT, 1L, 2L, 0, 1, 1, 5, 1000L)
+
+    @Test
+    fun locAgeOfClamps() {
+        assertEquals(65535, PayloadCodec.locAgeOf(null))
+        assertEquals(0, PayloadCodec.locAgeOf(-5L))
+        assertEquals(12, PayloadCodec.locAgeOf(12L))
+        assertEquals(65534, PayloadCodec.locAgeOf(65534L))
+        assertEquals(65534, PayloadCodec.locAgeOf(Long.MAX_VALUE))
+    }
 
     @Test
     fun bodyLayout() {
@@ -39,6 +49,21 @@ class PayloadCodecTest {
         assertThrows(IllegalArgumentException::class.java) { b.copy(seq = 65536) }
         assertThrows(IllegalArgumentException::class.java) { b.copy(locAgeS = 65535, latE5 = 1) }
         assertThrows(IllegalArgumentException::class.java) { b.copy(timestamp = -1) }
+    }
+
+    /** Exception text reaches logs (#59): a rejected coordinate must never appear in it. */
+    @Test
+    fun rejectedCoordinatesAreNotInTheMessage() {
+        val b = ok()
+        val messages = listOf(
+            assertThrows(IllegalArgumentException::class.java) { b.copy(latE5 = 9_123_457) }.message,
+            assertThrows(IllegalArgumentException::class.java) { b.copy(lonE5 = -18_123_457) }.message,
+            assertThrows(IllegalArgumentException::class.java) { PayloadCodec.degreesToE5(181.23457) }.message,
+        )
+        for (m in messages) {
+            assertFalse(m, m.orEmpty().contains("123457"))
+            assertFalse(m, m.orEmpty().contains("1.23457"))
+        }
     }
 
     @Test

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 )
 
 // Wire sizes and limits. All multi-byte integers are big-endian.
@@ -30,6 +31,8 @@ const (
 	AckSize = AckBodySize + SignatureSize
 	// NoLocation in loc_age_s means "no fix yet"; lat and lon are then 0.
 	NoLocation uint16 = 0xFFFF
+	// MaxLocAgeS is the largest real loc_age_s, one below NoLocation.
+	MaxLocAgeS = 65534
 	// MaxLatE5 and MaxLonE5 are the degree limits times 1e5.
 	MaxLatE5 = 9_000_000
 	MaxLonE5 = 18_000_000
@@ -38,6 +41,22 @@ const (
 	// packet, which is signed with the same Ed25519 identity key.
 	SignatureContext = "MAMA-offline-emergency-v1"
 )
+
+// LocAgeOf returns the loc_age_s for a fix that is age old: NoLocation when
+// there is no fix, otherwise the whole seconds clamped to 0..65534.
+func LocAgeOf(age time.Duration, ok bool) uint16 {
+	if !ok {
+		return NoLocation
+	}
+	s := age / time.Second
+	if s < 0 {
+		return 0
+	}
+	if s > MaxLocAgeS {
+		return MaxLocAgeS
+	}
+	return uint16(s)
+}
 
 // Kind is the message type in byte 1.
 type Kind uint8

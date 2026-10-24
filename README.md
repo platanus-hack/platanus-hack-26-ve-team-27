@@ -55,6 +55,25 @@ The demo phones run the signed release build. The keystore and its passwords liv
 
 Signing credentials are read from, in order: the env vars `MAMA_KEYSTORE_PATH`, `MAMA_KEYSTORE_PASSWORD`, `MAMA_KEY_ALIAS` and `MAMA_KEY_PASSWORD` (when all four are set); a `keystore.properties` at the repo root (keys `storeFile`, `storePassword`, `keyAlias`, `keyPassword`); then `~/.mama-keys/keystore.properties` (only through `scripts/release.sh`). Without any of them the release build fails. It never falls back to debug signing.
 
+### Public download link (GitHub Release)
+
+The submission's deploy URL (`deploy-url` in `platanus-hack-project.jsonc`) is the APK on this repo's latest public Release:
+
+https://github.com/platanus-hack/platanus-hack-26-ve-team-27/releases/latest/download/app-release.apk
+
+The link stays the same across re-publishes: it always serves the Release marked latest. To publish, from a clean checkout of `main` at `origin/main`, with the signing credentials set up as above and `gh auth login` done:
+
+```bash
+git checkout main && git pull
+MAMA_SERVER_URL=https://<render-app>.onrender.com \
+MAMA_TWILIO_NUMBER=+1XXXXXXXXXX \
+scripts/release-apk.sh
+```
+
+`MAMA_SERVER_URL` is the Render **Live URL** (below) and `MAMA_TWILIO_NUMBER` is `TWILIO_PHONE_NUMBER` from the vault. The script builds the APK with both values baked in (first-run setup needs them), then publishes it only if every check passes: both values are set and real (https, E.164), the tree is clean and `HEAD` is `origin/main`, the APK is signed with the team certificate, both values are in its code, and it holds no keystore, env file, signing password or key-shaped string. It creates the Release `apk-<short sha>` on that commit with only `app-release.apk` attached, marks it latest, and downloads the link once to check it serves the new file. Re-running on the same commit replaces the APK. If that last download check fails, the new Release is already public and latest: open the Release page and fix it by hand. `--dry-run` builds and runs every check without publishing, also off `main`.
+
+Re-publish from `main` after the feature freeze (Sun 03:00 VET, before 05:00), then check that the latest Release's tag (`apk-<sha>`) matches `git rev-parse --short origin/main`.
+
 ### Install on the demo Xiaomi and the backup Android
 
 ```bash
@@ -117,6 +136,9 @@ nothing sleeps. Every push to `main` deploys.
 | --- | --- |
 | `GET /version` | `{"commit":"<sha>"}` from `RENDER_GIT_COMMIT` (`"dev"` locally) |
 | `GET /health` | `200 {"status":"ok"}` when Postgres answers a ping within 2 s, `503` otherwise (also when `DATABASE_URL` is unset) |
+| `GET /config` | Only with `EMERGENCY_OFFLINE_ENABLED=true`. `200` with the central SMS number (when set) and the server public keys; public, no auth, no database needed (#55) |
+| `POST /emergencies` | Only with `EMERGENCY_OFFLINE_ENABLED=true`. Offline emergency over HTTP: body is the `MAMA1 ...` SMS text; `200` with the signed ack text `MAMA1:ACK:...` (#57) |
+| `POST /emergencies/relay` | Only with `EMERGENCY_OFFLINE_ENABLED=true`. Mesh relay upload: JSON `{"text":"MAMA1:SEAL:...","hops":N}`; same ack; 4xx is permanent (#57) |
 
 ### Deploy it (once)
 
@@ -153,11 +175,17 @@ the ones that are unset, never the values.
 | `ELEVENLABS_AGENT_ID` | The "Mamá" agent's `agent_id` | ElevenLabs > Agents > the agent > settings / URL |
 | `ELEVENLABS_PHONE_NUMBER_ID` | `agent_phone_number_id` of the Twilio number imported into ElevenLabs | ElevenLabs > Agents > Phone Numbers, after importing the Twilio number |
 | `ELEVENLABS_WEBHOOK_SECRET` | HMAC secret that signs the post-call webhook | ElevenLabs > Agents > Settings > Post-call webhook (shown when the webhook is created) |
+| `ELEVENLABS_VOICE_ID` | Optional. Voice that overrides the agent's on each call; the agent must allow the voice override. Set it to Mariana's cloned voice, `SnLK0h3jnPTd3J6pYcO3` (#35), a voice ID, not a secret | ElevenLabs > Voices > the voice > ID |
+| `CALL_SPIKE_TOKEN` | Optional, spike #11 only. Bearer token that turns on `POST /spike/call`; unset keeps the route off | Any random string, e.g. `openssl rand -hex 16` |
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID (`AC...`) | console.twilio.com > Account Info |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token | console.twilio.com > Account Info |
 | `TWILIO_PHONE_NUMBER` | Our Twilio number, E.164 (`+1...`); also saved as the "Mamá" contact | console.twilio.com > Phone Numbers > Active numbers |
 | `KAPSO_API_KEY` | Kapso API key (`X-API-Key` header) | Kapso dashboard > Integrations > API keys |
 | `KAPSO_PHONE_NUMBER_ID` | WhatsApp `phone_number_id` of our Kapso number | app.kapso.ai > WhatsApp > Phone numbers |
+| `EMERGENCY_OFFLINE_ENABLED` | Optional. Turns on the offline emergency channel (#55, #57): `true` or `1`; anything else or unset is off (default). Off: `GET /config` and `POST /emergencies*` answer 404 and the three `EMERGENCY_*` vars below are neither read nor required, so a Render deploy boots without them. On: they apply as described below | Set it in Render > Environment only when the channel is wanted |
+| `EMERGENCY_SMS_NUMBER` | Central SMS number the phones text when offline, E.164; served in `GET /config`; the Twilio inbound number for #58 | Twilio console > Phone Numbers (optional: unset omits it from `GET /config`) |
+| `EMERGENCY_ED25519_SEED` | Signs offline acks; standard Base64 of 32 bytes. Only read with `EMERGENCY_OFFLINE_ENABLED`. Required then in production: on Render (`RENDER` set) the server refuses to boot without it and `EMERGENCY_X25519_PRIVATE_KEY`; locally it warns and uses an ephemeral key. Changing it breaks phones until they refresh config | Generate with `openssl rand -base64 32` |
+| `EMERGENCY_X25519_PRIVATE_KEY` | Opens mesh sealed boxes; standard Base64 of 32 bytes. Required with the flag on in production, like `EMERGENCY_ED25519_SEED`; same caveat | Generate with `openssl rand -base64 32` |
 
 **On Render:** Dashboard > `mama-server` > Environment > Add Environment
 Variable, one per row above (except `DATABASE_URL` and `PORT`), then Save,
@@ -245,3 +273,7 @@ change; re-check the source before relying on one in the demo. Cells marked
 | 24-hour window | An inbound message or call from the user opens a 24 h window for free-form messages (text, location, media). Outside it, only pre-approved templates | https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-messages |
 | Meta throughput | 80 messages/s per number by default (auto-upgraded to 1,000 when eligible); messaging one user too often hits a pair rate limit | https://developers.facebook.com/docs/whatsapp/throughput |
 | Meta messaging limit | Unique users reached outside the window per rolling 24 h, per business portfolio: starts at 250, then 2,000, 10k, 100k, unlimited | https://developers.facebook.com/docs/whatsapp/messaging-limits |
+
+## License
+
+MAMÁ is licensed under GPL-3.0 (see LICENSE). The `mesh/` module contains code from bitchat-android; see mesh/NOTICE.md.

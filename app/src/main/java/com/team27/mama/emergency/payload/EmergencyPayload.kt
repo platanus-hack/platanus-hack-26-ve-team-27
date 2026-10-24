@@ -28,8 +28,8 @@ data class EmergencyPayload(
 ) {
     init {
         require(seq in 0..65535) { "seq out of range: $seq" }
-        require(latE5 in -PayloadFormat.LAT_E5_MAX..PayloadFormat.LAT_E5_MAX) { "lat out of range: $latE5" }
-        require(lonE5 in -PayloadFormat.LON_E5_MAX..PayloadFormat.LON_E5_MAX) { "lon out of range: $lonE5" }
+        require(latE5 in -PayloadFormat.LAT_E5_MAX..PayloadFormat.LAT_E5_MAX) { "lat out of range" }
+        require(lonE5 in -PayloadFormat.LON_E5_MAX..PayloadFormat.LON_E5_MAX) { "lon out of range" }
         require(locAgeS in 0..PayloadFormat.NO_LOCATION) { "loc_age_s out of range: $locAgeS" }
         require(locAgeS != PayloadFormat.NO_LOCATION || (latE5 == 0 && lonE5 == 0)) {
             "no-fix payload must have lat/lon 0"
@@ -48,6 +48,7 @@ object PayloadFormat {
     const val ACK_SIZE = 76
     const val NO_LOCATION = 0xFFFF
     const val MAX_LOC_AGE_S = 65534
+    const val PUBLIC_KEY_SIZE = 32
     const val LAT_E5_MAX = 9_000_000
     const val LON_E5_MAX = 18_000_000
     const val SIGNATURE_CONTEXT = "MAMA-offline-emergency-v1"

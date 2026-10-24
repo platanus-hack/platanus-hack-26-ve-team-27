@@ -7,6 +7,8 @@
 #   3. ~/.mama-keys/keystore.properties (exported as the env vars above)
 # With none of them the Gradle release build fails; it never falls back to debug signing.
 #
+# Extra arguments go to Gradle, e.g. scripts/release.sh -Pmama.serverUrl=https://... (see release-apk.sh).
+#
 # Output: app/build/outputs/apk/release/app-release.apk
 set -euo pipefail
 
@@ -47,7 +49,7 @@ if [[ -z "${MAMA_KEYSTORE_PATH:-}" && ! -f "$ROOT/keystore.properties" && -f "$H
   esac
 fi
 
-./gradlew --no-daemon :app:assembleRelease
+./gradlew --no-daemon :app:assembleRelease "$@"
 
 APK="$ROOT/app/build/outputs/apk/release/app-release.apk"
 if [[ ! -f "$APK" ]]; then
