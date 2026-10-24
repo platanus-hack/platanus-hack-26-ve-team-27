@@ -116,8 +116,8 @@ private val placeholderSteps = listOf(
 @Composable
 fun TriggerConfirmationScreen(
     onBack: () -> Unit,
+    onOpenProfile: () -> Unit,
     status: EmergencyStatus? = null,
-    onOpenProfile: () -> Unit = {},
 ) {
     val steps = if (status == null) placeholderSteps else listOf(status.toStep()) + placeholderSteps.drop(1)
     Scaffold(
@@ -274,13 +274,13 @@ private fun StepBadge(state: StepState) {
 @Preview(showBackground = true, heightDp = 900)
 @Composable
 private fun TriggerConfirmationScreenPreview() {
-    MamaTheme { TriggerConfirmationScreen(onBack = {}) }
+    MamaTheme { TriggerConfirmationScreen(onBack = {}, onOpenProfile = {}) }
 }
 
 @Preview(showBackground = true, heightDp = 900, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun TriggerConfirmationScreenDarkPreview() {
-    MamaTheme { TriggerConfirmationScreen(onBack = {}) }
+    MamaTheme { TriggerConfirmationScreen(onBack = {}, onOpenProfile = {}) }
 }
 
 @Preview(showBackground = true, heightDp = 900)
@@ -289,6 +289,7 @@ private fun TriggerConfirmationSearchingPreview() {
     MamaTheme {
         TriggerConfirmationScreen(
             onBack = {},
+            onOpenProfile = {},
             status = EmergencyState(
                 phase = EmergencyPhase.SEARCHING_NEARBY,
                 meshIssue = MeshIssue.UNAVAILABLE,
@@ -303,6 +304,7 @@ private fun TriggerConfirmationNotifiedPreview() {
     MamaTheme {
         TriggerConfirmationScreen(
             onBack = {},
+            onOpenProfile = {},
             status = EmergencyState(phase = EmergencyPhase.NOTIFIED).toStatus(),
         )
     }

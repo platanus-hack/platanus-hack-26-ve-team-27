@@ -23,11 +23,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -80,7 +80,7 @@ private fun ProfileContent(profile: Profile, onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 Text(
-                    text = "Así te conoce Mamá. Para cambiar algo, vuelve a la configuración.",
+                    text = "Así te conoce Mamá.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -143,10 +143,13 @@ private fun ValueRow(label: String, value: String) {
     )
 }
 
-/** A phrase stays hidden until "Ver"; an unset phrase has nothing to reveal. */
+/**
+ * A phrase stays hidden until "Ver"; an unset phrase has nothing to reveal.
+ * Plain remember, not saveable: a rotation or a restore hides it again.
+ */
 @Composable
 private fun PhraseRow(label: String, phrase: String?) {
-    var shown by rememberSaveable(label) { mutableStateOf(false) }
+    var shown by remember { mutableStateOf(false) }
     ListItem(
         overlineContent = { Text(label) },
         headlineContent = {
@@ -156,12 +159,20 @@ private fun PhraseRow(label: String, phrase: String?) {
                     shown -> phrase
                     else -> HIDDEN
                 },
+                modifier = if (phrase != null && !shown) Modifier.semantics { contentDescription = "Oculta" } else Modifier,
             )
         },
         trailingContent = if (phrase == null) {
             null
         } else {
-            { TextButton(onClick = { shown = !shown }) { Text(if (shown) "Ocultar" else "Ver") } }
+            {
+                val action = if (shown) "Ocultar" else "Ver"
+                TextButton(
+                    onClick = { shown = !shown },
+                    // Two "Ver" buttons sound the same to TalkBack; name the phrase.
+                    modifier = Modifier.semantics { contentDescription = "$action ${label.lowercase()}" },
+                ) { Text(action) }
+            }
         },
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     )
