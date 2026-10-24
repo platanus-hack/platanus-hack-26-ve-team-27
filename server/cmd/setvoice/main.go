@@ -9,7 +9,7 @@
 // Running it states that the voice's owner agreed to the clone: it records
 // voice_consent_at and the audio's SHA-256, never the audio. It reads
 // DATABASE_URL and ELEVENLABS_API_KEY (the key needs the Voices write
-// permission). The database must already have migration 0007 (the server
+// permission). The database must already have migration 0008 (the server
 // applies it on boot).
 package main
 

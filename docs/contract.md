@@ -392,7 +392,8 @@ the newest call's verdict. Sample: `notifier_message.json`.
 `incident_seals` and `call_progress` for the incident report (#76, approved
 by the Tech lead on Oct 24); `0005_device_setup.sql` adds `user_name`,
 `safe_phrase` and `voice_id` to `devices` (#104, approved by the Tech lead on
-Oct 24); `0006_notify_deliveries.sql` adds `notify_deliveries` (#76); `0007_device_voice_consent.sql` adds
+Oct 24); `0006_notify_deliveries.sql` adds `notify_deliveries` (#76); `0007_offline_incidents.sql` adds
+`offline` to the `incidents.trigger` check (#57); `0008_device_voice_consent.sql` adds
 `voice_consent_at` and `voice_consent_sha256` to `devices` (#107). The
 server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
