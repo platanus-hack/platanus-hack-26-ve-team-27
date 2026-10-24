@@ -10,6 +10,7 @@ class MamaApp : Application() {
     override fun onCreate() {
         super.onCreate()
         graph = AppGraph(this)
+        if (!graph.offlineEmergency) return
         // No startup refresh of its own: registerDefaultNetworkCallback reports
         // the current network right away, which is the first validated edge.
         ConfigRefresher({ graph.remoteConfig.refresh() }, graph.background).listen(this)

@@ -20,8 +20,14 @@ import java.util.concurrent.Executors
  * `deviceRegistrar(signer).register(...)` after [OnboardingGate.finish] returns
  * Done, with the real DeviceRegistration (phone, family numbers, duress phrase)
  * that #15's setup collects. #58/#59 read `remoteConfig.current()`.
+ *
+ * [offlineEmergency] is the build flag OFFLINE_EMERGENCY_ENABLED (default off):
+ * off, setup skips the config gate and the app never refreshes the config.
  */
-class AppGraph(context: Context) {
+class AppGraph(
+    context: Context,
+    val offlineEmergency: Boolean = BuildConfig.OFFLINE_EMERGENCY_ENABLED,
+) {
     private val app = context.applicationContext
 
     /** One background thread for config refreshes (network edges and onboarding). */

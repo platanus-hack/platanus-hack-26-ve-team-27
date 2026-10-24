@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 )
 
 func TestCheckEphemeralKeys(t *testing.T) {
@@ -41,5 +43,15 @@ func TestCheckEphemeralKeys(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// With the flag off nothing is loaded: no key is read and, on Render, its
+// absence does not exit (a fatal would end the test process).
+func TestLoadOfflineEmergencyOffNeedsNoKeys(t *testing.T) {
+	for _, onRender := range []bool{false, true} {
+		if got := loadOfflineEmergency(config.LoadFrom(func(string) string { return "" }), onRender); got != nil {
+			t.Errorf("onRender=%v: flag unset returned %+v, want nil", onRender, got)
+		}
 	}
 }
