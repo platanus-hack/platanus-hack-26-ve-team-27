@@ -4,6 +4,11 @@ import android.content.Context
 import com.team27.mama.emergency.config.RemoteConfigRepository
 import com.team27.mama.emergency.config.SharedPreferencesConfigStore
 import com.team27.mama.emergency.payload.PayloadSigner
+import com.team27.mama.emergency.sms.AndroidSmsSender
+import com.team27.mama.emergency.sms.ExecutorSmsScheduler
+import com.team27.mama.emergency.sms.SmsAckBus
+import com.team27.mama.emergency.sms.SmsAckFilter
+import com.team27.mama.emergency.sms.SmsChannel
 import com.team27.mama.onboarding.ConnectivityNetworkStatus
 import com.team27.mama.onboarding.DeviceRegistrar
 import com.team27.mama.onboarding.OnboardingGate
@@ -20,6 +25,9 @@ import java.util.concurrent.Executors
  * `deviceRegistrar(signer).register(...)` after [OnboardingGate.finish] returns
  * Done, with the real DeviceRegistration (phone, family numbers, duress phrase)
  * that #15's setup collects. #58/#59 read `remoteConfig.current()`.
+ *
+ * #59's orchestrator calls [smsChannel] when HTTP fails and there is cellular
+ * signal. It and the ack plumbing are null with the flag off.
  *
  * [offlineEmergency] is the build flag OFFLINE_EMERGENCY_ENABLED (default off):
  * off, setup skips the config gate and the app never refreshes the config.
@@ -39,6 +47,18 @@ class AppGraph(
         RemoteConfigRepository(serverApi, SharedPreferencesConfigStore(app), BuildConfig.DEFAULT_SMS_NUMBER)
 
     val onboardingGate: OnboardingGate = OnboardingGate(ConnectivityNetworkStatus(app), remoteConfig, background)
+
+    /** Verified server acks from [com.team27.mama.emergency.sms.SmsAckReceiver]. */
+    val smsAcks: SmsAckBus? = if (offlineEmergency) SmsAckBus() else null
+
+    val smsAckFilter: SmsAckFilter? = if (offlineEmergency) SmsAckFilter(remoteConfig::current) else null
+
+    /** Built on first use so the flag-off app never starts its scheduler thread. */
+    val smsChannel: SmsChannel? by lazy {
+        val acks = smsAcks ?: return@lazy null
+        val scheduler = ExecutorSmsScheduler(Executors.newSingleThreadScheduledExecutor())
+        SmsChannel(AndroidSmsSender(app, scheduler), { remoteConfig.current().smsNumber }, scheduler, acks)
+    }
 
     fun deviceRegistrar(signer: PayloadSigner): DeviceRegistrar = DeviceRegistrar(serverApi, signer)
 }

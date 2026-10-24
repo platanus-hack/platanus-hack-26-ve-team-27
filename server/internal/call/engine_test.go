@@ -84,11 +84,13 @@ func callRows(t *testing.T, pool *sql.DB) []callRow {
 // elevenLabsURL and Mariana's voice configured.
 func engineRoutes(t *testing.T, pool *sql.DB, elevenLabsURL string) (*Routes, *http.ServeMux) {
 	t.Helper()
-	rt := NewRoutes(config.ElevenLabs{
+	rt := NewRoutes(config.Config{ElevenLabs: config.ElevenLabs{
 		APIKey: "key", AgentID: "agent_1", PhoneNumberID: "phnum_1",
 		VoiceID: marianaVoiceID, WebhookSecret: "secret",
-	}, NewDBStore(pool))
+	}}, NewDBStore(pool))
 	rt.client.BaseURL = elevenLabsURL
+	rt.engine.OutcomeTimeout = 10 * time.Millisecond // no webhook comes in these tests
+	rt.engine.RetryDelay = 0
 	mux := http.NewServeMux()
 	rt.Register(mux)
 	return rt, mux
@@ -143,17 +145,19 @@ func TestStartCallInsertsTheRowBeforePlacingAndStoresTheConversation(t *testing.
 func TestStartCallMarksTheCallFailed(t *testing.T) {
 	cases := []struct {
 		name, phone, answer string
-		wantRequest         bool
+		wantRequests        int
 	}{
-		{"ElevenLabs refuses", victimPhone, `{"success":false,"message":"Twilio refused the number"}`, true},
-		{"not a +58 number", "+19005551234", `{"success":true,"conversation_id":"c","callSid":"s"}`, false},
+		// Refused twice: the first call and its one retry, then the fallback.
+		{"ElevenLabs refuses", victimPhone, `{"success":false,"message":"Twilio refused the number"}`, 2},
+		// A retry cannot fix the number: straight to the fallback.
+		{"not a +58 number", "+19005551234", `{"success":true,"conversation_id":"c","callSid":"s"}`, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := callDB(t, tc.phone)
-			requested := false
+			requests := 0
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				requested = true
+				requests++
 				_, _ = io.WriteString(w, tc.answer)
 			}))
 			t.Cleanup(srv.Close)
@@ -161,11 +165,20 @@ func TestStartCallMarksTheCallFailed(t *testing.T) {
 
 			rt.Starter().StartCall(context.Background(), sampleIncidentInput())
 
-			if requested != tc.wantRequest {
-				t.Errorf("ElevenLabs requested = %v, want %v", requested, tc.wantRequest)
+			if requests != tc.wantRequests {
+				t.Errorf("ElevenLabs requests = %d, want %d", requests, tc.wantRequests)
 			}
-			if rows := callRows(t, pool); len(rows) != 1 || rows[0].Status != StatusFailed || !rows[0].EndedAt.Valid {
-				t.Errorf("rows = %+v, want one failed row", rows)
+			rows := callRows(t, pool)
+			if want := max(tc.wantRequests, 1); len(rows) != want {
+				t.Errorf("rows = %+v, want %d", rows, want)
+			}
+			for _, r := range rows {
+				if r.Status != StatusFailed || !r.EndedAt.Valid {
+					t.Errorf("row %+v, want failed with ended_at", r)
+				}
+			}
+			if p := rt.fallback.pending(); len(p) != 1 || p[0].ID != sampleIncident {
+				t.Errorf("fallback pending = %+v, want the incident", p)
 			}
 		})
 	}
@@ -355,7 +368,7 @@ func TestWebhookAnswers500WhenStoringFails(t *testing.T) {
 }
 
 func TestStarterWithoutADatabaseOnlyLogs(t *testing.T) {
-	if _, ok := NewRoutes(config.ElevenLabs{}, nil).Starter().(intake.LogHandoff); !ok {
+	if _, ok := NewRoutes(config.Config{}, nil).Starter().(intake.LogHandoff); !ok {
 		t.Error("Starter without a store is not intake.LogHandoff")
 	}
 }

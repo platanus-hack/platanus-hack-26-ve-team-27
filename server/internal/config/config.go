@@ -24,6 +24,10 @@ type Config struct {
 	Port        string // PORT
 	DatabaseURL string // DATABASE_URL
 	Notifier    string // NOTIFIER, lowercased; NotifierKapso when unset
+	// PublicURL is PUBLIC_URL, else Render's RENDER_EXTERNAL_URL: the
+	// server's public base URL, optional. Log lines that point the operator
+	// at a page (the call fallback) use it; blank logs the bare path.
+	PublicURL string
 
 	ElevenLabs ElevenLabs
 	Twilio     Twilio
@@ -47,13 +51,24 @@ type ElevenLabs struct {
 	// #11 spike route POST /spike/call. Blank leaves the route off, so a
 	// deploy never exposes an open "call any number" endpoint.
 	CallSpikeToken string
+	// ForceCallFailure is CALL_FORCE_FAILURE, "true" or "1": every call
+	// fails without dialing, so the retry and the WebRTC fallback can be
+	// rehearsed (#23). Off by default.
+	ForceCallFailure bool
 }
 
-// Twilio owns the caller number and sends the SMS fallback.
+// Twilio owns the caller number, sends the SMS fallback and receives the
+// offline emergency texts (#58).
 type Twilio struct {
 	AccountSID  string // TWILIO_ACCOUNT_SID, AC...
-	AuthToken   string // TWILIO_AUTH_TOKEN
+	AuthToken   string // TWILIO_AUTH_TOKEN, also the key of X-Twilio-Signature
 	PhoneNumber string // TWILIO_PHONE_NUMBER, E.164, e.g. +1...
+	// WebhookBaseURL is TWILIO_WEBHOOK_BASE_URL, optional: the public origin
+	// Twilio posts the inbound SMS webhook to (e.g. https://mama.example.com),
+	// which the signature covers. Write it exactly as in the Twilio console,
+	// without a default port (:443): the signed URL must match byte for byte.
+	// Blank leaves POST /sms/inbound/twilio off.
+	WebhookBaseURL string
 }
 
 // Kapso sends the WhatsApp alert to the family.
@@ -93,18 +108,21 @@ func LoadFrom(getenv func(string) string) Config {
 		Port:        get("PORT"),
 		DatabaseURL: get("DATABASE_URL"),
 		Notifier:    strings.ToLower(get("NOTIFIER")),
+		PublicURL:   get("PUBLIC_URL"),
 		ElevenLabs: ElevenLabs{
-			APIKey:         get("ELEVENLABS_API_KEY"),
-			AgentID:        get("ELEVENLABS_AGENT_ID"),
-			PhoneNumberID:  get("ELEVENLABS_PHONE_NUMBER_ID"),
-			WebhookSecret:  get("ELEVENLABS_WEBHOOK_SECRET"),
-			VoiceID:        get("ELEVENLABS_VOICE_ID"),
-			CallSpikeToken: get("CALL_SPIKE_TOKEN"),
+			APIKey:           get("ELEVENLABS_API_KEY"),
+			AgentID:          get("ELEVENLABS_AGENT_ID"),
+			PhoneNumberID:    get("ELEVENLABS_PHONE_NUMBER_ID"),
+			WebhookSecret:    get("ELEVENLABS_WEBHOOK_SECRET"),
+			VoiceID:          get("ELEVENLABS_VOICE_ID"),
+			CallSpikeToken:   get("CALL_SPIKE_TOKEN"),
+			ForceCallFailure: isOn(get("CALL_FORCE_FAILURE")),
 		},
 		Twilio: Twilio{
-			AccountSID:  get("TWILIO_ACCOUNT_SID"),
-			AuthToken:   get("TWILIO_AUTH_TOKEN"),
-			PhoneNumber: get("TWILIO_PHONE_NUMBER"),
+			AccountSID:     get("TWILIO_ACCOUNT_SID"),
+			AuthToken:      get("TWILIO_AUTH_TOKEN"),
+			PhoneNumber:    get("TWILIO_PHONE_NUMBER"),
+			WebhookBaseURL: get("TWILIO_WEBHOOK_BASE_URL"),
 		},
 		Kapso: Kapso{
 			APIKey:        get("KAPSO_API_KEY"),
@@ -127,6 +145,9 @@ func LoadFrom(getenv func(string) string) Config {
 	if c.Notifier == "" {
 		c.Notifier = NotifierKapso
 	}
+	if c.PublicURL == "" {
+		c.PublicURL = get("RENDER_EXTERNAL_URL")
+	}
 	return c
 }
 
@@ -136,7 +157,8 @@ func isOn(v string) bool { return v == "1" || strings.EqualFold(v, "true") }
 
 // vars lists every env var name with its value, in a fixed order. PORT and
 // NOTIFIER are left out because they always have a value, DURESS_LLM_MODEL,
-// ELEVENLABS_VOICE_ID and CALL_SPIKE_TOKEN because they are optional.
+// ELEVENLABS_VOICE_ID, CALL_SPIKE_TOKEN and TWILIO_WEBHOOK_BASE_URL because
+// they are optional.
 func (c Config) vars() []struct{ name, value string } {
 	return append([]struct{ name, value string }{
 		{"DATABASE_URL", c.DatabaseURL},
