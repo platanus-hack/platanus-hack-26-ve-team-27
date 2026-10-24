@@ -30,7 +30,10 @@ class SmsAckFilter(private val config: () -> EmergencyConfig) {
     }
 }
 
-/** In-process hand-off from [SmsAckReceiver] to [SmsChannel]. Listeners run on the poster's thread. */
+/**
+ * In-process hand-off from [SmsAckReceiver] to [SmsChannel] ([subscribe], the [AckInfo]) and to
+ * #59's [SmsChannelAdapter] ([subscribeTexts], the verified body). Listeners run on the poster's thread.
+ */
 class SmsAckBus {
     private val listeners = CopyOnWriteArrayList<(AckInfo) -> Unit>()
     private val textListeners = CopyOnWriteArrayList<(String) -> Unit>()

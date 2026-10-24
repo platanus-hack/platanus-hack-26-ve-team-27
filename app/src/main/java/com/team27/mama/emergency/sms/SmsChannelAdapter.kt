@@ -56,9 +56,12 @@ class SmsChannelAdapter(
                 SmsOutcome.Cancelled, SmsOutcome.Superseded, SmsOutcome.NoNumber -> false
             }
         } finally {
-            val last = synchronized(lock) { --joined.waiters == 0 }
-            // A no-op once the emission ended; otherwise the last waiter was cancelled.
-            if (last) joined.emission.cancel()
+            synchronized(lock) {
+                // Under the lock, so a send() of the same text cannot join an emission being cancelled.
+                // A no-op once the emission ended; otherwise the last waiter was cancelled.
+                // Safe: #58's finish never takes this lock.
+                if (--joined.waiters == 0) joined.emission.cancel()
+            }
         }
     }
 
