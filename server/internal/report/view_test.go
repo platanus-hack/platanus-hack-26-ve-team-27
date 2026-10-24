@@ -2,7 +2,9 @@ package report
 
 import (
 	"context"
+	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -282,7 +284,14 @@ func TestRouteDrawsThePathInsideTheBox(t *testing.T) {
 		t.Error("a single point draws a route")
 	}
 	same := []Point{{Lat: 1, Lng: 1}, {Lat: 1, Lng: 1}}
-	if r := route(same); r == nil || r.StartX != "160.0" || r.StartY != "90.0" {
+	if r := route(same); r == nil || r.StartX != "160.0" || r.StartY != "90.0" || r.DistanceKM != "0 m" {
 		t.Errorf("equal points = %+v, want centered", r)
+	}
+	// 16 m of GPS jitter stays small: well under a tenth of the box.
+	jitter := route([]Point{{Lat: 10.4806, Lng: -66.9036}, {Lat: 10.4807, Lng: -66.9035}})
+	sx, _ := strconv.ParseFloat(jitter.StartX, 64)
+	ex, _ := strconv.ParseFloat(jitter.EndX, 64)
+	if math.Abs(ex-sx) > 32 || jitter.DistanceKM != "16 m" {
+		t.Errorf("jitter route = %+v, want a short line and 16 m", jitter)
 	}
 }

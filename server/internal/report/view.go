@@ -482,29 +482,34 @@ type Route struct {
 	DistanceKM string
 }
 
-// route projects the points onto a 320x180 box (equirectangular, fine at a
-// city's scale). nil with fewer than two points.
+// minRouteSpanM is the smallest span the route box shows, so GPS jitter of a
+// few meters is drawn as the small thing it is, not across the whole box.
+const minRouteSpanM = 200.0
+
+// route projects the points onto a 320x180 box (equirectangular meters,
+// fine at a city's scale), at least minRouteSpanM across. nil with fewer
+// than two points.
 func route(points []Point) *Route {
 	if len(points) < 2 {
 		return nil
 	}
 	const w, h, pad = 320.0, 180.0, 14.0
+	const mPerDegLat = 110540.0
 	meanLat := 0.0
 	for _, p := range points {
 		meanLat += p.Lat
 	}
 	meanLat /= float64(len(points))
-	k := math.Cos(meanLat * math.Pi / 180)
+	mPerDegLng := 111320.0 * math.Cos(meanLat*math.Pi/180)
 	minX, maxX, minY, maxY := math.Inf(1), math.Inf(-1), math.Inf(1), math.Inf(-1)
 	xy := make([][2]float64, len(points))
 	for i, p := range points {
-		x, y := p.Lng*k, -p.Lat
+		x, y := p.Lng*mPerDegLng, -p.Lat*mPerDegLat
 		xy[i] = [2]float64{x, y}
 		minX, maxX = math.Min(minX, x), math.Max(maxX, x)
 		minY, maxY = math.Min(minY, y), math.Max(maxY, y)
 	}
-	// A zero extent (all points equal on an axis) centers them on that axis.
-	scale := math.Min((w-2*pad)/math.Max(maxX-minX, 1e-12), (h-2*pad)/math.Max(maxY-minY, 1e-12))
+	scale := math.Min((w-2*pad)/math.Max(maxX-minX, minRouteSpanM), (h-2*pad)/math.Max(maxY-minY, minRouteSpanM))
 	offX := (w - (maxX-minX)*scale) / 2
 	offY := (h - (maxY-minY)*scale) / 2
 	f := func(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
@@ -520,12 +525,13 @@ func route(points []Point) *Route {
 	}
 	return &Route{
 		Path: strings.Join(path, " "), StartX: f(sx), StartY: f(sy), EndX: f(ex), EndY: f(ey),
-		Width: int(w), Height: int(h), DistanceKM: km(points),
+		Width: int(w), Height: int(h), DistanceKM: distance(points),
 	}
 }
 
-// km is the path length (haversine), "0,4 km".
-func km(points []Point) string {
+// distance is the path length (haversine): "15 m" under a kilometer, else
+// "1,4 km".
+func distance(points []Point) string {
 	const earth = 6371.0
 	total := 0.0
 	for i := 1; i < len(points); i++ {
@@ -534,6 +540,9 @@ func km(points []Point) string {
 		dLat, dLng := la2-la1, (b.Lng-a.Lng)*math.Pi/180
 		h := math.Sin(dLat/2)*math.Sin(dLat/2) + math.Cos(la1)*math.Cos(la2)*math.Sin(dLng/2)*math.Sin(dLng/2)
 		total += 2 * earth * math.Asin(math.Min(1, math.Sqrt(h)))
+	}
+	if total < 1 {
+		return fmt.Sprintf("%.0f m", total*1000)
 	}
 	return decimal(total, 1) + " km"
 }

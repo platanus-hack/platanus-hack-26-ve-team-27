@@ -51,8 +51,8 @@
 
 <section id="linea" aria-labelledby="h-linea">
   <h2 id="h-linea">Línea de tiempo</h2>
-  <p class="hint">Cada hora dice de qué reloj viene. El del teléfono, el del servidor y el de ElevenLabs (la llamada) pueden no coincidir.</p>
-  <p class="legend" aria-hidden="true"><span class="clock clock-phone">teléfono</span><span class="clock clock-server">servidor</span><span class="clock clock-elevenlabs">ElevenLabs</span></p>
+  <p class="hint">Cada hora dice de qué reloj viene: {{if .Calls}}el del teléfono, el del servidor o el de ElevenLabs (la llamada){{else}}el del teléfono o el del servidor{{end}}. Pueden no coincidir.</p>
+  <p class="legend" aria-hidden="true"><span class="clock clock-phone">teléfono</span><span class="clock clock-server">servidor</span>{{if .Calls}}<span class="clock clock-elevenlabs">ElevenLabs</span>{{end}}</p>
   <ol class="timeline">
   {{- range .Timeline}}
     <li class="ev ev-{{.Kind}}{{if .Error}} ev-error{{end}}">
