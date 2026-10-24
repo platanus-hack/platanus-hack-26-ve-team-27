@@ -80,7 +80,7 @@ func TestLoadUsesProcessEnv(t *testing.T) {
 }
 
 func TestFormattingNeverPrintsValues(t *testing.T) {
-	const secret = "planted-secret-value-123"
+	const secret = "planted-secret-value-123" // secret-scan:allow (test fixture)
 	env := map[string]string{}
 	for _, name := range allVars {
 		env[name] = secret

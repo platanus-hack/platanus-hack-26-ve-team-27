@@ -25,11 +25,11 @@ PLACEHOLDER='your[_-]|example|placeholder|changeme|change[_-]me|replace[_-]?me|d
 
 # Rules: name|grep-flags|placeholder-filter(y/n)|extended regex
 RULES=(
-  "elevenlabs-api-key|-E|n|sk_[0-9a-f]{40,64}"
+  "elevenlabs-api-key|-E|n|sk_[0-9a-f]{32,}"
   "twilio-account-sid|-E|n|AC[0-9a-f]{32}"
   "twilio-api-key-sid|-E|n|SK[0-9a-f]{32}"
   "twilio-auth-token|-iE|y|auth_?token[a-z0-9_\"']*[[:space:]]*(:=|=|:)[[:space:]]*[\"']?[0-9a-f]{32}"
-  "kapso-api-key|-iE|y|kapso[a-z0-9_]*(api_?key|key|token|secret)[a-z0-9_\"']*[[:space:]]*(:=|=|:)[[:space:]]*[\"']?[A-Za-z0-9_.-]{16,}"
+  "service-key-assignment|-iE|y|(elevenlabs|kapso|twilio)[a-z0-9_-]*(api_?key|key|token|secret)[a-z0-9_\"']*[[:space:]]*(=[[:space:]]*[\"']?|(:=|:)[[:space:]]*[\"'])[A-Za-z0-9_-]{16,}"
   "openai-anthropic-key|-E|n|sk-(ant-|proj-|svcacct-)?[A-Za-z0-9_-]{32,}"
   "aws-access-key-id|-E|n|(AKIA|ASIA)[0-9A-Z]{16}"
   "private-key-block|-E|n|-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY( BLOCK)?-----"
