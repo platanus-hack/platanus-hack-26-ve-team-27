@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/call"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
 )
 
@@ -13,7 +15,7 @@ import (
 // /health must answer 503, not panic on a nil *sql.DB.
 func TestDeployRoutesWithoutDatabase(t *testing.T) {
 	t.Setenv("RENDER_GIT_COMMIT", "abc123")
-	mux := newMux(openAndMigrate(""), intake.LogHandoff{})
+	mux := newMux(openAndMigrate(""), intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}, nil), testOffline(t))
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))

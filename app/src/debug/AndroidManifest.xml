@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug builds only: allow plain HTTP so the app reaches a laptop's local server
+  (the default SERVER_URL, http://127.0.0.1:8080 after `adb reverse tcp:8080 tcp:8080`).
+  Release builds keep Android's default and need an https:// mama.serverUrl.
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <application>
+    <application android:usesCleartextTraffic="true">
         <!-- Debug builds only: drives the BLE mesh from adb for the two-phone test.
              DUMP is held by the adb shell but cannot be granted to other apps. -->
         <receiver

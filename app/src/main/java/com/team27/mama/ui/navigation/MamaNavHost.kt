@@ -22,12 +22,8 @@ fun MamaNavHost(
 ) {
     NavHost(navController = navController, startDestination = startRoute.path) {
         composable(Route.Setup.path) {
-            SetupScreen(
-                // launchSingleTop: a double tap must not push the screen twice.
-                onContinue = {
-                    navController.navigate(Route.TriggerConfirmation.path) { launchSingleTop = true }
-                },
-            )
+            // First-run setup (#15). A finished setup opens on its "done" state.
+            SetupScreen()
         }
         composable(Route.TriggerConfirmation.path) {
             TriggerConfirmationScreen(
