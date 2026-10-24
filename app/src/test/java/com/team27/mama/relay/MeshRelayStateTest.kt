@@ -208,6 +208,99 @@ class MeshRelayStateTest {
     }
 
     @Test
+    fun deliveryAfterSeenEvictionKeepsItsSeenEntry() = runTest {
+        val target = distinct(1_000)
+        val first = RelayTestKit()
+        with(first) {
+            network.online = true
+            var deliver = false
+            uploader.behaviour = { t ->
+                when {
+                    t != target -> UploadResult.Acked(ACK)
+                    deliver -> UploadResult.Acked(otherAck)
+                    else -> UploadResult.Failed
+                }
+            }
+            val scope = CoroutineScope(backgroundScope.coroutineContext + Job())
+            val r = relay(scope)
+            hear(heard(target))
+            // 501 other texts are delivered while the target waits for its retry at 5 s.
+            for (n in 0..500) {
+                at(1L + n)
+                hear(heard(distinct(n)))
+            }
+            assertEquals(1, r.pendingCount.value)
+            assertFalse(relayHash(target) in saved()!!.seen.map { it.hash })
+            deliver = true
+            at(5_000)
+            assertEquals(502, r.relayedCount.value)
+            assertTrue(relayHash(target) in saved()!!.seen.map { it.hash })
+            at(20_000)
+            hear(heard(target))
+            assertEquals(2, uploader.calls.count { it.first == target })
+            assertEquals(502, r.relayedCount.value)
+            assertEquals(2, mesh.sent.count { it == otherAck })
+            scope.cancel()
+            runCurrent()
+        }
+        // After a restart sorts the seen-set by time, the next new text must not evict the delivery's entry.
+        with(RelayTestKit(first.store)) {
+            network.online = true
+            val r = relay()
+            hear(heard(distinct(2_000)))
+            at(40_000)
+            hear(heard(target))
+            assertTrue(uploader.calls.none { it.first == target })
+            assertEquals(503, r.relayedCount.value)
+            assertEquals(listOf(ACK, otherAck), mesh.sent)
+        }
+    }
+
+    @Test
+    fun reheardPendingTextTakesNoSecondSlot() = runTest {
+        with(RelayTestKit()) {
+            val target = distinct(1_000)
+            network.online = true
+            uploader.behaviour = { t -> if (t == target) UploadResult.Failed else UploadResult.Acked(ACK) }
+            val r = relay()
+            hear(heard(target))
+            for (n in 0..500) {
+                at(1L + n)
+                hear(heard(distinct(n)))
+            }
+            assertFalse(relayHash(target) in saved()!!.seen.map { it.hash })
+            at(1_000)
+            hear(heard(target))
+            assertEquals(1, r.pendingCount.value)
+            assertEquals(1, saved()!!.pending.count { it.text == target })
+            assertEquals(1, uploader.calls.count { it.first == target })
+        }
+    }
+
+    @Test
+    fun newEntryStampedEarlierIsKeptWhenFull() = runTest {
+        with(RelayTestKit()) {
+            var clock = T0 + 1_000_000
+            val r = MeshRelay(mesh, uploader, network, store, backgroundScope, { clock })
+            r.start()
+            runCurrent()
+            // Offline: the queue fills to 100 and the seen-set to 500.
+            for (n in 0..499) hear(heard(distinct(n)))
+            // The clock steps back: the next text is stamped earlier than everything kept.
+            clock = T0
+            hear(heard(distinct(500)))
+            val s = saved()!!
+            assertEquals(100, s.pending.size)
+            assertEquals(distinct(500), s.pending.last().text)
+            assertFalse(s.pending.any { it.text == distinct(400) })
+            val seen = s.seen.map { it.hash }
+            assertEquals(500, seen.size)
+            assertTrue(relayHash(distinct(500)) in seen)
+            assertFalse(relayHash(distinct(0)) in seen)
+        }
+    }
+
+    @Test
     fun corruptOrOldStoreStartsEmpty() = runTest {
         for (json in listOf("{", "null", """{"v":2,"pending":[],"seen":[],"relayedCount":9}""")) {
             with(RelayTestKit()) {

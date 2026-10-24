@@ -99,15 +99,20 @@ class MeshRelay(
     private fun isOwn(hash: String): Boolean = synchronized(ownLock) { hash in own }
 
     /**
-     * Loads the stored snapshot, ordered and capped, and drops what expired while the relay was
-     * down. A missing, unparseable or other-version store starts empty and is left as it is
-     * until the next change overwrites it.
+     * Loads the stored snapshot, ordered by timestamp and capped, and drops what expired while
+     * the relay was down. A missing, unparseable or other-version store starts empty and is
+     * left as it is until the next change overwrites it.
+     *
+     * Runs on the thread that calls [start], inside the UNDISPATCHED launch, before any other
+     * coroutine on [scope] touches the snapshot. The worker and every later collector step run
+     * after a dispatch onto [scope], and that hand-off gives them a happens-before on the
+     * snapshot written here, so no lock is needed.
      */
     private fun restore() {
         val loaded = guard(null) { store.load()?.let { RelayJson.decodeFromString(RelaySnapshot.serializer(), it) } }
             ?.takeIf { it.v == RelaySnapshot().v }
             ?: RelaySnapshot()
-        val restored = pruned(loaded.copy(pending = capPending(loaded.pending), seen = capSeen(loaded.seen)), nowMs())
+        val restored = pruned(loaded.copy(pending = loadedPending(loaded.pending), seen = loadedSeen(loaded.seen)), nowMs())
         if (restored == loaded) show(restored) else commit(restored)
         wake.trySend(Unit)
     }
@@ -141,11 +146,13 @@ class MeshRelay(
         prune(now)
         val known = snapshot.seen.firstOrNull { it.hash == hash }
         if (known != null) return repeatAck(known, broadcast.relayHops, now)
+        // Still queued although its seen entry was evicted: one slot per text.
+        if (snapshot.pending.any { it.text == text }) return
         val hops = broadcast.relayHops
         commit(
             snapshot.copy(
-                pending = capPending(snapshot.pending + PendingUpload(text, hops, now, nextAttemptAtMs = now)),
-                seen = capSeen(snapshot.seen + SeenText(hash, now)),
+                pending = appended(snapshot.pending, PendingUpload(text, hops, now, nextAttemptAtMs = now), RelayLimits.MAX_PENDING),
+                seen = appended(snapshot.seen, SeenText(hash, now), RelayLimits.MAX_SEEN),
             ),
         )
         note(hash, hops, "queued")
@@ -221,7 +228,12 @@ class MeshRelay(
         }
     }
 
-    /** Applies even when the item left the queue during the upload: the server has it. */
+    /**
+     * Applies even when the item left the queue during the upload: the server has it. A seen
+     * entry evicted while the item waited is re-added as the newest, stamped [now], so neither
+     * this cap nor a later one (after a restart sorts by time) drops it before the next text:
+     * the delivery must keep a seen record, or the emitter's repeat would upload it again.
+     */
     private fun delivered(item: PendingUpload, ack: String, now: Long) {
         val hash = relayHash(item.text)
         val sent = broadcast(ack)
@@ -229,7 +241,7 @@ class MeshRelay(
         val seen = if (known) {
             snapshot.seen.map { if (it.hash == hash) it.copy(ackText = ack, lastAckBroadcastAtMs = if (sent) now else it.lastAckBroadcastAtMs) else it }
         } else {
-            capSeen(snapshot.seen + SeenText(hash, item.heardAtMs, ack, if (sent) now else 0L))
+            appended(snapshot.seen, SeenText(hash, now, ack, if (sent) now else 0L), RelayLimits.MAX_SEEN)
         }
         commit(
             snapshot.copy(
@@ -277,13 +289,20 @@ class MeshRelay(
         /** A clock that went backwards never expires an entry early. */
         fun isExpired(atMs: Long, now: Long): Boolean = now - atMs >= RelayTiming.ENTRY_TTL_MS
 
-        /** Oldest heard first, at most [RelayLimits.MAX_PENDING]: when full, the oldest heard is dropped. */
-        fun capPending(items: List<PendingUpload>): List<PendingUpload> =
+        /** A loaded queue, oldest heard first, at most [RelayLimits.MAX_PENDING]: the oldest heard are dropped. */
+        fun loadedPending(items: List<PendingUpload>): List<PendingUpload> =
             items.sortedBy { it.heardAtMs }.takeLast(RelayLimits.MAX_PENDING)
 
-        /** Oldest first seen first, at most [RelayLimits.MAX_SEEN]: when full, the oldest first seen is evicted. */
-        fun capSeen(entries: List<SeenText>): List<SeenText> =
+        /** A loaded seen-set, oldest first seen first, at most [RelayLimits.MAX_SEEN]: the oldest first seen are evicted. */
+        fun loadedSeen(entries: List<SeenText>): List<SeenText> =
             entries.sortedBy { it.firstSeenAtMs }.takeLast(RelayLimits.MAX_SEEN)
+
+        /**
+         * [list] with [entry] added last, keeping the newest [max] by arrival: the earliest added
+         * go first. A new entry is never dropped on arrival, even stamped earlier than the rest
+         * after the clock stepped back.
+         */
+        fun <T> appended(list: List<T>, entry: T, max: Int): List<T> = (list + entry).takeLast(max)
 
         /** At most [RelayLimits.MAX_TEXT_CHARS] chars and a SEAL frame with a 146-byte box. */
         fun isRelayable(text: String): Boolean =
