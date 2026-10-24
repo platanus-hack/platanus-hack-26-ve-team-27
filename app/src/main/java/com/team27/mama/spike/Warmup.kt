@@ -29,6 +29,7 @@ object Warmup {
         if (now - lastAt < MIN_INTERVAL_MS) return
         lastAt = now
         val app = context.applicationContext
+        Cellular.request(app)
         warmGps(app)
         executor.execute {
             val (status, ms) = SpikeHttp.warm(BuildConfig.SERVER_URL) { SpikeLog.log(app, "warm $it") }

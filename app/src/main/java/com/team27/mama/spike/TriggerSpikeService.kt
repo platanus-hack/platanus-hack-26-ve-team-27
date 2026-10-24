@@ -57,6 +57,8 @@ class TriggerSpikeService : Service() {
         // The widget's PendingIntent has no detection time: its clock starts here.
         val detectedAt = intent?.getLongExtra(EXTRA_DETECTED_AT, -1L)?.takeIf { it > 0 } ?: startedAt
         val fgs = goForeground()
+        // The widget path has no warm-up press; bring mobile data up here too.
+        Cellular.request(this)
         SpikeLog.log(this, "service start trigger=$trigger fgs=$fgs sinceTriggerMs=${startedAt - detectedAt}")
         if (fgs == "none") {
             // Android would kill the app for a started-but-never-foreground service.
@@ -135,10 +137,33 @@ class TriggerSpikeService : Service() {
         } else {
             val body = SpikeEvents.alertBody(incidentId, deviceId, trigger, triggeredAtMs, first.toPoint())
             val sinceTrigger = SystemClock.elapsedRealtime() - detectedAt
-            val (status, ms) = post(SpikeEvents.incidentsUrl(base), body, sinceTrigger)
+            // Same body (same incident_id) on mobile data if the default network is slow.
+            val headers = mapOf("X-Spike-Since-Trigger-Ms" to sinceTrigger.toString())
+            val bytes = body.toByteArray(Charsets.UTF_8)
+            val result = hedged(
+                scope,
+                HEDGE_AFTER_MS,
+                primary = { post(SpikeEvents.incidentsUrl(base), body, sinceTrigger) },
+                backup = {
+                    // Read at hedge time: mobile data may still be coming up when the alert starts.
+                    val cell = withTimeoutOrNull(CELLULAR_WAIT_MS) {
+                        while (Cellular.network == null) delay(100)
+                        Cellular.network
+                    }
+                    if (cell == null) {
+                        SpikeLog.log(this@TriggerSpikeService, "no cellular network for the hedge")
+                        -1 to 0L
+                    } else {
+                        SpikeHttp.post(SpikeEvents.incidentsUrl(base), bytes, JSON, headers + ("X-Spike-Path" to "cellular"), cell) {
+                            SpikeLog.log(this@TriggerSpikeService, "cellular post $it")
+                        }
+                    }
+                },
+            )
+            val (status, ms) = result.status to result.ms
             SpikeLog.log(
                 this@TriggerSpikeService,
-                "alert $incidentId trigger=$trigger status=$status sinceTriggerAtSendMs=$sinceTrigger postMs=$ms " +
+                "alert $incidentId trigger=$trigger status=$status via=${result.winner} sinceTriggerAtSendMs=$sinceTrigger postMs=$ms " +
                     "fix=${first.provider} choice=$firstChoice ageMs=${ageMs(first)} acc=${first.accuracy}",
             )
         }
@@ -277,7 +302,7 @@ class TriggerSpikeService : Service() {
         SpikeHttp.post(
             url,
             body.toByteArray(Charsets.UTF_8),
-            "application/json; charset=utf-8",
+            JSON,
             mapOf("X-Spike-Since-Trigger-Ms" to sinceTriggerMs.toString()),
         ) { SpikeLog.log(this, "post $it") }
 
@@ -287,6 +312,9 @@ class TriggerSpikeService : Service() {
         private const val FIX_TIMEOUT_MS = 30_000L
         private const val FIRST_FIX_WAIT_MS = 1_000L
         private const val PRECISE_WAIT_MS = 10_000L
+        private const val HEDGE_AFTER_MS = 1_500L
+        private const val CELLULAR_WAIT_MS = 3_000L
+        private const val JSON = "application/json; charset=utf-8"
         private const val EXTRA_TRIGGER = "trigger"
         private const val EXTRA_DETECTED_AT = "detected_at_elapsed"
 

@@ -71,6 +71,7 @@ func record(f *os.File, reply func(http.ResponseWriter, []byte)) http.HandlerFun
 			"received_at":          received.Format(time.RFC3339Nano),
 			"path":                 r.URL.Path,
 			"since_trigger_ms_hdr": r.Header.Get("X-Spike-Since-Trigger-Ms"),
+			"via":                  r.Header.Get("X-Spike-Path"),
 		}
 		var parsed map[string]any
 		if json.Unmarshal(body, &parsed) == nil {

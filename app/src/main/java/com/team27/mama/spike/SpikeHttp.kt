@@ -1,5 +1,6 @@
 package com.team27.mama.spike
 
+import android.net.Network
 import android.os.SystemClock
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -19,8 +20,9 @@ object SpikeHttp {
         body: ByteArray,
         contentType: String,
         headers: Map<String, String> = emptyMap(),
+        network: Network? = null,
         onError: (String) -> Unit = {},
-    ): Pair<Int, Long> = call(url, onError) { connection ->
+    ): Pair<Int, Long> = call(url, network, onError) { connection ->
         connection.requestMethod = "POST"
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", contentType)
@@ -31,12 +33,13 @@ object SpikeHttp {
 
     /** GET on the base URL (the real server answers `GET /`), only to open the connection. */
     fun warm(baseUrl: String, onError: (String) -> Unit = {}): Pair<Int, Long> =
-        call(baseUrl.trim().trimEnd('/') + "/", onError) { it.requestMethod = "GET" }
+        call(baseUrl.trim().trimEnd('/') + "/", null, onError) { it.requestMethod = "GET" }
 
-    private fun call(url: String, onError: (String) -> Unit, prepare: (HttpURLConnection) -> Unit): Pair<Int, Long> {
+    /** [network] pins the request to one network (mobile data next to Wi-Fi); null uses the default. */
+    private fun call(url: String, network: Network?, onError: (String) -> Unit, prepare: (HttpURLConnection) -> Unit): Pair<Int, Long> {
         val start = SystemClock.elapsedRealtime()
         val status = try {
-            val connection = URL(url).openConnection() as HttpURLConnection
+            val connection = (network?.openConnection(URL(url)) ?: URL(url).openConnection()) as HttpURLConnection
             connection.connectTimeout = TIMEOUT_MS
             connection.readTimeout = TIMEOUT_MS
             prepare(connection)
