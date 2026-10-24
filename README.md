@@ -117,9 +117,9 @@ nothing sleeps. Every push to `main` deploys.
 | --- | --- |
 | `GET /version` | `{"commit":"<sha>"}` from `RENDER_GIT_COMMIT` (`"dev"` locally) |
 | `GET /health` | `200 {"status":"ok"}` when Postgres answers a ping within 2 s, `503` otherwise (also when `DATABASE_URL` is unset) |
-| `GET /config` | `200` with the central SMS number (when set) and the server public keys; public, no auth, no database needed (#55) |
-| `POST /emergencies` | Offline emergency over HTTP: body is the `MAMA1 ...` SMS text; `200` with the signed ack text `MAMA1:ACK:...` (#57) |
-| `POST /emergencies/relay` | Mesh relay upload: JSON `{"text":"MAMA1:SEAL:...","hops":N}`; same ack; 4xx is permanent (#57) |
+| `GET /config` | Only with `EMERGENCY_OFFLINE_ENABLED=true`. `200` with the central SMS number (when set) and the server public keys; public, no auth, no database needed (#55) |
+| `POST /emergencies` | Only with `EMERGENCY_OFFLINE_ENABLED=true`. Offline emergency over HTTP: body is the `MAMA1 ...` SMS text; `200` with the signed ack text `MAMA1:ACK:...` (#57) |
+| `POST /emergencies/relay` | Only with `EMERGENCY_OFFLINE_ENABLED=true`. Mesh relay upload: JSON `{"text":"MAMA1:SEAL:...","hops":N}`; same ack; 4xx is permanent (#57) |
 
 ### Deploy it (once)
 
@@ -163,9 +163,10 @@ the ones that are unset, never the values.
 | `TWILIO_PHONE_NUMBER` | Our Twilio number, E.164 (`+1...`); also saved as the "Mamá" contact | console.twilio.com > Phone Numbers > Active numbers |
 | `KAPSO_API_KEY` | Kapso API key (`X-API-Key` header) | Kapso dashboard > Integrations > API keys |
 | `KAPSO_PHONE_NUMBER_ID` | WhatsApp `phone_number_id` of our Kapso number | app.kapso.ai > WhatsApp > Phone numbers |
+| `EMERGENCY_OFFLINE_ENABLED` | Optional. Turns on the offline emergency channel (#55, #57): `true` or `1`; anything else or unset is off (default). Off: `GET /config` and `POST /emergencies*` answer 404 and the three `EMERGENCY_*` vars below are neither read nor required, so a Render deploy boots without them. On: they apply as described below | Set it in Render > Environment only when the channel is wanted |
 | `EMERGENCY_SMS_NUMBER` | Central SMS number the phones text when offline, E.164; served in `GET /config`; the Twilio inbound number for #58 | Twilio console > Phone Numbers (optional: unset omits it from `GET /config`) |
-| `EMERGENCY_ED25519_SEED` | Signs offline acks; standard Base64 of 32 bytes. Required in production: on Render (`RENDER` set) the server refuses to boot without it and `EMERGENCY_X25519_PRIVATE_KEY`; locally it warns and uses an ephemeral key. Changing it breaks phones until they refresh config | Generate with `openssl rand -base64 32` |
-| `EMERGENCY_X25519_PRIVATE_KEY` | Opens mesh sealed boxes; standard Base64 of 32 bytes. Required in production, like `EMERGENCY_ED25519_SEED`; same caveat | Generate with `openssl rand -base64 32` |
+| `EMERGENCY_ED25519_SEED` | Signs offline acks; standard Base64 of 32 bytes. Only read with `EMERGENCY_OFFLINE_ENABLED`. Required then in production: on Render (`RENDER` set) the server refuses to boot without it and `EMERGENCY_X25519_PRIVATE_KEY`; locally it warns and uses an ephemeral key. Changing it breaks phones until they refresh config | Generate with `openssl rand -base64 32` |
+| `EMERGENCY_X25519_PRIVATE_KEY` | Opens mesh sealed boxes; standard Base64 of 32 bytes. Required with the flag on in production, like `EMERGENCY_ED25519_SEED`; same caveat | Generate with `openssl rand -base64 32` |
 
 **On Render:** Dashboard > `mama-server` > Environment > Add Environment
 Variable, one per row above (except `DATABASE_URL` and `PORT`), then Save,

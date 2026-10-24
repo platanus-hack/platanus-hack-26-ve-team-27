@@ -71,8 +71,10 @@ type Anthropic struct {
 
 // Emergency is the offline emergency channel (#55): the central SMS number the
 // phones text and the server key pair they pin. Both keys are standard Base64
-// of 32 raw bytes; serverkeys validates them.
+// of 32 raw bytes; serverkeys validates them. The whole channel is an extra
+// behind Enabled, off by default.
 type Emergency struct {
+	Enabled          bool   // EMERGENCY_OFFLINE_ENABLED, "true" or "1"; anything else or unset = off
 	SMSNumber        string // EMERGENCY_SMS_NUMBER, E.164; blank = not served in GET /config
 	Ed25519Seed      string // EMERGENCY_ED25519_SEED, signs offline acks
 	X25519PrivateKey string // EMERGENCY_X25519_PRIVATE_KEY, opens mesh sealed boxes
@@ -113,6 +115,7 @@ func LoadFrom(getenv func(string) string) Config {
 			DuressModel: get("DURESS_LLM_MODEL"),
 		},
 		Emergency: Emergency{
+			Enabled:          isOn(get("EMERGENCY_OFFLINE_ENABLED")),
 			SMSNumber:        get("EMERGENCY_SMS_NUMBER"),
 			Ed25519Seed:      get("EMERGENCY_ED25519_SEED"),
 			X25519PrivateKey: get("EMERGENCY_X25519_PRIVATE_KEY"),
@@ -126,6 +129,10 @@ func LoadFrom(getenv func(string) string) Config {
 	}
 	return c
 }
+
+// isOn reports whether a flag value is "true" (any case) or "1". Anything
+// else, a typo included, leaves the flag off.
+func isOn(v string) bool { return v == "1" || strings.EqualFold(v, "true") }
 
 // vars lists every env var name with its value, in a fixed order. PORT and
 // NOTIFIER are left out because they always have a value, DURESS_LLM_MODEL,
@@ -170,7 +177,7 @@ func (c Config) Missing() []string {
 // Config by mistake cannot leak a key.
 func (c Config) String() string {
 	// NOTIFIER is a channel name, not a secret, so its value is shown.
-	parts := append([]string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier}, setOrUnset(c.vars())...)
+	parts := append([]string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier, fmt.Sprintf("EMERGENCY_OFFLINE_ENABLED=%t", c.Emergency.Enabled)}, setOrUnset(c.vars())...)
 	return fmt.Sprintf("config{%s}", strings.Join(parts, " "))
 }
 

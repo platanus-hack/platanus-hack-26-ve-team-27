@@ -293,6 +293,11 @@ those 8 bytes for every device that registered its key, and
 `devicekeys.Lookup` maps a payload's `device_id` to the device row and its
 public key.
 
+The offline emergency routes (`GET /config`, `POST /emergencies`,
+`POST /emergencies/relay`) exist only when the server runs with
+`EMERGENCY_OFFLINE_ENABLED=true`; otherwise they answer `404`. It is off by
+default, so the skeleton and the demo path do not depend on them.
+
 Endpoints (#57, `server/internal/emergency/ingest/http.go`). Both answer `200`
 `text/plain` with the signed ack text `MAMA1:ACK:<std Base64>` (also for a
 duplicate), to be rebroadcast verbatim by a relay.
