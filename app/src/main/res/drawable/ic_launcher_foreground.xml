@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Launcher icon foreground: the MAMÁ mark in the logo's chartreuse.
+  The launcher draws this outside the app, so it cannot read Theme.kt; keep these
+  hex values in sync with Chartreuse / Charcoal there (see app/UI_RULES.md).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFEFFE00"
+        android:pathData="M47.21,36.04 L71.96,36.04 L71.96,60.79 L63.71,60.79 L63.71,50.12 L41.87,71.96 L36.04,66.13 L57.88,44.29 L47.21,44.29 Z" />
+</vector>

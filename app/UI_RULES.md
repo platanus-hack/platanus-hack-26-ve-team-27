@@ -4,16 +4,36 @@ Read this before touching any screen in `app/`. These rules keep the look in one
 
 ## The one theme file
 
-- `app/src/main/java/com/team27/mama/ui/theme/Theme.kt` holds every color, the font family, the typography and the shapes. It is the only file allowed to call `Color(...)`, create a `FontFamily`, or build a `ColorScheme`, `Typography` or `Shapes`.
+- `app/src/main/java/com/team27/mama/ui/theme/Theme.kt` holds every color, the font family, the typography, the shapes, the spacing scale (`MamaSpacing`) and the wordmark (`MamaWordmark`, `MamaMark`). It is the only file allowed to call `Color(...)`, create a `FontFamily`, set a `FontWeight`, or build a `ColorScheme`, `Typography` or `Shapes`.
 - Wrap UI in `MamaTheme { }`. `MainActivity` already does this around the navigation shell, so screens inside it get the theme for free. `@Preview` functions wrap their screen in `MamaTheme` too.
 - To change the palette, edit the color values in `Theme.kt`. To change the font, edit the single `MamaFontFamily` line.
+
+## The identity (#8)
+
+- **Palette:** from the event logo (`project-logo.png`): charcoal `#181918` and chartreuse `#EFFE00`. Dark mode is the logo itself (chartreuse `primary` on charcoal). Light mode uses a deep olive of the same hue for `primary` (chartreuse is unreadable on white) and a soft lime for `primaryContainer`. `secondary` is warm graphite, `tertiary` a muted periwinkle. Every text pair passes WCAG AA in both modes.
+- **Red is for errors only** (`error`, `errorContainer`). MAMÁ must look like a family app to whoever is next to the user, never like a panic button. Do not use `error` for emphasis.
+- **Type:** Lexend (SIL OFL 1.1, bundled in `res/font/`, license in `assets/licenses/`), weights 400 / 500 / 700 only. Headlines and display are bold, titles and labels medium, body regular. Pick a style by role; do not override the weight in a screen.
+- **Wordmark:** use `MamaWordmark()` (big, e.g. a splash or empty state) or `MamaWordmark(compact = true)` (inside a `CenterAlignedTopAppBar` title, as the two reference screens do). Use `MamaMark(size)` when you need the arrow tile alone. Never re-type "MAMÁ" with your own style or draw the arrow yourself.
+- **Launcher icon:** `res/mipmap-anydpi-v26/ic_launcher*.xml` with `res/drawable/ic_launcher_foreground.xml` and `ic_launcher_background.xml`. The launcher draws it outside the app, so it cannot read `Theme.kt`: it is the one place with hex colors outside the theme file. If you change `Chartreuse` or `Charcoal`, update those two vectors too.
+- **Icons:** the project has no Material icons dependency. Single-color vectors live in `res/drawable/` with `android:fillColor="@android:color/white"`, and screens tint them through `Icon(painterResource(...))`, which takes `LocalContentColor` (a theme token) by default.
+
+## Reference screens
+
+`SetupScreen.kt` and `TriggerConfirmationScreen.kt` are the reference for every other screen. Copy their structure:
+
+- `Scaffold` with `CenterAlignedTopAppBar(title = { MamaWordmark(compact = true) })`.
+- Side margin `MamaSpacing.screen` (24 dp), gaps `MamaSpacing.m` (16 dp) between blocks and `MamaSpacing.s` (8 dp) inside a block.
+- One `headlineMedium`/`displaySmall` sentence that says what is happening, one `bodyLarge` line in `onSurfaceVariant` that says what to do.
+- Grouped rows: a `Card` on `surfaceContainerLow` holding `ListItem`s split by `HorizontalDivider(color = outlineVariant)`. Section labels are `titleSmall` in `primary`.
+- One primary `Button` per screen. Secondary or "undo" actions are a `TextButton` (the trigger screen's "Fue sin querer" stays discreet on purpose).
+- Step state: done = `primary` circle with the check, running = `CircularProgressIndicator`, pending = `surfaceContainerHighest` circle, failed = `errorContainer` row.
 
 ## In screens
 
 - Colors: `MaterialTheme.colorScheme.*` only (`primary`, `onSurface`, `errorContainer`, ...). No `Color(0x...)`, no `Color.Red`, no `colorResource`.
 - Text: `MaterialTheme.typography.*` only (`headlineMedium`, `bodyLarge`, ...). No `fontSize = ...sp`, no `fontFamily`, no `FontWeight` overrides.
 - Corners: `MaterialTheme.shapes.*` only, or the component's default shape.
-- Spacing: plain `dp` values for padding and spacing are fine (use multiples of 4: 4, 8, 16, 24).
+- Spacing: prefer the `MamaSpacing` scale (`xs` 4, `s` 8, `m` 16, `l` 24, `xl` 32, `xxl` 48, `screen` 24). Plain `dp` values are fine for component sizes (an icon, a badge), in multiples of 4.
 - Components: Material3 only (`androidx.compose.material3.*`): `Scaffold`, `TopAppBar`, `Button`, `OutlinedButton`, `TextButton`, `Card`, `ListItem`, `Switch`, `OutlinedTextField`, `AlertDialog`, and so on. Do not import `androidx.compose.material.*` (Material2) and do not draw custom buttons from `Box` + `clickable`.
 - If a component needs a non-default color, pass a theme token through its `*Defaults` helper, for example `CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)`.
 - A screen needs a color or text style the theme does not have? Add it to `Theme.kt` (map it to a Material3 role), never inline in the screen.
