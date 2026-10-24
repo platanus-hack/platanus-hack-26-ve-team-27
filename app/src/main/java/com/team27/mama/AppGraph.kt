@@ -1,6 +1,7 @@
 package com.team27.mama
 
 import android.content.Context
+import android.util.Log
 import com.team27.mama.emergency.AndroidLocationSource
 import com.team27.mama.emergency.ChannelOverrideSetting
 import com.team27.mama.emergency.EmergencyOrchestrator
@@ -12,11 +13,11 @@ import com.team27.mama.emergency.SmsEmergencyChannel
 import com.team27.mama.emergency.config.RemoteConfigRepository
 import com.team27.mama.emergency.config.SharedPreferencesConfigStore
 import com.team27.mama.emergency.payload.PayloadSigner
+import com.team27.mama.mesh.MeshGateway
 import com.team27.mama.onboarding.ConnectivityNetworkStatus
 import com.team27.mama.onboarding.DeviceRegistrar
 import com.team27.mama.onboarding.OnboardingGate
 import com.team27.mama.server.HttpServerApi
-import com.team27.mama.mesh.MeshGateway
 import com.team27.mama.server.ServerApi
 import com.team27.mama.server.UrlConnectionTransport
 import java.util.concurrent.Executor
@@ -68,15 +69,25 @@ class AppGraph(context: Context) {
         EmergencyOrchestrator(
             signer = deviceSigner,
             config = remoteConfig::current,
-            http = ServerEmergencyChannel(BuildConfig.SERVER_URL, UrlConnectionTransport(5_000, 5_000)),
+            http = ServerEmergencyChannel(
+                BuildConfig.SERVER_URL,
+                UrlConnectionTransport(5_000, 5_000),
+                log = { Log.w(LOG_TAG, it) },
+            ),
             sms = smsChannel,
             mesh = GatewayMeshChannel(gateway),
             location = AndroidLocationSource(app),
             network = networkStatus,
             channelOverride = channelOverride::value,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1)),
+            onError = { message, error -> Log.w(LOG_TAG, message, error) },
         )
     }
 
     fun deviceRegistrar(signer: PayloadSigner): DeviceRegistrar = DeviceRegistrar(serverApi, signer)
+
+    private companion object {
+        /** `adb logcat -s MamaEmergency` shows why an emergency fell back (tags and status codes only). */
+        const val LOG_TAG = "MamaEmergency"
+    }
 }

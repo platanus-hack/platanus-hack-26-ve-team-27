@@ -95,10 +95,14 @@ class EmergencyTestKit {
     var online = false
     var config = EmergencyConfig(SMS_NUMBER, SERVER.publicKey, SERVER_X)
 
+    /** Everything the orchestrator passed to `onError`. */
+    val errors = mutableListOf<Pair<String, Throwable?>>()
+
     @OptIn(ExperimentalCoroutinesApi::class)
     fun TestScope.orchestrator(
         override: ChannelOverride = ChannelOverride.AUTO,
         signer: PayloadSigner = DEVICE,
+        sms: SmsEmergencyChannel = this@EmergencyTestKit.sms,
     ) = EmergencyOrchestrator(
         signer = signer,
         config = { config },
@@ -111,6 +115,7 @@ class EmergencyTestKit {
         scope = backgroundScope,
         nowMs = { NOW + testScheduler.currentTime },
         newEmergencyId = { 42L },
+        onError = { message, error -> errors += message to error },
     )
 
     companion object {

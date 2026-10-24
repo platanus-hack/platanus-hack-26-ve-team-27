@@ -56,6 +56,10 @@ object EmergencyTiming {
  * single-threaded scope, so the session state needs no locking. [declare] and [cancel]
  * may be called from any thread: a short [lock] guards only `declared` and their phase
  * compare-and-set.
+ *
+ * [onError] receives every failure the emergency survives (a port that threw, a refused HTTP
+ * reply, an HTTP timeout): a short tag such as `http: HTTP 422`, never location, frame bytes,
+ * SMS text or phone numbers. Cancellation is never reported.
  */
 class EmergencyOrchestrator(
     private val signer: PayloadSigner,
@@ -69,6 +73,7 @@ class EmergencyOrchestrator(
     private val scope: CoroutineScope,
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val newEmergencyId: () -> Long = { PayloadCodec.newEmergencyId() },
+    private val onError: (String, Throwable?) -> Unit = { _, _ -> },
 ) : EmergencyControls {
 
     private val mutableState = MutableStateFlow(EmergencyState())
@@ -88,7 +93,7 @@ class EmergencyOrchestrator(
         val id = newEmergencyId()
         val override = channelOverride()
         val config = config()
-        val fix = orElse(null) { location.lastKnown() }
+        val fix = orElse("fix", null) { location.lastKnown() }
         val next = synchronized(lock) {
             val before = mutableState.getAndUpdate {
                 if (it.phase.isActive) it else EmergencyState(phase = EmergencyPhase.SENDING, emergencyId = id)
@@ -115,7 +120,27 @@ class EmergencyOrchestrator(
         scope.launch { target.cancel() }
     }
 
-    private fun online(): Boolean = orElse(false) { network.isOnline() }
+    private fun online(): Boolean = orElse("network", false) { network.isOnline() }
+
+    /** Hands a survived failure to [onError]; a throwing logger never stops the emergency. */
+    private fun report(message: String, error: Throwable?) {
+        try {
+            onError(message, error)
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Port calls must never crash the emergency: any failure is reported and becomes [fallback]. */
+    private inline fun <T> orElse(tag: String, fallback: T, block: () -> T): T =
+        try {
+            block()
+        } catch (e: CancellationException) {
+            // Rethrow cancellation explicitly; never treat it as a channel failure.
+            throw e
+        } catch (e: Exception) {
+            report("$tag: ${describe(e)}", e)
+            fallback
+        }
 
     private inner class Session(
         val id: Long,
@@ -147,7 +172,7 @@ class EmergencyOrchestrator(
         fun use(channel: Channel) = update { it.copy(channelsUsed = it.channelsUsed + channel) }
 
         /** A signed frame, or null when the device key cannot sign (mesh keystore unusable). */
-        fun build(kind: Kind, seq: Int): Frame? = orElse(null) {
+        fun build(kind: Kind, seq: Int): Frame? = orElse("sign", null) {
             EmergencyFrames.build(kind, signer, id, seq, fix, nowMs())
         }
 
@@ -159,8 +184,8 @@ class EmergencyOrchestrator(
             // Cancelled before this ran: nothing went out, so there is nothing to cancel.
             if (declaredState.phase == EmergencyPhase.CANCELLING) return finish()
             val serverKey = config.serverEd25519PublicKey
-            jobs.launch { collectAcks(mesh.incoming) { AckReader.fromMesh(it, serverKey) } }
-            jobs.launch { collectAcks(sms.incoming) { AckReader.fromSms(it, serverKey) } }
+            jobs.launch { collectAcks("mesh", mesh.incoming) { AckReader.fromMesh(it, serverKey) } }
+            jobs.launch { collectAcks("sms", sms.incoming) { AckReader.fromSms(it, serverKey) } }
             val known = fix
             if (known == null || nowMs() - known.timeMs > EmergencyTiming.FRESH_FIX_MAX_AGE_MS) {
                 fixWait = jobs.launch { awaitFreshFix() }
@@ -170,12 +195,8 @@ class EmergencyOrchestrator(
 
         /** One fresh fix within [EmergencyTiming.FRESH_FIX_TIMEOUT_MS] becomes the UPDATE frame. */
         suspend fun awaitFreshFix() {
-            val fresh = try {
+            val fresh = orElse("fix", null) {
                 withTimeoutOrNull(EmergencyTiming.FRESH_FIX_TIMEOUT_MS) { location.awaitFreshFix() }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                null
             } ?: return
             if (session !== this || !mutableState.value.phase.isCancellable) return
             val used = fix
@@ -194,7 +215,7 @@ class EmergencyOrchestrator(
             val sent = frame ?: return finish()
             val seq = sent.payload.seq + 1
             cancelSeq = seq
-            fix = listOfNotNull(fix, orElse(null) { location.lastKnown() }).maxByOrNull { it.timeMs }
+            fix = listOfNotNull(fix, orElse("fix", null) { location.lastKnown() }).maxByOrNull { it.timeMs }
             emitSigned { build(Kind.CANCEL, seq) }
             jobs.launch {
                 delay(EmergencyTiming.CANCEL_WINDOW_MS)
@@ -241,8 +262,10 @@ class EmergencyOrchestrator(
             emission = jobs.launch { Emission(next).run() }
         }
 
-        suspend fun collectAcks(texts: Flow<String>, read: (String) -> AckInfo?) {
-            texts.catch { }.collect { text -> read(text)?.let(::onAck) }
+        /** A failing flow ends only its own collector; the other channels keep emitting and listening. */
+        suspend fun collectAcks(name: String, texts: Flow<String>, read: (String) -> AckInfo?) {
+            texts.catch { if (it !is CancellationException) report("ack-flow $name: ${describe(it)}", it) }
+                .collect { text -> read(text)?.let(::onAck) }
         }
 
         /**
@@ -296,20 +319,24 @@ class EmergencyOrchestrator(
             /** True when the reply was an ack that ends this frame; anything else is a failure. */
             private suspend fun attemptHttp(): Boolean {
                 use(Channel.HTTP)
-                val reply = withTimeoutOrNull(EmergencyTiming.HTTP_TIMEOUT_MS) {
-                    // Rethrow cancellation explicitly; never treat it as a channel failure.
-                    try {
-                        http.post(frame.smsText)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: ServerHttpException) {
-                        if (e.code in 400..499) httpRejected = true
-                        null
-                    } catch (_: Exception) {
-                        null
+                var reply: String? = null
+                val answered = withTimeoutOrNull(EmergencyTiming.HTTP_TIMEOUT_MS) {
+                    reply = orElse("http", null) {
+                        try {
+                            http.post(frame.smsText)
+                        } catch (e: ServerHttpException) {
+                            if (e.code in 400..499) httpRejected = true
+                            throw e
+                        }
                     }
-                } ?: return false
-                val ack = AckReader.fromHttp(reply, config.serverEd25519PublicKey) ?: return false
+                }
+                if (answered == null) report("http timeout", null)
+                val text = reply ?: return false
+                val ack = AckReader.fromHttp(text, config.serverEd25519PublicKey)
+                if (ack == null) {
+                    report("http: reply is not an ack for this emergency", null)
+                    return false
+                }
                 return onAck(ack)
             }
 
@@ -325,17 +352,12 @@ class EmergencyOrchestrator(
             /** Runs in its own child so a slow send never delays the mesh broadcast. */
             private fun sendSms(children: CoroutineScope) {
                 val number = config.smsNumber
-                if (!override.allowsSms || number.isBlank() || !orElse(false) { sms.canSend() }) return
+                if (!override.allowsSms || number.isBlank() || !orElse("sms", false) { sms.canSend() }) return
                 smsStep = SmsStep.IN_FLIGHT
                 use(Channel.SMS)
                 children.launch {
-                    val sent = try {
-                        sms.send(number, frame.smsText)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        false
-                    }
+                    val sent = orElse("sms", false) { sms.send(number, frame.smsText) }
+                    if (!sent) report("sms: not sent", null)
                     smsStep = if (sent) SmsStep.SENT else SmsStep.FAILED
                     refreshPhase()
                 }
@@ -344,14 +366,14 @@ class EmergencyOrchestrator(
             private fun broadcastMesh() {
                 if (!override.allowsMesh) return
                 val text = meshText ?: config.serverX25519PublicKey
-                    ?.let { key -> orElse(null) { frame.meshText(key) } }
+                    ?.let { key -> orElse("mesh", null) { frame.meshText(key) } }
                     ?.also { meshText = it }
                 if (text == null) {
                     update { it.copy(meshIssue = MeshIssue.NO_SERVER_KEYS) }
                     return
                 }
-                if (!meshRunning) meshRunning = orElse(false) { mesh.start() }
-                meshQueued = meshRunning && orElse(false) { mesh.broadcast(text) }
+                if (!meshRunning) meshRunning = orElse("mesh", false) { mesh.start() }
+                meshQueued = meshRunning && orElse("mesh", false) { mesh.broadcast(text) }
                 if (meshRunning) use(Channel.MESH)
                 if (!meshQueued) meshRunning = false
                 update { it.copy(meshIssue = if (meshQueued) null else MeshIssue.UNAVAILABLE) }
@@ -374,12 +396,8 @@ class EmergencyOrchestrator(
         /** An emergency that a cancel can still stop. */
         val EmergencyPhase.isCancellable: Boolean get() = isActive && this != EmergencyPhase.CANCELLING
 
-        /** Port calls must never crash the emergency: any failure becomes [fallback]. */
-        inline fun <T> orElse(fallback: T, block: () -> T): T =
-            try {
-                block()
-            } catch (_: Exception) {
-                fallback
-            }
+        /** The failure's type, or the status of an HTTP reply; never its message, which may carry data. */
+        fun describe(e: Throwable): String =
+            if (e is ServerHttpException) "HTTP ${e.code}" else e.javaClass.simpleName
     }
 }

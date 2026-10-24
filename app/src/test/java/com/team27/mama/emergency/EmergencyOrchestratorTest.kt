@@ -16,8 +16,10 @@ import com.team27.mama.emergency.payload.Kind
 import com.team27.mama.emergency.payload.MamaText
 import com.team27.mama.server.ServerHttpException
 import java.io.IOException
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -340,6 +342,59 @@ class EmergencyOrchestratorTest {
             assertEquals(1, http.posted.size)
             assertEquals(1, sms.sent.size)
             assertEquals(EmergencyPhase.SEARCHING_NEARBY, o.state.value.phase)
+        }
+    }
+
+    @Test
+    fun swallowedFailuresReachOnErrorWithoutLocation() = runTest {
+        with(EmergencyTestKit()) {
+            online = true
+            location.lastKnown = LocationFix(-33.45678, -70.61234, NOW)
+            http.behaviour = { throw ServerHttpException(422, "unregistered device") }
+            sms.behaviour = { _, _ -> throw IOException("radio off") }
+            mesh.startResult = true
+            val o = orchestrator()
+            o.declare()
+            runCurrent()
+            val messages = errors.map { it.first }
+            val http = messages.single { it.startsWith("http") }
+            assertTrue(http, http.contains("422"))
+            assertTrue(messages.toString(), messages.any { it.startsWith("sms") })
+            for (m in messages) {
+                for (digits in listOf("33", "45678", "70", "61234", SMS_NUMBER.drop(1))) {
+                    assertFalse("\"$m\" leaks \"$digits\"", m.contains(digits))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun ackFlowFailureIsReportedAndOtherChannelsKeepGoing() = runTest {
+        with(EmergencyTestKit()) {
+            val o = orchestrator(sms = object : SmsEmergencyChannel by sms {
+                override val incoming = flow<String> { throw IllegalStateException("receiver gone") }
+            })
+            o.declare()
+            runCurrent()
+            assertTrue(errors.toString(), errors.any { it.first.startsWith("ack-flow") })
+            mesh.incoming.emit(meshAck(42, 0))
+            runCurrent()
+            assertEquals(EmergencyPhase.NOTIFIED, o.state.value.phase)
+        }
+    }
+
+    @Test
+    fun timeoutIsReportedButCancellationIsNot() = runTest {
+        with(EmergencyTestKit()) {
+            online = true
+            http.behaviour = { awaitCancellation() }
+            val o = orchestrator()
+            o.declare()
+            at(5_000)
+            assertEquals(listOf("http timeout"), errors.map { it.first })
+            o.cancel()
+            runCurrent()
+            assertTrue(errors.toString(), errors.none { it.second is CancellationException })
         }
     }
 
