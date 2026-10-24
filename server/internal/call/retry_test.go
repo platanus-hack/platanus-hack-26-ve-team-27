@@ -607,3 +607,28 @@ func (p *scriptPlacer) count() int {
 	defer p.mu.Unlock()
 	return p.calls
 }
+
+// #76: Progress gets each change of Twilio's status once, with the time the
+// engine saw it, so the report can show when the phone rang and answered.
+func TestProgressReportsEachTwilioStatusChange(t *testing.T) {
+	captureLog(t)
+	clock := &fakeClock{t: time.Date(2026, 10, 24, 9, 10, 0, 0, time.UTC)}
+	status := &scriptStatus{clock: clock, step: time.Second, bySID: map[string][]string{
+		"CA1": {TwilioQueued, TwilioQueued, TwilioRinging, TwilioRinging, TwilioInProgress},
+	}}
+	e := testEngine(&memStore{phone: victimPhone}, &scriptPlacer{}, status, clock)
+	var mu sync.Mutex
+	var got []string
+	e.Progress = func(_ context.Context, callID int64, st string, at time.Time) {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, fmt.Sprintf("%d:%s@%s", callID, st, at.Format("15:04:05")))
+	}
+
+	e.StartCall(context.Background(), sampleIncidentInput())
+
+	want := []string{"1:queued@09:10:01", "1:ringing@09:10:03", "1:in-progress@09:10:05"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("Progress = %v, want %v", got, want)
+	}
+}

@@ -295,3 +295,21 @@ func TestSpikeRouteReportsAProviderErrorAs502WithoutDetails(t *testing.T) {
 		t.Errorf("status = %d body %q, want 502 without the provider message", rec.Code, rec.Body)
 	}
 }
+
+func TestHooksRunInOrderAndSkipNil(t *testing.T) {
+	if Hooks() != nil || Hooks(nil, nil) != nil {
+		t.Fatal("Hooks with no hook is not nil")
+	}
+	var got []string
+	hook := func(name string) func(context.Context, Finished) {
+		return func(_ context.Context, f Finished) { got = append(got, name+":"+f.ConversationID) }
+	}
+	Hooks(hook("verdict"), nil, hook("report"))(context.Background(), Finished{ConversationID: "conv_1"})
+	if strings.Join(got, ",") != "verdict:conv_1,report:conv_1" {
+		t.Errorf("hooks ran %v", got)
+	}
+}
+
+func TestSetFinishedWithoutDatabaseIsANoOp(t *testing.T) {
+	NewRoutes(config.Config{}, nil).SetFinished(func(context.Context, Finished) {}) // must not panic
+}

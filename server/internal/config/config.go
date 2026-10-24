@@ -7,11 +7,16 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
 // DefaultPort is used when PORT is unset.
 const DefaultPort = "8080"
+
+// DefaultReportTTLDays is how long an incident report link lives when
+// INCIDENT_REPORT_TTL_DAYS is unset or not a positive number.
+const DefaultReportTTLDays = 30
 
 // NOTIFIER values: the channel the family alert goes out on.
 const (
@@ -28,12 +33,17 @@ type Config struct {
 	// server's public base URL, optional. Log lines that point the operator
 	// at a page (the call fallback) use it; blank logs the bare path.
 	PublicURL string
+	// CallWhenStill is CALL_WHEN_STILL, "true" or "1"; anything else or
+	// unset is off. On, a still phone gets the call branch instead of the
+	// immediate alert, so a person standing still still gets "Mamá".
+	CallWhenStill bool
 
 	ElevenLabs ElevenLabs
 	Twilio     Twilio
 	Kapso      Kapso
 	Anthropic  Anthropic
 	Emergency  Emergency
+	Report     Report
 }
 
 // ElevenLabs is the voice agent that places the "Mamá" call through its
@@ -75,6 +85,11 @@ type Twilio struct {
 type Kapso struct {
 	APIKey        string // KAPSO_API_KEY, sent as the X-API-Key header
 	PhoneNumberID string // KAPSO_PHONE_NUMBER_ID, the WhatsApp phone_number_id
+	// WebhookSecret is KAPSO_WEBHOOK_SECRET, optional: the secret of the
+	// phone number's webhook that reports message statuses (sent, delivered,
+	// read, failed) to POST /webhooks/kapso for the incident report (#76).
+	// Blank leaves the route off.
+	WebhookSecret string
 }
 
 // Anthropic is the LLM step of the duress detector (#22). Without a key the
@@ -95,6 +110,18 @@ type Emergency struct {
 	X25519PrivateKey string // EMERGENCY_X25519_PRIVATE_KEY, opens mesh sealed boxes
 }
 
+// Report is the incident report page (#76): the private link GET /i/{token},
+// the call recording and the seal. An extra behind Enabled, off by default.
+// The seal uses EMERGENCY_ED25519_SEED; without it the page says "Sin sellar".
+type Report struct {
+	Enabled bool // INCIDENT_REPORT_ENABLED, "true" or "1"; anything else or unset = off
+	TTLDays int  // INCIDENT_REPORT_TTL_DAYS, how long a link lives; DefaultReportTTLDays when unset or invalid
+	// DemoKey is DEMO_KEY, optional: the key of the presenter's shortcuts
+	// GET /demo/latest and /demo/next (the newest incident's report). Blank
+	// leaves them off (404).
+	DemoKey string
+}
+
 // Load reads the config from the process environment.
 func Load() Config { return LoadFrom(os.Getenv) }
 
@@ -105,10 +132,11 @@ func Load() Config { return LoadFrom(os.Getenv) }
 func LoadFrom(getenv func(string) string) Config {
 	get := func(name string) string { return strings.TrimSpace(getenv(name)) }
 	c := Config{
-		Port:        get("PORT"),
-		DatabaseURL: get("DATABASE_URL"),
-		Notifier:    strings.ToLower(get("NOTIFIER")),
-		PublicURL:   get("PUBLIC_URL"),
+		Port:          get("PORT"),
+		DatabaseURL:   get("DATABASE_URL"),
+		Notifier:      strings.ToLower(get("NOTIFIER")),
+		PublicURL:     get("PUBLIC_URL"),
+		CallWhenStill: isOn(get("CALL_WHEN_STILL")),
 		ElevenLabs: ElevenLabs{
 			APIKey:           get("ELEVENLABS_API_KEY"),
 			AgentID:          get("ELEVENLABS_AGENT_ID"),
@@ -127,6 +155,7 @@ func LoadFrom(getenv func(string) string) Config {
 		Kapso: Kapso{
 			APIKey:        get("KAPSO_API_KEY"),
 			PhoneNumberID: get("KAPSO_PHONE_NUMBER_ID"),
+			WebhookSecret: get("KAPSO_WEBHOOK_SECRET"),
 		},
 		Anthropic: Anthropic{
 			APIKey:      get("ANTHROPIC_API_KEY"),
@@ -137,6 +166,11 @@ func LoadFrom(getenv func(string) string) Config {
 			SMSNumber:        get("EMERGENCY_SMS_NUMBER"),
 			Ed25519Seed:      get("EMERGENCY_ED25519_SEED"),
 			X25519PrivateKey: get("EMERGENCY_X25519_PRIVATE_KEY"),
+		},
+		Report: Report{
+			Enabled: isOn(get("INCIDENT_REPORT_ENABLED")),
+			TTLDays: positiveInt(get("INCIDENT_REPORT_TTL_DAYS"), DefaultReportTTLDays),
+			DemoKey: get("DEMO_KEY"),
 		},
 	}
 	if c.Port == "" {
@@ -149,6 +183,15 @@ func LoadFrom(getenv func(string) string) Config {
 		c.PublicURL = get("RENDER_EXTERNAL_URL")
 	}
 	return c
+}
+
+// positiveInt parses v as a positive int, else returns def.
+func positiveInt(v string, def int) int {
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
 }
 
 // isOn reports whether a flag value is "true" (any case) or "1". Anything
@@ -199,7 +242,10 @@ func (c Config) Missing() []string {
 // Config by mistake cannot leak a key.
 func (c Config) String() string {
 	// NOTIFIER is a channel name, not a secret, so its value is shown.
-	parts := append([]string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier, fmt.Sprintf("EMERGENCY_OFFLINE_ENABLED=%t", c.Emergency.Enabled)}, setOrUnset(c.vars())...)
+	parts := append([]string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier,
+		fmt.Sprintf("EMERGENCY_OFFLINE_ENABLED=%t", c.Emergency.Enabled),
+		fmt.Sprintf("CALL_WHEN_STILL=%t", c.CallWhenStill),
+		fmt.Sprintf("INCIDENT_REPORT_ENABLED=%t", c.Report.Enabled)}, setOrUnset(c.vars())...)
 	return fmt.Sprintf("config{%s}", strings.Join(parts, " "))
 }
 
