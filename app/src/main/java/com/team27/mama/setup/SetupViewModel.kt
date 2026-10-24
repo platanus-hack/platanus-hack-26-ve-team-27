@@ -9,6 +9,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.team27.mama.BuildConfig
+import com.team27.mama.MamaApp
+import com.team27.mama.onboarding.OnboardingResult
+import com.team27.mama.onboarding.userMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,6 +55,7 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SetupStore(SharedPreferencesStore.forSetup(application))
     private val contacts = MamaContactWriter(application.contentResolver)
     private val client = RegistrationClient(BuildConfig.SERVER_URL)
+    private val graph get() = (app as MamaApp).graph
     private val isXiaomi = SystemScreens.isXiaomi()
 
     private val _state = MutableStateFlow(initialState())
@@ -188,9 +192,20 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
         val registration = store.registration(BuildConfig.VERSION_NAME)
             ?: return failed("Faltan tus datos. Vuelve al paso anterior.")
         return when (val result = client.register(registration)) {
-            RegistrationResult.Registered -> SetupTask(TaskStatus.DONE)
+            RegistrationResult.Registered -> if (graph.offlineEmergency) finishOnboarding() else SetupTask(TaskStatus.DONE)
             is RegistrationResult.Failed -> failed(result.message)
         }
+    }
+
+    /**
+     * Last step of setup, only with the offline emergency flag (#55): the phone must hold the server keys (GET /config)
+     * before it counts as set up. The gate passes at once when they are cached,
+     * which keeps the offline demo working.
+     */
+    private suspend fun finishOnboarding(): SetupTask {
+        val gate = graph.onboardingGate
+        val result = withContext(Dispatchers.IO) { gate.finish() }
+        return if (result == OnboardingResult.Done) SetupTask(TaskStatus.DONE) else failed(result.userMessage().orEmpty())
     }
 
     private fun failed(message: String, needsAppSettings: Boolean = false) =

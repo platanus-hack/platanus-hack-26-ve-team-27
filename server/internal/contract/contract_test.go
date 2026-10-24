@@ -2,6 +2,7 @@ package contract
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/json"
 	"math"
 	"os"
@@ -19,6 +20,7 @@ func TestRoundTripSamples(t *testing.T) {
 		into func() any
 	}{
 		{"device_registration.json", func() any { return new(DeviceRegistration) }},
+		{"remote_config.json", func() any { return new(RemoteConfig) }},
 		{"alert_event.json", func() any { return new(AlertEvent) }},
 		{"alert_response.json", func() any { return new(AlertResponse) }},
 		{"location_update.json", func() any { return new(LocationUpdate) }},
@@ -60,8 +62,36 @@ func TestEverySampleHasACase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 6 {
-		t.Fatalf("testdata has %d samples, TestRoundTripSamples covers 6: add the new one there", len(files))
+	if len(files) != 7 {
+		t.Fatalf("testdata has %d samples, TestRoundTripSamples covers 7: add the new one there", len(files))
+	}
+}
+
+// The sample's ed25519_signature is a real signature by its key over its
+// device_id, so the intake tests and the app can register it as is.
+func TestDeviceRegistrationSampleSignatureVerifies(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "device_registration.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reg DeviceRegistration
+	if err := json.Unmarshal(raw, &reg); err != nil {
+		t.Fatal(err)
+	}
+	if len(reg.Ed25519PublicKey) != ed25519.PublicKeySize || len(reg.Ed25519Signature) != ed25519.SignatureSize {
+		t.Fatalf("key %d bytes, signature %d bytes", len(reg.Ed25519PublicKey), len(reg.Ed25519Signature))
+	}
+	if !ed25519.Verify(reg.Ed25519PublicKey, RegistrationSignedMessage(reg.DeviceID), reg.Ed25519Signature) {
+		t.Fatal("sample signature does not verify over RegistrationSignedMessage(device_id)")
+	}
+	if ed25519.Verify(reg.Ed25519PublicKey, RegistrationSignedMessage(reg.DeviceID+"x"), reg.Ed25519Signature) {
+		t.Fatal("sample signature verifies over another device_id")
+	}
+}
+
+func TestRegistrationSignedMessage(t *testing.T) {
+	if got, want := string(RegistrationSignedMessage("abc")), "MAMA-device-registration-v1abc"; got != want {
+		t.Fatalf("RegistrationSignedMessage = %q, want %q", got, want)
 	}
 }
 
