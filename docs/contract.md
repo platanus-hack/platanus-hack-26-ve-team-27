@@ -261,7 +261,10 @@ the newest call's verdict. Sample: `notifier_message.json`.
 ## Postgres schema
 
 `server/migrations/0001_init.sql`; `0002_device_keys.sql` adds
-`ed25519_public_key` and `key_id` to `devices`; `0003_emergencies.sql` adds the `emergencies` table. The server applies pending migrations on
+`ed25519_public_key` and `key_id` to `devices`; `0003_emergencies.sql` adds the `emergencies` table;
+`0004_incident_reports.sql` adds `incident_reports`, `call_recordings` and
+`incident_seals` for the incident report (#76, approved by the Tech lead on
+Oct 24). The server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
 no-op. Without `DATABASE_URL` the server boots and skips migrations.
@@ -273,6 +276,9 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 | `gps_points` | identity; unique `(incident_id, recorded_at)` | every fix of an incident |
 | `calls` | identity; unique `conversation_id` | call status, transcript (JSONB), duration, **verdict** |
 | `emergencies` | `emergency_id` (16 hex) | offline emergency: device, status, highest seq, last fix, channels, min hops (#57) |
+| `incident_reports` | `incident_id` | the report link: `token` (unique, 22 base64url chars), `created_at`, `expires_at` (#76) |
+| `call_recordings` | `call_id` | a call's recording: `content_type`, `audio` (bytes), `sha256`, `stored_at` (#76) |
+| `incident_seals` | `incident_id` | the seal: `sealed_at`, `document` (exact bytes of `ficha.json`), `signature`, `public_key` (#76) |
 | `schema_migrations` | `version` | applied migration files |
 
 The verdict lives on `calls` (`verdict`, `verdict_reason`, `verdict_at`)
@@ -317,3 +323,34 @@ Errors are JSON `{"error":"..."}`: `400` malformed payload, text, JSON or
 hops; `403` bad signature; `409` the `emergency_id` belongs to another device;
 `413` body over 1 KiB; `422` device not registered; `503` no database; `500`
 anything else. 4xx is permanent: retry only 5xx.
+
+## Incident report (#76)
+
+A private page per incident for the family: the timeline, the locations, the
+call transcript and recording, the verdict and the server's seal. It exists
+only when the server runs with `INCIDENT_REPORT_ENABLED=true` (off by
+default; then every route below answers `404`). Code:
+`server/internal/report`.
+
+- **Link.** `GET /i/{token}`. `token` is 128 random bits in base64url without
+  padding (22 characters), made by the server and unrelated to the
+  `incident_id` the phone made. One link per incident
+  (`incident_reports`); it lives `INCIDENT_REPORT_TTL_DAYS` days (default 30)
+  and the next request for a link after it expired gets a new token. An
+  unknown, malformed or expired token answers `404`, all alike. The absolute
+  URL uses `PUBLIC_URL` (else `RENDER_EXTERNAL_URL`). `go run ./cmd/ficha
+  <incident_id>` prints the link of an incident, creating it if needed.
+- **Privacy.** Every response under `/i/` carries `Referrer-Policy:
+  no-referrer`, `X-Robots-Tag: noindex, nofollow, noarchive`, `Cache-Control:
+  no-store` and a `Content-Security-Policy` that allows only this server.
+  Fonts (Lexend, OFL), images, CSS and JS are embedded in the binary and
+  served from `/ficha/static/{file}`, so opening a report makes no request to
+  anyone else. There is no map with tiles: each location has an "Abrir en
+  Maps" link and the path is drawn in SVG. The page never shows the full phone
+  number (only `+58 ···67`), the device id or the duress phrase.
+- **Clocks.** Each timeline row says which clock its time comes from: the
+  phone (`triggered_at`, `gps_points.recorded_at`), the server
+  (`incidents.created_at`, `calls.requested_at`, `verdict_at`, `notified_at`,
+  recording and seal times) or ElevenLabs (the call's start, turns and end,
+  from the post-call webhook). `notified_at` is claimed before sending, so the
+  page says "enviado", never "recibido".

@@ -20,6 +20,7 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/sms"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/notify"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/report"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/migrations"
 )
 
@@ -42,10 +43,11 @@ func main() {
 
 	pool := openAndMigrate(cfg.DatabaseURL)
 	notifier := newNotifier(cfg, pool)
+	reports := newReports(cfg, pool)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newMux(pool, notifier, newCallRoutes(cfg, pool), offline),
+		Handler:           newMux(pool, notifier, newCallRoutes(cfg, pool), offline, reports),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -184,6 +186,33 @@ func newCallRoutes(cfg config.Config, pool *sql.DB) *call.Routes {
 		return call.NewRoutes(cfg, nil)
 	}
 	return call.NewRoutes(cfg, call.NewDBStore(pool))
+}
+
+// newReports builds the incident report page (#76), or nil when
+// INCIDENT_REPORT_ENABLED is off or there is no database: then GET /i/{token}
+// answers 404. Nothing about the report ever stops the boot.
+func newReports(cfg config.Config, pool *sql.DB) *report.Handler {
+	if !cfg.Report.Enabled {
+		log.Print("report: incident report page is off (INCIDENT_REPORT_ENABLED is not true)")
+		return nil
+	}
+	if pool == nil {
+		log.Print("report: WARNING: INCIDENT_REPORT_ENABLED is on but DATABASE_URL is not set; GET /i/{token} answers 404")
+		return nil
+	}
+	if cfg.PublicURL == "" {
+		log.Print("report: WARNING: PUBLIC_URL (or RENDER_EXTERNAL_URL) is not set; report links will be bare paths")
+	}
+	log.Printf("report: incident report page is on; links live %d days", cfg.Report.TTLDays)
+	return report.NewHandler(report.NewDBStore(pool), report.Options{Channel: channelName(cfg)})
+}
+
+// channelName is how the report names the family message channel.
+func channelName(cfg config.Config) string {
+	if cfg.Notifier == config.NotifierSMS {
+		return "SMS"
+	}
+	return "WhatsApp"
 }
 
 // channelConfigured reports whether the NOTIFIER channel has its credentials,

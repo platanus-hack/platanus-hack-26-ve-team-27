@@ -1,0 +1,148 @@
+{{define "head"}}<!doctype html>
+<html lang="es-VE">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Ficha del incidente · MAMÁ">
+<title>Ficha del incidente · MAMÁ</title>
+<link rel="icon" href="/ficha/static/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/ficha/static/ficha.css">
+<script src="/ficha/static/ficha.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <span class="wordmark" role="img" aria-label="MAMÁ"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M9,6 L18,6 L18,15 L15,15 L15,11.12 L7.06,19.06 L4.94,16.94 L12.88,9 L9,9 Z"/></svg></span><span aria-hidden="true">MAMÁ</span></span>
+  <span class="label">Ficha del incidente</span>
+</header>
+{{end}}
+
+{{define "foot"}}
+<footer>
+  <p>Este enlace es privado y vence solo. Compártelo solo con quien lo necesite, por ejemplo con el CICPC o la fiscalía.</p>
+  <p>Letra Lexend, <a href="/ficha/static/Lexend-OFL.txt">licencia SIL OFL 1.1</a>. Esta página no le pide nada a ningún otro sitio.</p>
+</footer>
+</div>
+</body>
+</html>{{end}}
+
+{{define "missing"}}{{template "head"}}
+<main class="missing">
+  <img src="/ficha/static/mama_escuchando.webp" alt="" width="128" height="128">
+  <h1>Esta ficha no existe o ya venció</h1>
+  <p>Revisa que el enlace esté completo. Los enlaces de MAMÁ vencen después de un tiempo.</p>
+</main>
+{{template "foot"}}{{end}}
+
+{{define "page"}}{{template "head"}}
+<main>
+<section class="hero" aria-labelledby="titulo">
+  <img src="/ficha/static/mama_{{.Character}}.webp" alt="" width="112" height="112">
+  <div>
+    <p class="state state-{{.State}}">{{.StateLabel}}</p>
+    <h1 id="titulo" class="verdict-{{.VerdictKind}}">{{.Verdict}}</h1>
+    <p class="when">Pidió ayuda el {{.Triggered}}.</p>
+    <p class="branch">{{.Branch}}</p>
+  </div>
+</section>
+
+<section id="linea" aria-labelledby="h-linea">
+  <h2 id="h-linea">Línea de tiempo</h2>
+  <p class="hint">Cada hora dice de qué reloj viene. El del teléfono, el del servidor y el de ElevenLabs (la llamada) pueden no coincidir.</p>
+  <p class="legend" aria-hidden="true"><span class="clock clock-phone">teléfono</span><span class="clock clock-server">servidor</span><span class="clock clock-elevenlabs">ElevenLabs</span></p>
+  <ol class="timeline">
+  {{- range .Timeline}}
+    <li class="ev ev-{{.Kind}}{{if .Error}} ev-error{{end}}">
+      <p class="ev-meta"><time datetime="{{.ISO}}">{{.Time}}</time><span class="clock clock-{{.Clock}}" title="Reloj del {{.Clock.Label}}">{{.Clock.Label}}</span>{{if and $.MultiCall .Call}}<span class="callno">Llamada {{.Call}}</span>{{end}}</p>
+      <p class="ev-title">{{.Title}}</p>
+      {{- if .Detail}}<p class="ev-detail">{{.Detail}}</p>{{end}}
+      {{- if .Quote}}
+      <button type="button" class="quote" data-call="{{.Call}}" data-seek="{{.Seek}}" data-scroll><span class="play">▶ Escuchar:</span> «{{.Quote}}»</button>
+      {{- end}}
+    </li>
+  {{- end}}
+  </ol>
+</section>
+
+<section id="ubicaciones" aria-labelledby="h-ubicaciones">
+  <h2 id="h-ubicaciones">Ubicaciones</h2>
+  {{- if .Points}}
+  <p class="hint">Hora del teléfono. «Abrir en Maps» lleva el punto a Google Maps; esta página no carga ningún mapa.</p>
+  {{- with .Route}}
+  <svg class="route" viewBox="0 0 {{.Width}} {{.Height}}" role="img" aria-label="Recorrido de {{.DistanceKM}}, sin mapa de fondo">
+    <polyline points="{{.Path}}"/>
+    <circle class="start" cx="{{.StartX}}" cy="{{.StartY}}" r="6"/>
+    <circle class="end" cx="{{.EndX}}" cy="{{.EndY}}" r="7"/>
+  </svg>
+  <p class="route-note">Recorrido de {{.DistanceKM}}. El círculo vacío es el primer punto; el lleno, el último.</p>
+  {{- end}}
+  <table class="points">
+    <thead><tr><th scope="col">Hora</th><th scope="col">Precisión</th><th scope="col">Movimiento</th><th scope="col"><span class="visually-hidden">Mapa</span></th></tr></thead>
+    <tbody>
+    {{- range .Points}}
+      <tr><td>{{.At}}<span class="coords">{{.LatLng}}</span></td><td>{{.Accuracy}}</td><td>{{.Speed}}</td><td><a class="maps" href="{{.MapsURL}}" target="_blank" rel="noopener noreferrer">Abrir en Maps</a></td></tr>
+    {{- end}}
+    </tbody>
+  </table>
+  {{- else}}
+  <p class="hint">No llegó ninguna ubicación.</p>
+  {{- end}}
+</section>
+
+<section id="llamada" aria-labelledby="h-llamada">
+  <h2 id="h-llamada">La llamada</h2>
+  {{- if .NoCall}}<p class="hint">{{.NoCall}}</p>{{end}}
+  {{- range $c := .Calls}}
+  <article class="card call" id="llamada-{{.N}}">
+    <h3>{{if $.MultiCall}}Llamada {{.N}}: {{end}}Mamá llamó a {{.Number}}</h3>
+    <p class="facts">Pedida a las {{.Requested}} (servidor). <span{{if .Failed}} class="failed"{{end}}>{{.Outcome}}{{if .Duration}}: {{.Duration}}{{end}}.</span></p>
+    {{- if .Verdict}}<p class="facts">{{.Verdict}}</p>{{end}}
+    {{- with .Audio}}
+    <audio id="audio-{{$c.N}}" data-call="{{$c.N}}" controls preload="none" src="{{.URL}}"></audio>
+    <p class="notice" id="audio-error-{{$c.N}}" hidden>Audio no disponible: no se pudo cargar la grabación.</p>
+    {{- if $c.Turns}}<p class="tap-hint">Toca un turno para escucharlo desde ese segundo.</p>{{end}}
+    {{- else}}
+    <p class="notice">{{.NoAudio}}</p>
+    {{- end}}
+    {{- if .Turns}}
+    <ol class="turns" aria-label="Transcripción">
+    {{- range .Turns}}
+      <li class="{{if .Agent}}agent{{else}}user{{end}}"><button type="button" class="turn{{if .Phrase}} phrase{{end}}" data-call="{{$c.N}}" data-seek="{{.Seek}}"{{if not $c.Audio}} disabled{{end}}><span class="who"><span>{{.Speaker}}</span><span>{{.Offset}}{{if .At}} · {{.At}}{{end}}</span></span><span class="msg">{{.Message}}</span>{{if .Phrase}}<span class="phrase-tag">La frase acordada</span>{{end}}</button></li>
+    {{- end}}
+    </ol>
+    {{- else}}
+    <p class="hint">Sin transcripción.</p>
+    {{- end}}
+  </article>
+  {{- end}}
+</section>
+
+<section id="sello" class="seal" aria-labelledby="h-sello">
+  <h2 id="h-sello">El sello</h2>
+  {{- with .Seal}}
+  {{- if .Sealed}}
+  <p class="seal-state">Sellada el {{.SealedAt}}</p>
+  <dl>
+    <dt>SHA-256 de la ficha (ficha.json)</dt><dd>{{.DocSHA256}}</dd>
+    {{- range .Recordings}}
+    <dt>SHA-256 de la grabación{{if $.MultiCall}} de la llamada {{.Call}}{{end}}</dt><dd>{{.SHA256}}</dd>
+    {{- end}}
+    <dt>Llave pública del servidor (la misma de GET /config)</dt><dd>{{.Key}}</dd>
+    <dt>Huella de la llave (SHA-256)</dt><dd>{{.Fingerprint}}</dd>
+  </dl>
+  <p class="downloads"><a class="button" href="{{.JSONURL}}" download="ficha.json">Descargar ficha.json</a><a class="button secondary" href="{{.SigURL}}" download="ficha.sig">Descargar ficha.sig</a></p>
+  <div class="honest">
+    <p>El sello prueba que el registro no cambió desde que el servidor de MAMÁ lo cerró. No es una firma electrónica certificada ni reemplaza una experticia.</p>
+    <p>Para comprobarlo: <code>go run ./cmd/verify-ficha ficha.json ficha.sig {{.Key}}</code></p>
+  </div>
+  {{- else}}
+  <p class="seal-state">Sin sellar</p>
+  <p class="hint">{{.Why}}</p>
+  {{- end}}
+  {{- end}}
+</section>
+</main>
+{{template "foot"}}{{end}}

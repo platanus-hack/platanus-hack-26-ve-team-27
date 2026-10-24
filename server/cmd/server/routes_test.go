@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
@@ -11,11 +12,12 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/serverkeys"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/report"
 )
 
 func TestRootReturnsOK(t *testing.T) {
 	rec := httptest.NewRecorder()
-	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), testOffline(t)).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), testOffline(t), nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET / status = %d, want %d", rec.Code, http.StatusOK)
@@ -24,7 +26,7 @@ func TestRootReturnsOK(t *testing.T) {
 
 func TestIntakeRoutesAreMounted(t *testing.T) {
 	rec := httptest.NewRecorder()
-	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), testOffline(t)).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/incidents", nil))
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), testOffline(t), nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/incidents", nil))
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("POST /incidents with no database = %d, want %d", rec.Code, http.StatusServiceUnavailable)
@@ -59,7 +61,7 @@ func testOffline(t *testing.T) *offlineEmergency {
 
 func TestConfigRouteIsMounted(t *testing.T) {
 	rec := httptest.NewRecorder()
-	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), testOffline(t)).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/config", nil))
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), testOffline(t), nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/config", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /config with no database = %d, want %d", rec.Code, http.StatusOK)
@@ -67,7 +69,7 @@ func TestConfigRouteIsMounted(t *testing.T) {
 }
 
 func TestEmergencyRoutesAreMounted(t *testing.T) {
-	mux := newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), testOffline(t))
+	mux := newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), testOffline(t), nil)
 	for _, path := range []string{"/emergencies", "/emergencies/relay"} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader("MAMA1 x")))
@@ -80,7 +82,7 @@ func TestEmergencyRoutesAreMounted(t *testing.T) {
 func TestSMSWebhookIsMounted(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/sms/inbound/twilio", strings.NewReader("Body=MAMA1+x"))
-	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), testOffline(t)).ServeHTTP(rec, req)
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), testOffline(t), nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("POST /sms/inbound/twilio with no database = %d, want 503", rec.Code)
@@ -90,7 +92,7 @@ func TestSMSWebhookIsMounted(t *testing.T) {
 func TestCallWebhookIsMounted(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/elevenlabs", strings.NewReader(`{"type":"post_call_audio"}`))
-	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), testOffline(t)).ServeHTTP(rec, req)
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), testOffline(t), nil).ServeHTTP(rec, req)
 
 	// Mounted, and with no secret configured it fails closed.
 	if rec.Code != http.StatusServiceUnavailable {
@@ -99,7 +101,7 @@ func TestCallWebhookIsMounted(t *testing.T) {
 }
 
 func TestOfflineEmergencyRoutesAreNotMountedWhenOff(t *testing.T) {
-	mux := newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), nil)
+	mux := newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), nil, nil)
 	for _, c := range []struct{ method, path string }{
 		{http.MethodGet, "/config"},
 		{http.MethodPost, "/emergencies"},
@@ -118,5 +120,48 @@ func TestOfflineEmergencyRoutesAreNotMountedWhenOff(t *testing.T) {
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/incidents", nil))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("POST /incidents with the flag off = %d, want 503", rec.Code)
+	}
+}
+
+// stubReports serves no record: every token is unknown.
+type stubReports struct{}
+
+func (stubReports) ByToken(context.Context, string) (report.Record, error) {
+	return report.Record{}, report.ErrNotFound
+}
+
+func TestReportRoutesOnlyWhenEnabledWithADatabase(t *testing.T) {
+	if newReports(config.Config{}, nil) != nil {
+		t.Error("newReports with INCIDENT_REPORT_ENABLED off is not nil")
+	}
+	if newReports(config.Config{Report: config.Report{Enabled: true, TTLDays: 30}}, nil) != nil {
+		t.Error("newReports without a database is not nil")
+	}
+
+	off := newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), nil, nil)
+	for _, path := range []string{"/i/AAAAAAAAAAAAAAAAAAAAAA", "/ficha/static/ficha.css"} {
+		rec := httptest.NewRecorder()
+		off.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("off: GET %s = %d, want 404", path, rec.Code)
+		}
+	}
+
+	on := newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), nil, report.NewHandler(stubReports{}, report.Options{}))
+	rec := httptest.NewRecorder()
+	on.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ficha/static/ficha.css", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf("on: GET /ficha/static/ficha.css = %d, want 200", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	on.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/i/AAAAAAAAAAAAAAAAAAAAAA", nil))
+	if rec.Code != http.StatusNotFound || rec.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Errorf("on: GET unknown token = %d (Referrer-Policy %q), want the report's 404", rec.Code, rec.Header().Get("Referrer-Policy"))
+	}
+}
+
+func TestChannelName(t *testing.T) {
+	if channelName(config.Config{Notifier: config.NotifierSMS}) != "SMS" || channelName(config.Config{Notifier: config.NotifierKapso}) != "WhatsApp" {
+		t.Error("channelName")
 	}
 }

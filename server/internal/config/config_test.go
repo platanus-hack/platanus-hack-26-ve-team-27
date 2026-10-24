@@ -201,3 +201,34 @@ func TestCallForceFailureIsOffUnlessTrueOr1(t *testing.T) {
 		}
 	}
 }
+
+func TestReportIsOffByDefaultWithThirtyDayLinks(t *testing.T) {
+	c := LoadFrom(envFrom(nil))
+	if c.Report.Enabled || c.Report.TTLDays != DefaultReportTTLDays || DefaultReportTTLDays != 30 {
+		t.Errorf("Report = %+v, want off with %d-day links", c.Report, DefaultReportTTLDays)
+	}
+	for _, name := range c.Missing() {
+		if strings.HasPrefix(name, "INCIDENT_REPORT") {
+			t.Errorf("Missing() lists the optional %s", name)
+		}
+	}
+}
+
+func TestReportReadsFlagAndTTL(t *testing.T) {
+	for _, tc := range []struct {
+		enabled, ttl string
+		wantOn       bool
+		wantTTL      int
+	}{
+		{"true", "7", true, 7},
+		{"1", "", true, DefaultReportTTLDays},
+		{"yes", "0", false, DefaultReportTTLDays},
+		{"TRUE", "-3", true, DefaultReportTTLDays},
+		{"", "abc", false, DefaultReportTTLDays},
+	} {
+		c := LoadFrom(envFrom(map[string]string{"INCIDENT_REPORT_ENABLED": tc.enabled, "INCIDENT_REPORT_TTL_DAYS": tc.ttl}))
+		if c.Report.Enabled != tc.wantOn || c.Report.TTLDays != tc.wantTTL {
+			t.Errorf("enabled=%q ttl=%q: Report = %+v, want on=%t ttl=%d", tc.enabled, tc.ttl, c.Report, tc.wantOn, tc.wantTTL)
+		}
+	}
+}
