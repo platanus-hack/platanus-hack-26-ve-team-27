@@ -21,3 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "mama"
 include(":app")
+include(":mesh")
