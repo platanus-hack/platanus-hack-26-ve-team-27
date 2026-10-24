@@ -222,8 +222,9 @@ func pdfCallOf(n, total int, c Call, dev Device) pdfCall {
 }
 
 // recordFromDocument reads a v1 ficha.json back into a Record, keeping from
-// live only what the document leaves out on purpose: the device's numbers
-// (shown masked) and the duress phrase (to mark its turn).
+// live only what the document leaves out on purpose: the device id (never
+// shown), the device's numbers (shown masked) and the duress phrase (to mark
+// its turn).
 func recordFromDocument(raw []byte, live Record) (Record, error) {
 	var d document
 	if err := json.Unmarshal(raw, &d); err != nil {
@@ -245,7 +246,7 @@ func recordFromDocument(raw []byte, live Record) (Record, error) {
 	}
 	rec := Record{
 		Incident: Incident{
-			ID: d.Incident.IncidentID, DeviceID: d.Incident.DeviceID,
+			ID: d.Incident.IncidentID, DeviceID: live.Incident.DeviceID,
 			Trigger: contract.Trigger(d.Incident.Trigger), Branch: contract.Branch(d.Incident.Branch),
 			SpeedMPS: d.Incident.SpeedMPS, TriggeredAt: parse(d.Incident.TriggeredAt),
 			CreatedAt: parse(d.Incident.ReceivedAt), NotifiedAt: parsePtr(d.Incident.NotifiedAt),

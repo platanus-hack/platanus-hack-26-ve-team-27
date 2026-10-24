@@ -24,9 +24,13 @@ phones pin its public half from `GET /config`.
    every call (status, times, duration, transcript, verdict and reason, and
    the recording's SHA-256, size, type and storage time), `sealed_at`, the
    server public key and a `clocks` note saying which clock each time comes
-   from. It leaves out every phone number and the duress phrase (the phrase
-   appears only where the person said it in the transcript). The audio is
-   covered by its SHA-256, not embedded.
+   from. It leaves out every phone number, the device id and the duress
+   phrase (the phrase appears only where the person said it in the
+   transcript). The device id is the device's only credential on the
+   unauthenticated `POST /devices` and `POST /incidents/{incident_id}/points`,
+   and anyone holding the link downloads the file: with it they could
+   re-register the device to their own numbers or add points to its
+   incidents. The audio is covered by its SHA-256, not embedded.
 2. **Exact bytes.** The document is stored as it was signed
    (`incident_seals.document`, `BYTEA`) and served byte for byte as
    `GET /i/{token}/ficha.json`. There is no canonicalization step to agree on:

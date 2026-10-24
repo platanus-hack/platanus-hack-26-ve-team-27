@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,6 +54,67 @@ func TestDocumentHoldsTheRecordAndNoSecrets(t *testing.T) {
 	again, err := Document(openRecordWith(rec), rec.Seal.SealedAt, rec.Seal.PublicKey)
 	if err != nil || !bytes.Equal(again, doc) {
 		t.Error("Document is not deterministic")
+	}
+}
+
+// The device id is the device's only credential on POST /devices and POST
+// /incidents/{incident_id}/points, and anyone holding the link reads every
+// response under /i/: none of them may carry it. The seal still verifies the
+// way verify-ficha checks it.
+func TestNoReportResponseCarriesTheDeviceID(t *testing.T) {
+	rec := sealedRecord()
+	device := rec.Incident.DeviceID
+	if device == "" {
+		t.Fatal("the fixture has no device id to look for")
+	}
+	src := &liveSource{}
+	src.set(testToken, rec)
+	srv, _ := liveServer(t, src, time.Hour)
+	get := func(path string) []byte {
+		t.Helper()
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s = %d, %v", path, resp.StatusCode, err)
+		}
+		return b
+	}
+	doc, sig := get(DocumentPath(testToken)), get(SignaturePath(testToken))
+	responses := map[string]string{
+		"ficha.json":  string(doc),
+		"estado.json": string(get("/i/" + testToken + "/estado.json")),
+		"the page":    string(get(PageURL("", testToken))),
+	}
+	stream, msgs := openStream(t, context.Background(), srv.URL+"/i/"+testToken+"/live")
+	defer stream.Body.Close()
+	first := next(t, msgs)
+	decodeSnapshot(t, first)
+	responses["the first /live update"] = first.data
+	rep, err := buildPDF(rec, pdfOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pdf, _ := json.Marshal(rep)
+	responses["the PDF's content"] = string(pdf)
+	for name, body := range responses {
+		if strings.Contains(body, device) {
+			t.Errorf("%s carries the device id", name)
+		}
+	}
+	if strings.Contains(string(doc), `"device_id"`) {
+		t.Error("ficha.json still has a device_id field")
+	}
+
+	parsed, err := ParseSignature(sig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Verify(doc, parsed, testKey().Public().(ed25519.PublicKey)); err != nil || got.IncidentID != testIncidentID {
+		t.Errorf("Verify = %+v, %v", got, err)
 	}
 }
 
