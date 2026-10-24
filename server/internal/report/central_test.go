@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -537,4 +538,78 @@ func TestStreamsOutliveTheServerReadTimeout(t *testing.T) {
 	if m := next(t, list); m.event != "update" {
 		t.Errorf("central stream after the read timeout: %+v", m)
 	}
+}
+
+// The list is not per case: it stays open even when every case is closed.
+// The detail follows a sealed case for a while (receipts come after the
+// seal) and then ends, like the family page.
+func TestCentralStreamsEndOnTheirOwnRules(t *testing.T) {
+	store := &fakeCentral{}
+	old := caseAt(cancelledID, centralNow.Add(-3*time.Hour))
+	old.SealedAt = ptr(centralNow.Add(-3 * time.Hour))
+	store.setCases(old)
+	store.setCase(sealedRecord(), CaseExtras{}) // sealed at 13:11:25
+	var now atomic.Int64
+	now.Store(at("2026-10-24T13:20:00Z").UnixNano()) // 9 min after the seal
+	h := NewHandler(fakeSource{}, Options{CanSeal: true, Channel: "WhatsApp"}).WithCentral(&Central{Key: testCentralKey, Store: store})
+	h.LivePoll, h.KeepAlive = 10*time.Millisecond, 20*time.Millisecond
+	h.Now = func() time.Time { return time.Unix(0, now.Load()) }
+	mux := http.NewServeMux()
+	h.Register(mux)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	ck := login(t, srv)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	open := func(path string) chan sseMessage {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+path, nil)
+		req.AddCookie(ck)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { resp.Body.Close() })
+		msgs := make(chan sseMessage, 16)
+		go readSSE(bufio.NewReader(resp.Body), msgs)
+		return msgs
+	}
+	// quiet reads for d and fails on anything but keep-alives.
+	quiet := func(name string, msgs <-chan sseMessage, d time.Duration) {
+		t.Helper()
+		deadline := time.After(d)
+		for {
+			select {
+			case m := <-msgs:
+				if m.comment != "keep-alive" {
+					t.Fatalf("%s: %+v, want only keep-alives", name, m)
+				}
+			case <-deadline:
+				return
+			}
+		}
+	}
+
+	list := open("/central/live")
+	if s := decodeAny(t, next(t, list)); !s.Live || s.Over() {
+		t.Fatalf("list: live %t over %t", s.Live, s.Over())
+	}
+	detail := open("/central/r/" + testIncidentID + "/live")
+	if s := decodeAny(t, next(t, detail)); !s.Live || s.Over() || !strings.Contains(s.Sections["status"], "Sellada") {
+		t.Fatalf("detail 9 min after the seal: live %t over %t", s.Live, s.Over())
+	}
+	quiet("list", list, 120*time.Millisecond)
+	quiet("detail", detail, 60*time.Millisecond)
+
+	now.Store(at("2026-10-24T14:00:00Z").UnixNano()) // 48 min after the seal
+	m := next(t, detail)
+	if m.event == "update" { // only when a section changed; here none does
+		if s := decodeAny(t, m); s.Live {
+			t.Fatal("detail long after the seal is still live")
+		}
+		m = next(t, detail)
+	}
+	if m.event != "end" {
+		t.Fatalf("detail long after the seal: %+v, want end", m)
+	}
+	quiet("list after the detail ended", list, 120*time.Millisecond)
 }

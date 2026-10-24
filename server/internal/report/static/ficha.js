@@ -137,7 +137,7 @@
         .then(function (s) {
           setBadge("live");
           apply(s);
-          if (s.end) { setBadge("off"); return; }
+          if (s.end || !s.live) { setBadge("off"); return; } // sealed or no longer live: nothing more will come
           setTimeout(tick, 2000);
         })
         .catch(function () { setBadge("reconnecting"); setTimeout(tick, 4000); });

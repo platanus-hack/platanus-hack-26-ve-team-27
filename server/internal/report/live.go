@@ -46,6 +46,11 @@ type Snapshot struct {
 	Sections  map[string]string `json:"sections"`
 }
 
+// Over reports whether nothing more will come for this snapshot's page: it
+// is sealed, or no longer followed live. The live loop then ends the stream
+// and the page stops polling estado.json.
+func (s Snapshot) Over() bool { return s.End || !s.Live }
+
 // snapshot renders the family page's sections of the record.
 func (h *Handler) snapshot(rec Record, token string) (Snapshot, error) {
 	opts := h.opts
@@ -162,8 +167,12 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request, rec Record, loa
 // Stream, the central list and detail): next runs at once and then every
 // LivePoll; an "update" event goes out each time its Version changes, a
 // ": keep-alive" comment every KeepAlive, and an "end" event once a
-// snapshot says End or next answers ErrNotFound or ErrUnknownIncident
-// ({"gone":true}), after which the stream closes. Any other error from next
+// snapshot is over (Snapshot.Over: sealed, or no longer live) or next
+// answers ErrNotFound or ErrUnknownIncident ({"gone":true}), after which the
+// stream closes. The snapshot that is over still goes out first, so a late
+// viewer gets the page. Without that rule a report that is never sealed
+// (no call, no signing key, or simply quiet for 30 min) would poll the
+// database every second for as long as the page stays open. Any other error from next
 // is logged once and the loop keeps polling. It also stops when the client
 // goes away, and after MaxStream (EventSource reconnects by itself). The
 // caller sets its own access checks and privacy headers first.
@@ -207,7 +216,7 @@ func (h *Handler) serveSnapshots(w http.ResponseWriter, r *http.Request, next fu
 			}
 			last = s.Version
 		}
-		if s.End {
+		if s.Over() {
 			write("event: end\ndata: {}\n\n")
 			return true
 		}

@@ -183,8 +183,9 @@ func (h *Handler) centralCases(ctx context.Context) (centralList, error) {
 	return l, nil
 }
 
-// centralListSnapshot renders the list's live sections. It never ends: the
-// list waits for the next case.
+// centralListSnapshot renders the list's live sections. It is always live
+// and never over, whatever each case's state: the list waits for the next
+// case.
 func (h *Handler) centralListSnapshot(ctx context.Context) (Snapshot, error) {
 	l, err := h.centralCases(ctx)
 	if err != nil {
@@ -240,6 +241,7 @@ type centralCase struct {
 	People       []NotifiedPerson // who was notified, one entry per number
 	NotifiedNote string           // the notified panel's line when nobody was
 	at           time.Time
+	follow       bool // the detail's stream stays open (see centralCaseSnapshot)
 }
 
 // NotifiedPerson is one number the notifier wrote to, with each channel's
@@ -285,6 +287,7 @@ func buildCentralCase(rec Record, x CaseExtras, opts Options) centralCase {
 	}
 	item := caseItemOf(rec, x)
 	d := centralCase{Page: page, Case: caseRow(item, opts.Now), Context: contextView(x.Ficha), at: opts.Now}
+	d.follow = page.Live || (rec.Seal != nil && opts.Now.Sub(rec.Seal.SealedAt) < followSeal)
 	if d.Case.State == CaseCancelled {
 		d.Title, d.TitleKind = "Cancelado por la persona", "cancelled"
 	}
@@ -332,11 +335,16 @@ func (h *Handler) centralCaseOf(ctx context.Context, id, token string) (centralC
 }
 
 // centralCaseSnapshot renders the detail's live sections. The state is the
-// central's (alerta, llamada…), for the page's colors; it never ends, since
-// delivery and read receipts keep coming after the seal.
+// central's (alerta, llamada…), for the page's colors. It stays live while
+// the case is (d.Live) and for followSeal after its seal, since delivery
+// and read receipts keep coming after it; then the loop ends the stream.
 func centralCaseSnapshot(d centralCase, now time.Time) (Snapshot, error) {
-	return renderSnapshot(d, d.Case.State, d.Live, false, now, CentralCaseSections)
+	return renderSnapshot(d, d.Case.State, d.follow, false, now, CentralCaseSections)
 }
+
+// followSeal is how long the central detail keeps following a sealed case:
+// Kapso's delivered and read receipts arrive after the seal.
+const followSeal = 15 * time.Minute
 
 // caseToken is the case's report link token, creating the link when the
 // case has none yet (the family message has not gone out): the detail plays

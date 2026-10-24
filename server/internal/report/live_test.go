@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
 )
 
 // liveSource is a Source whose record the test changes while a stream runs.
@@ -374,5 +376,57 @@ func TestStreamWithAnotherLoader(t *testing.T) {
 	}
 	if r, _ := http.Get(srv.URL + "/central/r/00000000-0000-4000-8000-000000000000/live"); r.StatusCode != http.StatusNotFound {
 		t.Errorf("unknown incident = %d", r.StatusCode)
+	}
+}
+
+// clockServer serves the report routes of src at the time *now holds.
+func clockServer(t *testing.T, src Source, now *atomic.Int64) *httptest.Server {
+	t.Helper()
+	h := NewHandler(src, Options{CanSeal: true, Channel: "WhatsApp"})
+	h.LivePoll, h.KeepAlive = 10*time.Millisecond, 20*time.Millisecond
+	h.Now = func() time.Time { return time.Unix(0, now.Load()) }
+	mux := http.NewServeMux()
+	h.Register(mux)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// A report that is never sealed must not keep a stream polling forever:
+// once it is no longer live (quiet for 30 min) the stream sends that last
+// state and ends. A late viewer of such a report, here an immediate alert
+// that has no call and so no seal, still gets the page once.
+func TestLiveEndsOnceTheCaseIsNoLongerLive(t *testing.T) {
+	src := &liveSource{}
+	src.set(testToken, openRecord())
+	var now atomic.Int64
+	now.Store(at("2026-10-24T13:11:40Z").UnixNano())
+	srv := clockServer(t, src, &now)
+	resp, msgs := openStream(t, context.Background(), srv.URL+"/i/"+testToken+"/live")
+	defer resp.Body.Close()
+	if s := decodeSnapshot(t, next(t, msgs)); !s.Live || s.Over() {
+		t.Fatalf("first: live %t over %t", s.Live, s.Over())
+	}
+	now.Store(at("2026-10-24T14:00:00Z").UnixNano()) // 48 min after the last thing stored
+	if s := decodeSnapshot(t, next(t, msgs)); s.Live || s.End || !s.Over() {
+		t.Fatalf("after 30 quiet minutes: live %t end %t", s.Live, s.End)
+	}
+	if m := next(t, msgs); m.event != "end" {
+		t.Fatalf("after the case went quiet: %+v, want end", m)
+	}
+	if m := next(t, msgs); m.event != "EOF" {
+		t.Fatalf("after end: %+v, want the stream closed", m)
+	}
+
+	alert := openRecord()
+	alert.Incident.Branch, alert.Calls = contract.BranchImmediateAlert, nil
+	src.set(testToken, alert)
+	resp2, msgs2 := openStream(t, context.Background(), srv.URL+"/i/"+testToken+"/live")
+	defer resp2.Body.Close()
+	if s := decodeSnapshot(t, next(t, msgs2)); s.Live || s.State != "unsealed" {
+		t.Fatalf("late viewer: live %t state %s", s.Live, s.State)
+	}
+	if m := next(t, msgs2); m.event != "end" {
+		t.Fatalf("late viewer of an unsealed, quiet report: %+v, want end", m)
 	}
 }
