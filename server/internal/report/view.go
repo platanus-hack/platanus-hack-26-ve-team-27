@@ -107,14 +107,15 @@ type Page struct {
 	MultiCall   bool
 	Seal        SealView
 
-	Live        bool   // not sealed yet: the page follows the case live
-	TriggerISO  string // the gesture's instant, for the running clock
-	CallActive  bool   // a call is being placed, ringing or talking
-	CallPhase   string // "Marcando", "Sonando" or "En llamada"
-	CallSince   string // when CallPhase started (ISO), for the call timer
-	Latencies   []Latency
-	Emergencies []EmergencyView
-	Fallback    bool // every call failed and the WebRTC fallback opened
+	HasCallBranch bool   // the branch calls: ElevenLabs' clock can appear
+	Live          bool   // not sealed yet: the page follows the case live
+	TriggerISO    string // the gesture's instant, for the running clock
+	CallActive    bool   // a call is being placed, ringing or talking
+	CallPhase     string // "Marcando", "Sonando" or "En llamada"
+	CallSince     string // when CallPhase started (ISO), for the call timer
+	Latencies     []Latency
+	Emergencies   []EmergencyView
+	Fallback      bool // every call failed and the WebRTC fallback opened
 }
 
 // PointRow is one row of the locations table.
@@ -228,6 +229,7 @@ func Build(rec Record, opts Options) Page {
 	_, last := rec.span()
 	p.Live = rec.Seal == nil && (opts.Now.IsZero() || opts.Now.Sub(last) < liveWindow)
 	p.TriggerISO = iso(rec.Incident.TriggeredAt)
+	p.HasCallBranch = rec.Incident.Branch == contract.BranchCall
 	for i, c := range rec.Calls {
 		v := callView(i+1, c, rec.Device, opts.Token)
 		if v.Active && (opts.Now.IsZero() || opts.Now.Sub(c.RequestedAt) < staleCall) && rec.Seal == nil {
@@ -459,7 +461,7 @@ func noAudioReason(c Call) string {
 	case "done":
 		return "Audio no disponible: ElevenLabs todavía no entregó la grabación, o no la guardó. La transcripción sí está."
 	}
-	return "Audio no disponible: la llamada todavía no termina."
+	return "La grabación aparece aquí cuando la llamada termine."
 }
 
 func noCallReason(b contract.Branch) string {

@@ -480,3 +480,10 @@ func (l Links) ReportURL(ctx context.Context, incidentID string) (string, error)
 	}
 	return link.URL(l.BaseURL), nil
 }
+
+// Now is the database clock.
+func (s DBStore) Now(ctx context.Context) (time.Time, error) {
+	var t time.Time
+	err := s.pool.QueryRowContext(ctx, `SELECT now()`).Scan(&t)
+	return t, err
+}

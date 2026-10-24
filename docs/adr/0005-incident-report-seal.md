@@ -85,3 +85,8 @@ phones pin its public half from `GET /config`.
   used. Revocation is out of scope.
 - The link token is stored in plain text: anyone who can read the database
   already reads the reports themselves.
+- The live page (SSE) shows more than the seal covers: Twilio's ringing and
+  answer times (`call_progress`), the derived WebRTC fallback, offline
+  emergencies matched by device and time, and the latency numbers. The
+  document format stays v1 and leaves them out, because they are either
+  derived or linked by a heuristic, not recorded facts about this incident.

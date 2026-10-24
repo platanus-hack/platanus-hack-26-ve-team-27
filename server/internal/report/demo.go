@@ -24,13 +24,14 @@ type Demo struct {
 	Key     string // DEMO_KEY; blank never matches
 	Store   DemoStore
 	TTLDays int
-	Now     func() time.Time // time.Now when nil
 }
 
 // DemoStore is what Demo reads. DBStore is the real one.
 type DemoStore interface {
 	NewestIncident(ctx context.Context, after time.Time) (string, error)
 	Ensure(ctx context.Context, incidentID string, ttlDays int) (Link, error)
+	// Now is the database clock, the one incidents.created_at uses.
+	Now(ctx context.Context) (time.Time, error)
 }
 
 func (d *Demo) register(mux *http.ServeMux) {
@@ -84,14 +85,21 @@ func (d *Demo) latest(w http.ResponseWriter, r *http.Request) {
 
 // next renders the waiting page; its script polls next.json with the time
 // the page opened, and follows the URL once an incident newer than that
-// exists.
+// exists. The time is the database's, the clock created_at uses: on Render
+// the server and the database are different machines.
 func (d *Demo) next(w http.ResponseWriter, r *http.Request) {
 	privacy(w)
 	if !d.authorized(r) {
 		notFound(w)
 		return
 	}
-	q := url.Values{"key": {r.URL.Query().Get("key")}, "since": {iso(d.now())}}
+	now, err := d.Store.Now(r.Context())
+	if err != nil {
+		log.Printf("report: demo: %v", err)
+		http.Error(w, "No se pudo leer la hora.", http.StatusInternalServerError)
+		return
+	}
+	q := url.Values{"key": {r.URL.Query().Get("key")}, "since": {iso(now)}}
 	render(w, http.StatusOK, "demo-wait", "/demo/next.json?"+q.Encode())
 }
 
@@ -119,11 +127,4 @@ func (d *Demo) nextJSON(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
-}
-
-func (d *Demo) now() time.Time {
-	if d.Now != nil {
-		return d.Now()
-	}
-	return time.Now()
 }

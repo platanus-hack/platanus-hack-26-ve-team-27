@@ -177,6 +177,7 @@ func TestStaticFiles(t *testing.T) {
 		"/ficha/static/lexend_bold.ttf":      "font/ttf",
 		"/ficha/static/mama_escuchando.webp": "image/webp",
 		"/ficha/static/mama_lista.webp":      "image/webp",
+		"/ficha/static/mama_llamando.webp":   "image/webp",
 		"/ficha/static/Lexend-OFL.txt":       "text/plain; charset=utf-8",
 		"/ficha/static/mama_mark.webp":       "image/webp",
 	} {
@@ -234,5 +235,14 @@ func TestAudioIsServedWithRangesAndPrivacyHeaders(t *testing.T) {
 	}
 	if rec := serve(t, failingSource{}, "/i/"+testToken+"/audio.mp3"); rec.Code != http.StatusInternalServerError {
 		t.Errorf("GET audio with the store down = %d, want 500", rec.Code)
+	}
+}
+
+// Every pose Build can pick is embedded.
+func TestEveryPoseIsEmbedded(t *testing.T) {
+	for _, pose := range []string{"escuchando", "llamando", "lista"} {
+		if _, err := fs.ReadFile(staticFS, "static/mama_"+pose+".webp"); err != nil {
+			t.Errorf("pose %s: %v", pose, err)
+		}
 	}
 }

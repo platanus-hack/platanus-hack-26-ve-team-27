@@ -31,6 +31,8 @@ func (d *demoStore) NewestIncident(_ context.Context, after time.Time) (string, 
 	return best, nil
 }
 
+func (d *demoStore) Now(context.Context) (time.Time, error) { return at("2026-10-24T13:00:00Z"), nil }
+
 func (d *demoStore) Ensure(_ context.Context, id string, _ int) (Link, error) {
 	d.ensured = append(d.ensured, id)
 	return Link{Token: "tok-" + id[:8] + "AAAAAAAAAAAAAA"}, nil
@@ -40,7 +42,6 @@ func demoMux(store DemoStore, key string) *http.ServeMux {
 	mux := http.NewServeMux()
 	NewHandler(fakeSource{}, Options{}).WithDemo(&Demo{
 		Key: key, Store: store, TTLDays: 30,
-		Now: func() time.Time { return at("2026-10-24T13:00:00Z") },
 	}).Register(mux)
 	return mux
 }

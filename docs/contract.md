@@ -265,9 +265,9 @@ the newest call's verdict. Sample: `notifier_message.json`.
 
 `server/migrations/0001_init.sql`; `0002_device_keys.sql` adds
 `ed25519_public_key` and `key_id` to `devices`; `0003_emergencies.sql` adds the `emergencies` table;
-`0004_incident_reports.sql` adds `incident_reports`, `call_recordings` and
-`incident_seals` for the incident report (#76, approved by the Tech lead on
-Oct 24). The server applies pending migrations on
+`0004_incident_reports.sql` adds `incident_reports`, `call_recordings`,
+`incident_seals` and `call_progress` for the incident report (#76, approved
+by the Tech lead on Oct 24). The server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
 no-op. Without `DATABASE_URL` the server boots and skips migrations.
@@ -282,6 +282,7 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 | `incident_reports` | `incident_id` | the report link: `token` (unique, 22 base64url chars), `created_at`, `expires_at` (#76) |
 | `call_recordings` | `call_id` | a call's recording: `content_type`, `audio` (bytes), `sha256`, `stored_at` (#76) |
 | `incident_seals` | `incident_id` | the seal: `sealed_at`, `document` (exact bytes of `ficha.json`), `signature`, `public_key` (#76) |
+| `call_progress` | `call_id` | what the call engine saw polling Twilio: last `twilio_status`, `ringing_at`, `answered_at` (server clock, #76) |
 | `schema_migrations` | `version` | applied migration files |
 
 The verdict lives on `calls` (`verdict`, `verdict_reason`, `verdict_at`)
@@ -372,6 +373,36 @@ default; then every route below answers `404`). Code:
   them. Without `EMERGENCY_ED25519_SEED` (or the offline channel's key)
   reports stay "Sin sellar" and the server still boots. Format, timing and
   limits: [`docs/adr/0005-incident-report-seal.md`](adr/0005-incident-report-seal.md).
+- **Live.** `GET /i/{token}/live` is a Server-Sent Events stream. It sends
+  an `update` event at once and then one each time the case changes; the
+  server re-reads the case every second. The event data is JSON:
+  `version`, `state`, `live`, `end`, `server_now`, and `sections`, the page's
+  sections rendered as HTML, so the page has a single renderer. A
+  `: keep-alive` comment goes out every 15 s. An `end` event follows the seal,
+  or `{"gone":true}` when the link stops working; then the stream closes. It
+  also closes after 30 min, and the browser reconnects.
+  `GET /i/{token}/estado.json` is the same snapshot, for polling when the
+  stream fails. "En vivo", the clock since the gesture and the call timer run
+  while the case is unsealed and something happened in the last 30 min.
+- **What the page adds beyond the seal.** These appear on the page but are
+  not in `ficha.json`:
+  - Twilio's ringing and answer times (`call_progress`). The engine's
+    optional `Progress` hook stores them while the report is on.
+  - Retries (each `calls` row).
+  - The WebRTC fallback, derived: no call connected, and the last one failed
+    after the retry or on a non-+58 number.
+  - Offline emergencies (`emergencies`) of the same device whose
+    `[first_received_at, updated_at]` overlaps the incident's span ±10 min.
+    The schema has no link between the two, so they are matched by phone
+    and time and labelled so.
+  - Big latency numbers from the gesture (phone clock) to the server, to
+    "Mamá llamando", to the phone ringing (when Twilio was polled) and to
+    the WhatsApp claim.
+- **Demo.** With `DEMO_KEY` set, `GET /demo/latest?key=K` redirects to the
+  newest incident's report (creating its link). `GET /demo/next?key=K` waits
+  for the next incident, using the database's clock, and opens its report
+  when it arrives. The key is compared in constant time; a wrong or missing
+  key answers `404`.
 - **Clocks.** Each timeline row says which clock its time comes from: the
   phone (`triggered_at`, `gps_points.recorded_at`), the server
   (`incidents.created_at`, `calls.requested_at`, `verdict_at`, `notified_at`,

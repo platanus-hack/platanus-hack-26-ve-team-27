@@ -98,6 +98,7 @@ h1, h2, h3, p, ol, ul, dl, dd, figure { margin: 0; }
 ol, ul { padding: 0; list-style: none; }
 a { color: var(--primary); }
 button { font: inherit; color: inherit; }
+[hidden] { display: none !important; } /* class rules below set display; hidden must still win */
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .wrap { max-width: 680px; margin: 0 auto; padding: 0 var(--screen); }
 
@@ -126,7 +127,7 @@ button { font: inherit; color: inherit; }
 .mark { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; } /* MamaMark: Mamá's face in a circle (#89) */
 .top-right { display: inline-flex; align-items: center; gap: var(--s-m); }
 .top .label { font-weight: 500; font-size: 12px; line-height: 16px; letter-spacing: 0.4px; color: var(--on-surface-variant); }
-.live-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-weight: 700; font-size: 12px; line-height: 20px; letter-spacing: .08em; text-transform: uppercase; }
+.live-badge { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-weight: 700; font-size: 12px; line-height: 20px; letter-spacing: .08em; text-transform: uppercase; }
 .live-badge.reconnecting { background: var(--surface-highest); color: var(--on-surface-variant); }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: blink 1.2s ease-in-out infinite; }
 
@@ -162,15 +163,15 @@ body[data-open] .hero .mama { animation: float 5s ease-in-out infinite; }
 .branch { color: var(--on-surface-variant); font-size: 14px; line-height: 20px; }
 .since { margin-top: var(--s-s); font-size: 14px; line-height: 20px; color: var(--on-surface-variant); }
 .ticker { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--on-background); }
-.callnow { display: inline-flex; align-items: center; gap: var(--s-s); margin-top: var(--s-s); padding: 4px 14px 4px 10px; border-radius: 999px; background: var(--primary-container); color: var(--on-primary-container); font-weight: 500; font-size: 14px; line-height: 22px; }
+.callnow { white-space: nowrap; display: inline-flex; align-items: center; gap: var(--s-s); margin-top: var(--s-s); padding: 4px 14px 4px 10px; border-radius: 999px; background: var(--primary-container); color: var(--on-primary-container); font-weight: 500; font-size: 14px; line-height: 22px; }
 .callnow .ticker { color: inherit; }
 .ring { position: relative; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); flex: none; }
 .ring::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--primary); animation: ping 1.3s var(--ease) infinite; }
 
 .state { display: inline-block; margin-bottom: var(--s-s); padding: 2px 12px; border-radius: 999px; font-weight: 500; font-size: 12px; line-height: 20px; letter-spacing: 0.4px; }
-.state-open { background: var(--primary-container); color: var(--on-primary-container); }
-.state-sealed { background: var(--primary); color: var(--on-primary); }
-.state-unsealed { background: var(--secondary-container); color: var(--on-secondary-container); }
+.state.state-open { background: var(--primary-container); color: var(--on-primary-container); }
+.state.state-sealed { background: var(--primary); color: var(--on-primary); }
+.state.state-unsealed { background: var(--secondary-container); color: var(--on-secondary-container); }
 
 @media (min-width: 1024px) {
   .hero { padding: var(--s-xl) 0 var(--s-l); gap: var(--s-xl); }
@@ -313,6 +314,13 @@ footer p + p { margin-top: var(--s-s); }
 .demo-wait .mama-wait { width: 160px; height: 160px; animation: float 4s ease-in-out infinite; filter: drop-shadow(0 12px 28px var(--glow)); }
 .since-wait { display: inline-flex; align-items: center; gap: var(--s-s); color: var(--primary) !important; font-weight: 500; }
 .since-wait .live-dot { background: var(--primary); }
+
+@media (max-width: 520px) {
+  .top .label { display: none; }
+  .hero { gap: var(--s-m); align-items: flex-start; }
+  .hero .mama { width: 96px; height: 96px; margin-top: var(--s-l); }
+  .verdict { font-size: 30px; line-height: 38px; }
+}
 
 @media (max-width: 360px) {
   :root { --screen: 16px; }

@@ -9,6 +9,9 @@
 // RENDER_EXTERNAL_URL, INCIDENT_REPORT_TTL_DAYS) and never migrates: run it
 // against a database the server already migrated. The page only answers on
 // a server started with INCIDENT_REPORT_ENABLED=true.
+//
+// -seal also seals the report now with EMERGENCY_ED25519_SEED (the server
+// seals by itself after the call; this is for rehearsals and tests).
 package main
 
 import (
@@ -21,12 +24,14 @@ import (
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/db"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/serverkeys"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/report"
 )
 
 func main() {
 	cfg := config.Load()
 	ttl := flag.Int("ttl-days", cfg.Report.TTLDays, "days a new link lives")
+	seal := flag.Bool("seal", false, "seal the report now with EMERGENCY_ED25519_SEED")
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "usage: go run ./cmd/ficha [-ttl-days N] <incident_id>")
 		flag.PrintDefaults()
@@ -36,13 +41,13 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := run(cfg, flag.Arg(0), *ttl); err != nil {
+	if err := run(cfg, flag.Arg(0), *ttl, *seal); err != nil {
 		fmt.Fprintln(os.Stderr, "ficha:", err)
 		os.Exit(1)
 	}
 }
 
-func run(cfg config.Config, incidentID string, ttlDays int) error {
+func run(cfg config.Config, incidentID string, ttlDays int, seal bool) error {
 	pool, err := db.Open(cfg.DatabaseURL)
 	if err != nil {
 		return err
@@ -66,5 +71,22 @@ func run(cfg config.Config, incidentID string, ttlDays int) error {
 		fmt.Fprintln(os.Stderr, "ficha: PUBLIC_URL is not set; prefix the path with the server's URL")
 	}
 	fmt.Fprintf(os.Stderr, "ficha: expires %s\n", link.ExpiresAt.UTC().Format(time.RFC3339))
+	if !seal {
+		return nil
+	}
+	key, err := serverkeys.SigningKey(cfg.Emergency)
+	if err != nil {
+		return err
+	}
+	if key == nil {
+		return errors.New("-seal needs EMERGENCY_ED25519_SEED")
+	}
+	sealed, err := (&report.Closer{Store: report.NewDBStore(pool), Signer: key}).Seal(ctx, incidentID)
+	if err != nil {
+		return err
+	}
+	if !sealed {
+		fmt.Fprintln(os.Stderr, "ficha: not sealed: already sealed, or the incident had no call")
+	}
 	return nil
 }

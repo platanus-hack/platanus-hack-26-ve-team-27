@@ -287,3 +287,10 @@ func TestNewestIncident(t *testing.T) {
 		t.Errorf("after the only incident: %v", err)
 	}
 }
+
+func TestDBNow(t *testing.T) {
+	now, err := NewDBStore(newDB(t)).Now(context.Background())
+	if err != nil || time.Since(now) > time.Minute || time.Since(now) < -time.Minute {
+		t.Errorf("Now = %v %v", now, err)
+	}
+}

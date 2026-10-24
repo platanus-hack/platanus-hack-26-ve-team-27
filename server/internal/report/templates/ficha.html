@@ -67,7 +67,7 @@
 {{template "foot"}}{{end}}
 
 {{define "page"}}{{template "head"}}
-<body class="state-{{.State}}" data-state="{{.State}}" data-live-url="/i/{{.Token}}/live" data-json-url="/i/{{.Token}}/estado.json"{{if .Live}} data-open{{end}}>
+<body data-state="{{.State}}" data-live-url="/i/{{.Token}}/live" data-json-url="/i/{{.Token}}/estado.json"{{if .Live}} data-open{{end}}>
 <div class="wrap">
 {{template "topbar"}}
 <main class="layout">
@@ -77,8 +77,8 @@
 
 <section id="linea" class="col-timeline" aria-labelledby="h-linea">
   <h2 id="h-linea">Línea de tiempo</h2>
-  <p class="hint">Cada hora dice de qué reloj viene: el del teléfono, el del servidor o el de ElevenLabs (la llamada). Pueden no coincidir.</p>
-  <p class="legend" aria-hidden="true"><span class="clock clock-phone">teléfono</span><span class="clock clock-server">servidor</span><span class="clock clock-elevenlabs">ElevenLabs</span></p>
+  <p class="hint">Cada hora dice de qué reloj viene: {{if .HasCallBranch}}el del teléfono, el del servidor o el de ElevenLabs (la llamada){{else}}el del teléfono o el del servidor{{end}}. Pueden no coincidir.</p>
+  <p class="legend" aria-hidden="true"><span class="clock clock-phone">teléfono</span><span class="clock clock-server">servidor</span>{{if .HasCallBranch}}<span class="clock clock-elevenlabs">ElevenLabs</span>{{end}}</p>
   <div class="timeline">
     <div class="rail" aria-hidden="true"><div class="rail-fill" data-rail></div></div>
     <ol data-live="timeline">{{template "sec-timeline" .}}</ol>
@@ -122,7 +122,7 @@
   <p data-key="since" class="since">Desde el gesto <span class="ticker" data-since="{{.TriggerISO}}" data-format="clock">—</span></p>
   {{- end}}
   {{- if .CallActive}}
-  <p data-key="callnow-{{.CallPhase}}" data-reveal class="callnow"><span class="ring" aria-hidden="true"></span>Llamada en curso · {{.CallPhase}} <span class="ticker" data-since="{{.CallSince}}" data-format="clock">—</span></p>
+  <p data-key="callnow-{{.CallPhase}}" data-reveal class="callnow" aria-label="Llamada en curso: {{.CallPhase}}"><span class="ring" aria-hidden="true"></span><span>{{.CallPhase}}</span><span class="ticker" data-since="{{.CallSince}}" data-format="clock">—</span></p>
   {{- end}}
 </div>
 {{- end}}

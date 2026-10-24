@@ -68,6 +68,7 @@
         o._html = html;
         return o;
       }
+      if (o) { o.remove(); } // replaced: the new element takes its place
       n._html = html;
       snapshot(n);
       animateIn(n, fresh++);
@@ -102,7 +103,6 @@
       if (c) { reconcile(c, s.sections[name]); }
     });
     body.setAttribute("data-state", s.state);
-    body.className = body.className.replace(/\bstate-\w+/, "state-" + s.state);
     if (s.live) { body.setAttribute("data-open", ""); } else { body.removeAttribute("data-open"); }
     afterUpdate();
   }
