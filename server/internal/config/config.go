@@ -13,10 +13,17 @@ import (
 // DefaultPort is used when PORT is unset.
 const DefaultPort = "8080"
 
+// NOTIFIER values: the channel the family alert goes out on.
+const (
+	NotifierKapso = "kapso" // WhatsApp through Kapso, the default
+	NotifierSMS   = "sms"   // SMS through Twilio, the fallback
+)
+
 // Config holds every env var the server reads.
 type Config struct {
 	Port        string // PORT
 	DatabaseURL string // DATABASE_URL
+	Notifier    string // NOTIFIER, lowercased; NotifierKapso when unset
 
 	ElevenLabs ElevenLabs
 	Twilio     Twilio
@@ -49,12 +56,15 @@ type Kapso struct {
 func Load() Config { return LoadFrom(os.Getenv) }
 
 // LoadFrom reads the config through getenv, so tests need no real env.
-// Values are trimmed; PORT falls back to DefaultPort.
+// Values are trimmed; PORT falls back to DefaultPort and NOTIFIER to
+// NotifierKapso. NOTIFIER is not validated here: notify.NewSender rejects an
+// unknown value.
 func LoadFrom(getenv func(string) string) Config {
 	get := func(name string) string { return strings.TrimSpace(getenv(name)) }
 	c := Config{
 		Port:        get("PORT"),
 		DatabaseURL: get("DATABASE_URL"),
+		Notifier:    strings.ToLower(get("NOTIFIER")),
 		ElevenLabs: ElevenLabs{
 			APIKey:        get("ELEVENLABS_API_KEY"),
 			AgentID:       get("ELEVENLABS_AGENT_ID"),
@@ -74,11 +84,14 @@ func LoadFrom(getenv func(string) string) Config {
 	if c.Port == "" {
 		c.Port = DefaultPort
 	}
+	if c.Notifier == "" {
+		c.Notifier = NotifierKapso
+	}
 	return c
 }
 
-// vars lists every env var name with its value, in a fixed order. PORT is
-// left out because it always has a value.
+// vars lists every env var name with its value, in a fixed order. PORT and
+// NOTIFIER are left out because they always have a value.
 func (c Config) vars() []struct{ name, value string } {
 	return []struct{ name, value string }{
 		{"DATABASE_URL", c.DatabaseURL},
@@ -109,7 +122,8 @@ func (c Config) Missing() []string {
 // String reports which vars are set without printing any value, so logging a
 // Config by mistake cannot leak a key.
 func (c Config) String() string {
-	parts := []string{"PORT=" + c.Port}
+	// NOTIFIER is a channel name, not a secret, so its value is shown.
+	parts := []string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier}
 	for _, v := range c.vars() {
 		state := "set"
 		if v.value == "" {

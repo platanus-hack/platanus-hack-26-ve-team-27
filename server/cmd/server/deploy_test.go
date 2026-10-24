@@ -5,13 +5,15 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
 )
 
 // Wires the real boot path with no DATABASE_URL: migrations are skipped and
 // /health must answer 503, not panic on a nil *sql.DB.
 func TestDeployRoutesWithoutDatabase(t *testing.T) {
 	t.Setenv("RENDER_GIT_COMMIT", "abc123")
-	mux := newMux(openAndMigrate(""))
+	mux := newMux(openAndMigrate(""), intake.LogHandoff{})
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))

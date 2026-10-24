@@ -11,6 +11,8 @@ import (
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/db"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/notify"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/migrations"
 )
 
@@ -25,10 +27,11 @@ func main() {
 	}
 
 	pool := openAndMigrate(cfg.DatabaseURL)
+	notifier := newNotifier(cfg, pool)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newMux(pool),
+		Handler:           newMux(pool, notifier),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -63,4 +66,20 @@ func openAndMigrate(url string) *sql.DB {
 		log.Printf("database: applied migrations %s", strings.Join(applied, ", "))
 	}
 	return pool
+}
+
+// newNotifier builds the family notifier on the channel NOTIFIER picks. An
+// unknown NOTIFIER exits, like a failed migration: Render keeps the previous
+// deploy instead of alerting through a channel nobody chose. Without a
+// database intake answers 503 and never hands off, so LogHandoff is enough.
+func newNotifier(cfg config.Config, pool *sql.DB) intake.Notifier {
+	sender, err := notify.NewSender(cfg)
+	if err != nil {
+		log.Fatalf("notifier: %v", err)
+	}
+	if pool == nil {
+		return intake.LogHandoff{}
+	}
+	log.Printf("notifier: sending through %s", cfg.Notifier)
+	return notify.New(notify.NewDBStore(pool), sender)
 }
