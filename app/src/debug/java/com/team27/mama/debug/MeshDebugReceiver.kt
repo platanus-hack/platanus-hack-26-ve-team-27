@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.onEach
 /**
  * Debug-only adb hook for the two-phone mesh test:
  * `adb shell am broadcast -n com.team27.mama/com.team27.mama.debug.MeshDebugReceiver -a <action>`.
+ * The receiver requires android.permission.DUMP, which the adb shell holds and other apps do not.
  */
 class MeshDebugReceiver : BroadcastReceiver() {
 
@@ -22,9 +23,13 @@ class MeshDebugReceiver : BroadcastReceiver() {
             val gateway = MeshGateway.getInstance(context)
             when (intent.action) {
                 ACTION_START -> {
-                    val ok = gateway.start()
-                    Log.i(TAG, "start=$ok peerId=${gateway.identity.peerId}")
+                    // Launch the collector first: broadcasts has no replay.
                     startCollectorOnce(gateway)
+                    if (gateway.start()) {
+                        Log.i(TAG, "start=true peerId=${gateway.identity.peerId}")
+                    } else {
+                        Log.w(TAG, "start=false (Bluetooth off or unsupported, permissions or key store)")
+                    }
                 }
                 ACTION_SEND -> {
                     val text = intent.getStringExtra("text")
@@ -40,8 +45,9 @@ class MeshDebugReceiver : BroadcastReceiver() {
                 }
                 else -> Log.w(TAG, "unknown action ${intent.action}")
             }
-        } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "rejected: ${e.message}")
+        } catch (e: Exception) {
+            // Never crash the app from an adb hook (bad text, key store or Bluetooth errors).
+            Log.w(TAG, "failed: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
