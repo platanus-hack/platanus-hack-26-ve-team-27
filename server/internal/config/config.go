@@ -28,6 +28,10 @@ type Config struct {
 	// server's public base URL, optional. Log lines that point the operator
 	// at a page (the call fallback) use it; blank logs the bare path.
 	PublicURL string
+	// CallWhenStill is CALL_WHEN_STILL, "true" or "1"; anything else or
+	// unset is off. On, a still phone gets the call branch instead of the
+	// immediate alert, so a person standing still still gets "Mamá".
+	CallWhenStill bool
 
 	ElevenLabs ElevenLabs
 	Twilio     Twilio
@@ -105,10 +109,11 @@ func Load() Config { return LoadFrom(os.Getenv) }
 func LoadFrom(getenv func(string) string) Config {
 	get := func(name string) string { return strings.TrimSpace(getenv(name)) }
 	c := Config{
-		Port:        get("PORT"),
-		DatabaseURL: get("DATABASE_URL"),
-		Notifier:    strings.ToLower(get("NOTIFIER")),
-		PublicURL:   get("PUBLIC_URL"),
+		Port:          get("PORT"),
+		DatabaseURL:   get("DATABASE_URL"),
+		Notifier:      strings.ToLower(get("NOTIFIER")),
+		PublicURL:     get("PUBLIC_URL"),
+		CallWhenStill: isOn(get("CALL_WHEN_STILL")),
 		ElevenLabs: ElevenLabs{
 			APIKey:           get("ELEVENLABS_API_KEY"),
 			AgentID:          get("ELEVENLABS_AGENT_ID"),
@@ -199,7 +204,7 @@ func (c Config) Missing() []string {
 // Config by mistake cannot leak a key.
 func (c Config) String() string {
 	// NOTIFIER is a channel name, not a secret, so its value is shown.
-	parts := append([]string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier, fmt.Sprintf("EMERGENCY_OFFLINE_ENABLED=%t", c.Emergency.Enabled)}, setOrUnset(c.vars())...)
+	parts := append([]string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier, fmt.Sprintf("EMERGENCY_OFFLINE_ENABLED=%t", c.Emergency.Enabled), fmt.Sprintf("CALL_WHEN_STILL=%t", c.CallWhenStill)}, setOrUnset(c.vars())...)
 	return fmt.Sprintf("config{%s}", strings.Join(parts, " "))
 }
 

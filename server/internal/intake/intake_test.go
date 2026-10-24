@@ -293,6 +293,59 @@ func TestAlertHandsOffByBranch(t *testing.T) {
 	}
 }
 
+// CALL_WHEN_STILL on: a still phone gets the call branch, is stored as
+// call and goes to the call engine; walking, unknown and fast do not change.
+func TestCallWhenStillSendsStillPhoneToCall(t *testing.T) {
+	SetCallWhenStill(true)
+	t.Cleanup(func() { SetCallWhenStill(false) })
+	e := newEnv(t)
+	cases := []struct {
+		id    string
+		speed *float64
+		want  contract.Branch
+	}{
+		{"00000000-0000-4000-8000-000000000001", ptr(0.4), contract.BranchCall},
+		{"00000000-0000-4000-8000-000000000002", ptr(1.4), contract.BranchCall},
+		{"00000000-0000-4000-8000-000000000003", nil, contract.BranchCall},
+		{"00000000-0000-4000-8000-000000000004", ptr(11.2), contract.BranchSilentTracker},
+	}
+	for _, c := range cases {
+		rec := e.post("/incidents", alert(c.id, c.speed))
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("%s: status = %d %s, want 201", c.id, rec.Code, rec.Body)
+		}
+		if got := decodeResponse(t, rec); got.Branch != c.want {
+			t.Fatalf("%s: branch = %s, want %s", c.id, got.Branch, c.want)
+		}
+		var stored string
+		if err := e.pool.QueryRow(`SELECT branch FROM incidents WHERE id = $1`, c.id).Scan(&stored); err != nil || stored != string(c.want) {
+			t.Fatalf("%s: stored branch = %q (err %v), want %s", c.id, stored, err, c.want)
+		}
+	}
+	if len(e.fake.calls) != 3 || e.fake.calls[0].ID != cases[0].id {
+		t.Fatalf("calls = %+v, want the still, walking and unknown incidents", e.fake.calls)
+	}
+	if len(e.fake.notifies) != 1 || e.fake.notifies[0].Branch != contract.BranchSilentTracker {
+		t.Fatalf("notifies = %+v, want only the fast incident", e.fake.notifies)
+	}
+}
+
+// Off (the default) keeps the contract rule: still is the immediate alert.
+func TestChooseBranchDefaultKeepsImmediateAlert(t *testing.T) {
+	var ev contract.AlertEvent
+	if err := json.Unmarshal(alert("00000000-0000-4000-8000-000000000001", ptr(0.4)), &ev); err != nil {
+		t.Fatal(err)
+	}
+	if got := chooseBranch(ev); got != contract.BranchImmediateAlert {
+		t.Fatalf("chooseBranch with the switch off = %s, want immediate_alert", got)
+	}
+	SetCallWhenStill(true)
+	t.Cleanup(func() { SetCallWhenStill(false) })
+	if got := chooseBranch(ev); got != contract.BranchCall {
+		t.Fatalf("chooseBranch with the switch on = %s, want call", got)
+	}
+}
+
 func TestLocationUpdateAppendsPoints(t *testing.T) {
 	e := newEnv(t)
 	if rec := e.post("/incidents", sample(t, "alert_event.json")); rec.Code != http.StatusCreated {
