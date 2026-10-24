@@ -31,7 +31,9 @@ not depend on it.
    `SMS_RECEIVED` (guarded by `BROADCAST_SMS`) accepts only an SMS from the
    central number whose body is a `MAMA1 ` ack that verifies with the server
    Ed25519 key from the remote config, for the emergency being sent and at
-   least its seq. Anything else is ignored.
+   least its seq. Anything else is ignored. The sender address can be spoofed,
+   so the check that matters is the ack signature; the number check only
+   drops noise.
 3. **Distribution is sideload only.** We accept that the app cannot be on Play
    with this channel. The APK is installed from the release link.
 4. **Everything is behind the offline emergency flags**: the app build flag
@@ -70,5 +72,9 @@ change to the app's `SmsSender` only; the server does not change.
 - Changing SMS provider means adding one adapter that implements
   `InboundSMSProvider` and registering it under its path name; the domain and
   the app stay the same.
+- The retries and the ack wait run on an in-process timer. #59 must emit from
+  a foreground service, or Doze and process death delay or drop them.
+- `TWILIO_WEBHOOK_BASE_URL` must match the URL set in the Twilio console byte
+  for byte (no default `:443`), or every webhook fails its signature.
 - A random SMS to the central number is dropped silently, so the number does
   not reveal anything to a stranger.

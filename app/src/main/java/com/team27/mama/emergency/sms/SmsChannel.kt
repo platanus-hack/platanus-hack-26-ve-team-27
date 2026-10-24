@@ -42,6 +42,10 @@ interface SmsEmission {
  * supersedes the one in flight. The central number is read at emit time from
  * remote config (#55), never hard-coded.
  *
+ * The schedule runs on an in-process timer, so the caller (#59) must keep the
+ * process alive and out of Doze for the emission's lifetime, from a foreground
+ * service, or the retries and the ack wait are delayed or lost.
+ *
  * Sends SEND_SMS in the background with no user interaction, which is why MAMÁ
  * is sideloaded only (Play does not allow SEND_SMS for this use).
  */

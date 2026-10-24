@@ -57,7 +57,9 @@ type Twilio struct {
 	PhoneNumber string // TWILIO_PHONE_NUMBER, E.164, e.g. +1...
 	// WebhookBaseURL is TWILIO_WEBHOOK_BASE_URL, optional: the public origin
 	// Twilio posts the inbound SMS webhook to (e.g. https://mama.example.com),
-	// which the signature covers. Blank leaves POST /sms/inbound/twilio off.
+	// which the signature covers. Write it exactly as in the Twilio console,
+	// without a default port (:443): the signed URL must match byte for byte.
+	// Blank leaves POST /sms/inbound/twilio off.
 	WebhookBaseURL string
 }
 

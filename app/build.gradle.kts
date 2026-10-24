@@ -83,6 +83,10 @@ android {
         buildConfigField("boolean", "OFFLINE_EMERGENCY_ENABLED", mamaOfflineEmergency.toString())
         // Same flag for the manifest: enables the ack SMS receiver (#58).
         resValue("bool", "offline_emergency_enabled", mamaOfflineEmergency.toString())
+        // RECEIVE_SMS is declared only with the flag; off, the manifest entry
+        // repeats SEND_SMS, a harmless duplicate of the one already declared.
+        manifestPlaceholders["receiveSmsPermission"] =
+            if (mamaOfflineEmergency) "android.permission.RECEIVE_SMS" else "android.permission.SEND_SMS"
     }
 
     signingConfigs {

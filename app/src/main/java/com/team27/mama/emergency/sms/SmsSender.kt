@@ -11,6 +11,7 @@ import android.telephony.SmsManager
 import androidx.core.content.ContextCompat
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /** Sends one single-part SMS; [onResult] runs once, true when the radio accepted it. */
 fun interface SmsSender {
@@ -35,12 +36,12 @@ class AndroidSmsSender(
         val requestCode = requestCodes.incrementAndGet()
         val action = "${app.packageName}.SMS_SENT.$requestCode"
         val done = AtomicBoolean(false)
-        var timeout: Cancellable? = null
+        val timeout = AtomicReference<Cancellable?>()
         lateinit var receiver: BroadcastReceiver
 
         fun finish(ok: Boolean) {
             if (!done.compareAndSet(false, true)) return
-            timeout?.cancel()
+            timeout.get()?.cancel()
             try {
                 app.unregisterReceiver(receiver)
             } catch (e: IllegalArgumentException) {
@@ -59,7 +60,7 @@ class AndroidSmsSender(
             Intent(action).setPackage(app.packageName),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_ONE_SHOT,
         )
-        timeout = scheduler.schedule(timeoutMs) { finish(false) }
+        timeout.set(scheduler.schedule(timeoutMs) { finish(false) })
         try {
             smsManager().sendTextMessage(number, null, text, sentIntent, null)
         } catch (e: SecurityException) {
