@@ -146,6 +146,68 @@ signature. The sample's signature is real: the payload vector key
 (`device_ed25519_seed` in `server/internal/emergency/payload/testdata/vectors.json`)
 over the sample `device_id`.
 
+### Device voice (phone → server, `/devices/{id}/voice`, #107)
+
+The phone gives a device its own "Mamá" voice from an audio file of the
+mother's voice. The server makes it an ElevenLabs instant voice clone named
+`mama-<first 8 characters of device_id>` and stores its id in
+`devices.voice_id`; from then on every call of that device speaks with it.
+Code: `server/internal/voice`. Every route answers `503` without a database
+or without `ELEVENLABS_API_KEY`, and `404` for an unknown or malformed
+`device_id`. Errors are JSON `{"error":"..."}`.
+
+- `POST /devices/{id}/voice`, `multipart/form-data`, signed (below):
+  - `audio`: the file, mp3, wav, m4a, ogg or webm (told by its first bytes,
+    not its name), at most 10 MB.
+  - `consent`: exactly `true`: the voice's owner agreed to the clone.
+    Missing or anything else is `400`.
+
+  `201 {"voice_id":"..."}` on success. `400` bad form, no consent or another
+  format; `413` over 10 MB; `429` with `Retry-After` when the device
+  uploaded less than a minute ago; `502` when ElevenLabs fails, and then the
+  device keeps its previous voice. The new voice is stored first and the
+  old one is deleted from ElevenLabs after. The server stores
+  `voice_consent_at` and `voice_consent_sha256` (SHA-256 of the audio); the
+  audio itself is read in memory and never written to disk or to the
+  database.
+- `DELETE /devices/{id}/voice`, signed: deletes the clone in ElevenLabs and
+  clears `voice_id`, `voice_consent_at` and `voice_consent_sha256`, so calls
+  go back to the global voice. `204`, also when there was no voice; `502`
+  when ElevenLabs fails, and then nothing changes.
+- `GET /devices/{id}/voice/preview`: `200 audio/mpeg`, "¡Hola, mi amor!
+  ¿Cómo vas?" said by the device's voice with the agent's TTS model and
+  settings (`call/agent/tts.json`), for the setup screen to play. Not
+  signed; cached per voice, so playing it again costs no credits. `404` when
+  the device has no voice of its own; `502` when ElevenLabs fails.
+
+Signature. Like `POST /devices`, it proves the phone holds the device's
+bound Ed25519 key (the key from the registration, never one sent with this
+request). Two headers:
+
+- `X-Mama-Signed-At`: the phone's clock, unix seconds. It must be within
+  5 minutes of the server's.
+- `X-Mama-Signature`: standard Base64 with padding of the 64-byte Ed25519
+  signature over the ASCII bytes
+
+  ```
+  MAMA-device-voice-v1 <METHOD> <device_id> <signed_at>[ <sha256>]
+  ```
+
+  single spaces, `METHOD` is `POST` or `DELETE`, and `<sha256>` (lowercase
+  hex of the SHA-256 of the `audio` bytes) only for `POST`. Example:
+  `MAMA-device-voice-v1 DELETE 3f1c9a52-7b1e-4c8a-9a0e-2d6b8f4e1a77 1761307800`.
+
+A device with no bound key gets `409` (register a key first); a missing,
+expired or bad signature gets `401`. The hash binds the signature to the
+file, and `signed_at` limits a replay to 5 minutes. `SignedMessage` in
+`server/internal/voice` builds the message.
+
+Fallback for the demo: `go run ./cmd/setvoice --device <id> --file mama.mp3`
+does the same straight against the database and ElevenLabs (`--delete`
+removes the voice). `go run ./cmd/voiceprep` builds the sample and
+`go run ./cmd/voicelab` compares TTS settings (`server/internal/voice` and
+the commands' doc comments).
+
 ### RemoteConfig (server → phone, `GET /config`)
 
 Public, no auth. The reply is `200` with `Content-Type: application/json`.
@@ -248,7 +310,8 @@ sends `frase_alerta` and `frase_segura` empty, so a guessed URL never shows
 them.
 
 The call speaks with `devices.voice_id` when set, otherwise with the global
-`ELEVENLABS_VOICE_ID`, otherwise with the agent's own voice.
+`ELEVENLABS_VOICE_ID`, otherwise with the agent's own voice. A device gets
+`voice_id` from an audio file (see Device voice).
 
 How the webhook finds its call: the call engine inserts the `calls` row
 before placing the call and stores the `conversation_id` from the
@@ -316,7 +379,8 @@ the newest call's verdict. Sample: `notifier_message.json`.
 `incident_seals` and `call_progress` for the incident report (#76, approved
 by the Tech lead on Oct 24); `0005_device_setup.sql` adds `user_name`,
 `safe_phrase` and `voice_id` to `devices` (#104, approved by the Tech lead on
-Oct 24); `0006_notify_deliveries.sql` adds `notify_deliveries` (#76). The
+Oct 24); `0006_notify_deliveries.sql` adds `notify_deliveries` (#76); `0007_device_voice_consent.sql` adds
+`voice_consent_at` and `voice_consent_sha256` to `devices` (#107). The
 server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
@@ -324,7 +388,7 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 
 | Table | Key | Holds |
 | --- | --- | --- |
-| `devices` | `id` = `device_id` | phone number, family numbers, duress phrase; `user_name`, `safe_phrase` and `voice_id` (the cloned voice, written by the voice ticket), NULL until set; `ed25519_public_key` (unique, 32 bytes) and `key_id` (unique, 8 bytes: the payload device_id derived from it), both NULL or both set |
+| `devices` | `id` = `device_id` | phone number, family numbers, duress phrase; `user_name`, `safe_phrase` and `voice_id` (the cloned voice, #107), NULL until set; `voice_consent_at` and `voice_consent_sha256` (when the owner consented and the SHA-256 of the audio, never the audio), set with `voice_id`; `ed25519_public_key` (unique, 32 bytes) and `key_id` (unique, 8 bytes: the payload device_id derived from it), both NULL or both set |
 | `incidents` | `id` = `incident_id` | device, trigger, branch, speed used, `notified_at` |
 | `gps_points` | identity; unique `(incident_id, recorded_at)` | every fix of an incident |
 | `calls` | identity; unique `conversation_id` | call status, transcript (JSONB), duration, **verdict** |

@@ -171,7 +171,7 @@ the ones that are unset, never the values.
 | --- | --- | --- |
 | `DATABASE_URL` | Postgres connection string | Set by `render.yaml` from `mama-db`; locally, the External Database URL from Render > mama-db > Connect |
 | `PORT` | HTTP port (default `8080`) | Set by Render; leave unset locally |
-| `ELEVENLABS_API_KEY` | ElevenLabs API key (`xi-api-key` header) | elevenlabs.io > Developers > API Keys |
+| `ELEVENLABS_API_KEY` | ElevenLabs API key (`xi-api-key` header). Besides the agent and calls, the device voice (#107: `POST/DELETE /devices/{id}/voice`, `go run ./cmd/setvoice`) needs the **Voices: write** permission (create and delete instant clones) and **Text to Speech** (the preview and `voicelab`). Without write access ElevenLabs answers 401/403 and the server answers `502` saying the key lacks it | elevenlabs.io > Developers > API Keys > the key > permissions |
 | `ELEVENLABS_AGENT_ID` | The "Mamá" agent's `agent_id` | ElevenLabs > Agents > the agent > settings / URL |
 | `ELEVENLABS_PHONE_NUMBER_ID` | `agent_phone_number_id` of the Twilio number imported into ElevenLabs | ElevenLabs > Agents > Phone Numbers, after importing the Twilio number |
 | `ELEVENLABS_WEBHOOK_SECRET` | HMAC secret that signs the post-call webhook | ElevenLabs > Agents > Settings > Post-call webhook (shown when the webhook is created) |
@@ -188,6 +188,17 @@ the ones that are unset, never the values.
 | `EMERGENCY_SMS_NUMBER` | Central SMS number the phones text when offline, E.164; served in `GET /config`; the Twilio inbound number for #58 | Twilio console > Phone Numbers (optional: unset omits it from `GET /config`) |
 | `EMERGENCY_ED25519_SEED` | Signs offline acks; standard Base64 of 32 bytes. Only read with `EMERGENCY_OFFLINE_ENABLED`. Required then in production: on Render (`RENDER` set) the server refuses to boot without it and `EMERGENCY_X25519_PRIVATE_KEY`; locally it warns and uses an ephemeral key. Changing it breaks phones until they refresh config | Generate with `openssl rand -base64 32` |
 | `EMERGENCY_X25519_PRIVATE_KEY` | Opens mesh sealed boxes; standard Base64 of 32 bytes. Required with the flag on in production, like `EMERGENCY_ED25519_SEED`; same caveat | Generate with `openssl rand -base64 32` |
+
+**ElevenLabs voice slots:** every device with its own voice holds one
+instant clone (`mama-<first 8 characters of the device id>`) in the
+account. The plan caps how many custom voices the account can keep
+(elevenlabs.io/pricing, Oct 2026: Starter 10, Creator 30, Pro 160, Scale
+660; Free has 3 slots but no instant cloning). A full account makes
+`POST /devices/{id}/voice` answer `502` and keep the old voice. Replacing a voice deletes the old clone after
+creating the new one, so a replacement needs one free slot for a moment;
+`DELETE /devices/{id}/voice` or `setvoice --delete` frees it. The preview
+and each `voicelab` line cost their characters in credits (Flash and Turbo
+half a credit per character).
 
 **On Render:** Dashboard > `mama-server` > Environment > Add Environment
 Variable, one per row above (except `DATABASE_URL` and `PORT`), then Save,

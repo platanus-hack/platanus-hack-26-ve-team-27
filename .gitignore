@@ -35,3 +35,6 @@ keystore.properties
 
 # pushagent backups of the ElevenLabs agent configuration
 /server/cmd/pushagent/backup/
+
+# voicelab grid output (generated audio, #107)
+voicelab-out/
