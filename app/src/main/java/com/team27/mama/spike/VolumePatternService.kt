@@ -34,6 +34,12 @@ class VolumePatternService : AccessibilityService() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         SpikeLog.log(this, "a11y unbound")
+        VolumeSessionService.stop(this)
         return super.onUnbind(intent)
+    }
+
+    override fun onDestroy() {
+        VolumeSessionService.stop(this)
+        super.onDestroy()
     }
 }

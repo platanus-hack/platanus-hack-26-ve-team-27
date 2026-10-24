@@ -30,8 +30,12 @@ object CameraProbe {
     suspend fun record(context: Context, incidentId: String, durationMs: Long = 3_000): String {
         if (context.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return "no CAMERA permission"
         val manager = context.getSystemService(CameraManager::class.java)
-        val cameraId = manager.cameraIdList.firstOrNull {
-            manager.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+        val cameraId = try {
+            manager.cameraIdList.firstOrNull {
+                manager.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+            }
+        } catch (e: Exception) {
+            return "camera lookup failed ${e.javaClass.simpleName}: ${e.message}"
         } ?: return "no back camera"
         val file = File(context.filesDir, "spike-cam-$incidentId.mp4")
         val thread = HandlerThread("spike-cam").apply { start() }
