@@ -47,6 +47,12 @@ plant "Twilio auth token" server/planted.go "authToken := \"$HEX32\""
 plant "Kapso key assignment" server/.envrc.sample "KAPSO_API_KEY=kp_$(rep Zq9 8)"
 plant "ElevenLabs key assignment" server/.envrc.sample "ELEVENLABS_API_KEY=$(rep Qz7Lm 5)"
 plant "Twilio API secret assignment" app/Secrets.kt "val twilioApiSecret = \"$(rep Wv3 7)\""
+plant "Twilio token in .properties" app/secrets.properties "twilio.auth.token=$HEX32"
+plant "Kapso key in .properties" app/secrets.properties "kapso.api.key=kp$(rep Zq9 8)"
+plant "Kapso key in YAML, unquoted" compose.yaml "  KAPSO_API_KEY: $(rep Zq9 8)"
+plant "Kapso key in buildConfigField" app/build.gradle.kts "buildConfigField(\"String\", \"KAPSO_API_KEY\", \"\\\"$(rep Zq9 8)\\\"\")"
+plant "X-API-Key header" server/kapso.go "req.Header.Set(\"X-API-Key\", \"$(rep Zq9 8)\")"
+plant "GitHub token" notes.md "ghp_$(rep Ab3x 9)"
 plant "OpenAI style key" notes.md "sk-proj-$(rep Ab3x 10)"
 plant "Anthropic style key" notes.md "sk-ant-api03-$(rep Ab3x 10)"
 plant "AWS access key id" deploy.sh "AKIA$(rep Q7 8)"
@@ -57,12 +63,28 @@ plant "postgres URL with password" render.txt "postgres://mama:$(rep pW9 4)@dpg-
 clean "placeholders" README.md "KAPSO_API_KEY=your_kapso_api_key_here"
 clean "env lookups" server/main.go "key := os.Getenv(\"TWILIO_AUTH_TOKEN\")"
 clean "struct fields" server/config_test.go "\"ELEVENLABS_API_KEY\":  c.ElevenLabs.APIKey,"
+clean "env var name constant" server/env.go "const twilioAuthTokenEnv = \"TWILIO_AUTH_TOKEN\""
+clean "token URL" server/oauth.go "const tokenURL = \"https://oauth2.googleapis.com/token\""
+clean "header name" server/hook.go "const webhookSecretHeader = \"ElevenLabs-Signature\""
+clean "pref key name" app/Prefs.kt "private const val TOKEN_PREF_KEY = \"session_token_preference\""
+clean "string resource" app/res/layout/x.xml "app:passwordToggleContentDescription=\"@string/show_password_text\""
+clean "test map without digits" server/c_test.go "map[string]string{\"KAPSO_API_KEY\": \"value-of-KAPSO_API_KEY\"}"
 clean "allow marker" fixture.go "sid := \"AC$HEX32\" // $ALLOW"
 
 newrepo
 printf '.env\n' >"$WORK/r/.gitignore"
 printf 'TWILIO_ACCOUNT_SID=AC%s\n' "$HEX32" >"$WORK/r/.env"
 expect 0 "ignores gitignored .env"
+
+newrepo
+printf 'KAPSO_API_KEY=kp%s\n' "$(rep Zq9 8)" >"$WORK/r/locked.env.sample"
+chmod 000 "$WORK/r/locked.env.sample"
+if [[ -r "$WORK/r/locked.env.sample" ]]; then
+  printf 'skip  unreadable file (running as root)\n'
+else
+  expect 2 "fails on an unreadable file"
+fi
+chmod 644 "$WORK/r/locked.env.sample"
 
 if ((fails > 0)); then
   printf '\nsecret-scan-test: %d failure(s)\n' "$fails" >&2

@@ -23,13 +23,16 @@ ALLOW_MARKER='secret-scan:allow'
 # Values on assignment-style rules that are clearly not real keys.
 PLACEHOLDER='your[_-]|example|placeholder|changeme|change[_-]me|replace[_-]?me|dummy|xxxx|<[^>]*>|\$\{|\$\(|\.\.\.|redacted|\*\*\*\*'
 
-# Rules: name|grep-flags|placeholder-filter(y/n)|extended regex
+# Rules: name|grep-flags|filter|extended regex. filter: n = report every match,
+# y = skip placeholders, a = assignment: also skip values that are an env var
+# name, a URL or path, or have no digit (real keys almost always have one).
 RULES=(
   "elevenlabs-api-key|-E|n|sk_[0-9a-f]{32,}"
   "twilio-account-sid|-E|n|AC[0-9a-f]{32}"
   "twilio-api-key-sid|-E|n|SK[0-9a-f]{32}"
-  "twilio-auth-token|-iE|y|auth_?token[a-z0-9_\"']*[[:space:]]*(:=|=|:)[[:space:]]*[\"']?[0-9a-f]{32}"
-  "service-key-assignment|-iE|y|(elevenlabs|kapso|twilio)[a-z0-9_-]*(api_?key|key|token|secret)[a-z0-9_\"']*[[:space:]]*(=[[:space:]]*[\"']?|(:=|:)[[:space:]]*[\"'])[A-Za-z0-9_-]{16,}"
+  "twilio-auth-token|-iE|y|auth[._-]?token[a-z0-9_.\"']*[[:space:]]*(:=|=|:|,)[[:space:]]*[\"'\\]*[0-9a-f]{32}"
+  "service-key-assignment|-iE|a|(elevenlabs|kapso|twilio)[a-z0-9_.-]*(api[._-]?key|key|token|secret)[a-z0-9_.\"']*[[:space:]]*(:=|=|:|,)[[:space:]]*[\"'\\]*[A-Za-z0-9_-]{16,}"
+  "api-key-header|-iE|a|xi?-api-key[\"']?[[:space:]]*(,|:)[[:space:]]*[\"']?[A-Za-z0-9_-]{16,}"
   "openai-anthropic-key|-E|n|sk-(ant-|proj-|svcacct-)?[A-Za-z0-9_-]{32,}"
   "aws-access-key-id|-E|n|(AKIA|ASIA)[0-9A-Z]{16}"
   "private-key-block|-E|n|-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY( BLOCK)?-----"
@@ -37,14 +40,15 @@ RULES=(
   "google-api-key|-E|n|AIza[0-9A-Za-z_-]{35}"
   "slack-token|-E|n|xox[abprs]-[A-Za-z0-9-]{10,}"
   "url-with-password|-iE|y|(postgres(ql)?|mysql|mongodb(\+srv)?|redis|amqp)://[^:/@[:space:]\"']+:[^@/[:space:]\"']{6,}@"
-  "generic-secret-assignment|-iE|y|(api[_-]?key|secret|token|passw(or)?d)[a-z0-9_\"']*[[:space:]]*(:=|=|:)[[:space:]]*[\"'][^\"'[:space:]]{16,}[\"']"
+  "generic-secret-assignment|-iE|a|(api[_-]?key|secret|token|passw(or)?d)[a-z0-9_\"']*[[:space:]]*(:=|=|:)[[:space:]]*[\"'][^\"'[:space:]]{16,}[\"']"
 )
 
 # File list: tracked + untracked-not-ignored, existing, not binary blobs we
 # know about. grep -I below also skips any other binary file.
 FILES="$(mktemp "${TMPDIR:-/tmp}/secret-scan.XXXXXX")"
 HITS="$(mktemp "${TMPDIR:-/tmp}/secret-scan.XXXXXX")"
-trap 'rm -f "$FILES" "$HITS"' EXIT
+UNREADABLE="$(mktemp "${TMPDIR:-/tmp}/secret-scan.XXXXXX")"
+trap 'rm -f "$FILES" "$HITS" "$UNREADABLE"' EXIT
 
 git ls-files -co --exclude-standard -z | while IFS= read -r -d '' f; do
   [[ -f "$f" ]] || continue # deleted in the working tree
@@ -52,12 +56,30 @@ git ls-files -co --exclude-standard -z | while IFS= read -r -d '' f; do
     gradle/wrapper/gradle-wrapper.jar) continue ;;
     *.png | *.jpg | *.jpeg | *.gif | *.webp | *.ico | *.pdf | *.jar | *.zip | *.ttf | *.otf | *.woff | *.woff2) continue ;;
   esac
+  if [[ ! -r "$f" ]]; then printf '%s\n' "$f" >>"$UNREADABLE"; continue; fi
   printf '%s\0' "$f"
 done >"$FILES"
+
+if [[ -s "$UNREADABLE" ]]; then # a file we can't read can't be called clean
+  printf 'secret scan: cannot read these files:\n' >&2
+  sed 's/^/  /' "$UNREADABLE" >&2
+  exit 2
+fi
 
 mask() { # keep the first 4 chars of a match, hide the rest
   local s="$1"
   printf '%s****(%d chars)' "${s:0:4}" "${#s}"
+}
+
+# not_a_key <match>: true when the assigned value is clearly not a key: an
+# env var name (TWILIO_AUTH_TOKEN), a URL or path, or text with no digit.
+not_a_key() {
+  local v="${1#*[=:,]}"
+  v="$(printf '%s' "$v" | sed -E "s/^[][:space:]=\"'\\\\]+//; s/[\"']+\$//")"
+  [[ "$v" =~ ^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$ ]] && return 0
+  [[ "$v" == *://* || "$v" == */* || "$v" == *@* ]] && return 0
+  [[ "$v" != *[0-9]* ]] && return 0
+  return 1
 }
 
 count=0
@@ -82,7 +104,10 @@ if [[ -s "$FILES" ]]; then
       line="${rest%%:*}"; content="${rest#*:}"
       [[ "$content" == *"$ALLOW_MARKER"* ]] && continue
       match="$(printf '%s\n' "$content" | grep -o "$flags" -e "$regex" | head -n 1)"
-      if [[ "$filter" == y ]] && printf '%s\n' "$match" | grep -qiE "$PLACEHOLDER"; then
+      if [[ "$filter" != n ]] && printf '%s\n' "$match" | grep -qiE "$PLACEHOLDER"; then
+        continue
+      fi
+      if [[ "$filter" == a ]] && not_a_key "$match"; then
         continue
       fi
       printf '  %s:%s  [%s]  %s\n' "$file" "$line" "$name" "$(mask "$match")"

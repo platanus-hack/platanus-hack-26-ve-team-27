@@ -169,15 +169,25 @@ repo root and load it before running the server (`set -a; . ./.env; set +a`).
 
 **Secret scan:** `scripts/build.sh` runs `scripts/secret-scan.sh` first and
 stops the build on any hit, printing `file:line` with the value masked. It
-scans tracked files and untracked files that are not gitignored, looking for
-ElevenLabs keys (`sk_` + hex, and any `ELEVENLABS_*KEY=` assignment), Twilio SIDs (`AC...`, `SK...`) and auth tokens,
-Kapso and Twilio key/secret assignments, OpenAI/Anthropic `sk-...` keys, AWS `AKIA...` keys,
-GitHub/Google/Slack tokens, private key blocks, database URLs with a password
-and generic `api_key/secret/token/password = "..."` assignments. It needs only
-bash, git and grep. A line with the marker `secret-scan:allow` is skipped; use
-it only for test fixtures. `scripts/secret-scan-test.sh` plants fake keys in a
-throwaway repo to prove each rule fires. If a real key was ever committed,
-rotate it: removing the line does not remove it from git history.
+needs only bash, git and grep, and scans tracked files plus untracked files
+that are not gitignored. It catches:
+
+- keys by shape: ElevenLabs `sk_` + hex, Twilio SIDs (`AC...`, `SK...`),
+  OpenAI/Anthropic `sk-...`, AWS `AKIA...`, GitHub, Google and Slack tokens,
+  private key blocks, database URLs with a password;
+- one-line assignments of a `ELEVENLABS_*`, `KAPSO_*` or `TWILIO_*`
+  key/token/secret, a Twilio auth token, an `X-API-Key` / `xi-api-key` header,
+  or a generic `api_key/secret/token/password = "..."`, in env files, shell,
+  `.properties`, YAML (`KEY: value`), Go and Kotlin.
+
+To keep ordinary code from failing the build, assignment hits are skipped when
+the value is a placeholder (`your_...`, `<...>`, `${...}`), an env var name, a
+URL or path, or has no digit. It does not see a value on the line after its key
+(YAML `- key: X` / `value: ...`, nested YAML), and it does not read git
+history: if a real key was ever committed, rotate it. A line with the marker
+`secret-scan:allow` is skipped; use it only for test fixtures.
+`scripts/secret-scan-test.sh` (run by the build too) plants fake keys in a
+throwaway repo to prove each rule fires and the common false positives don't.
 
 ## Service limits
 
