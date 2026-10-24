@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import com.team27.mama.BuildConfig
 import com.team27.mama.MamaApp
 import com.team27.mama.contract.Trigger
+import com.team27.mama.emergency.OfflineFallback
 import com.team27.mama.setup.RegistrationClient
 import com.team27.mama.setup.RegistrationResult
 import com.team27.mama.setup.SetupStore
@@ -42,6 +43,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * 3. hands off on the server's branch ([handOff]): `call` rings through
  *    [IncomingCallLauncher], the other branches open the confirmation screen;
  * 4. follows with fresh fixes as LocationUpdates for [FOLLOW_UP_MS].
+ *
+ * With the offline flag (#59), an alert the server never took, or no fix at
+ * all, becomes the offline emergency instead of step 4 ([fallBackOffline]).
  *
  * It only runs once setup is done, one incident at a time. It never opens
  * the camera or records audio (has_audio is false).
@@ -138,6 +142,9 @@ class TriggerService : Service() {
         try {
             val (first, choice) = firstFix(fixes) ?: run {
                 TriggerLog.log(this, "no fix at all for $incidentId; nothing sent")
+                // The offline emergency goes out without a fix and waits for one itself.
+                fixes.stop()
+                fallBackOffline(incidentId)
                 return
             }
             val event = AlertEvents.alertEvent(incidentId, deviceId, trigger, triggeredAtMs, listOf(first.toPoint()))
@@ -161,10 +168,29 @@ class TriggerService : Service() {
                 TriggerScreens.openConfirmation(this, it)
             }
             TriggerLog.log(this, "alert $incidentId outcome=$outcome handoff=$handoff")
-            if (outcome is AlertOutcome.Accepted) followUp(base, incidentId, deviceId, first, fixes)
+            if (outcome is AlertOutcome.Accepted) {
+                followUp(base, incidentId, deviceId, first, fixes)
+            } else {
+                fixes.stop()
+                fallBackOffline(incidentId)
+            }
         } finally {
             fixes.stop()
         }
+    }
+
+    /**
+     * Offline emergency (#59, only with OFFLINE_EMERGENCY_ENABLED; `graph.emergency` is null
+     * otherwise): the alert did not reach the server, so SMS and the BLE mesh take over. The
+     * service stays in the foreground while it is being delivered ([OfflineFallback.awaitDelivered]),
+     * so Android does not freeze the SMS schedule and the mesh re-emits. Logs only the result and
+     * the phase.
+     */
+    private suspend fun fallBackOffline(incidentId: String) {
+        val offline = (application as MamaApp).graph.emergency ?: return
+        TriggerLog.log(this, "offline emergency for $incidentId declared=${offline.declare()} phase=${offline.state.value.phase}")
+        OfflineFallback.awaitDelivered(offline)
+        TriggerLog.log(this, "offline emergency for $incidentId released phase=${offline.state.value.phase}")
     }
 
     /** The first point and how it was picked (for the log), or null with no fix at all after [FIX_TIMEOUT_MS]. */

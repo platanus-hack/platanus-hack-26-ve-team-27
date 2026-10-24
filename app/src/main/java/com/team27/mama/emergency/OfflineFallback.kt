@@ -4,7 +4,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * How the live trigger (the #10 service today, #16 after it) hands off to the offline emitter.
+ * How the live trigger (#16's `trigger.TriggerService`) hands off to the offline emitter.
  * The trigger posts its AlertEvent first. Only when that alert did not reach the server does it
  * call `graph.emergency?.declare()`, so a phone with internet never opens a second emergency
  * through `POST /emergencies`. Then the trigger's foreground service stays up while the
