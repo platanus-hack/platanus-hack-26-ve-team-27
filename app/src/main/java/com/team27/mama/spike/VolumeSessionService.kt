@@ -13,7 +13,9 @@ import android.media.AudioTrack
 import android.media.VolumeProvider
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import androidx.core.app.ServiceCompat
 import com.team27.mama.R
 
@@ -46,6 +48,8 @@ class VolumeSessionService : Service() {
             SpikeLog.log(this, "session startForeground failed ${e.javaClass.simpleName}: ${e.message}")
         }
         session = MediaSession(this, "mama-volume").apply {
+            // Without a callback, MediaSession drops every VolumeProvider adjustment.
+            setCallback(object : MediaSession.Callback() {}, Handler(Looper.getMainLooper()))
             setPlaybackToRemote(object : VolumeProvider(VOLUME_CONTROL_RELATIVE, 100, 50) {
                 override fun onAdjustVolume(direction: Int) {
                     val key = when {
