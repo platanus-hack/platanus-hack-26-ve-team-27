@@ -1,15 +1,7 @@
 package com.team27.mama.ui.navigation
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.platform.LocalContext
-import androidx.core.content.ContextCompat
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -41,20 +33,9 @@ fun MamaNavHost(
             SetupScreen()
         }
         composable(Route.TriggerConfirmation.path) {
-            val context = LocalContext.current
+            // Only shows the offline emergency. The trigger service declares it when its alert
+            // fails (emergency.OfflineFallback), and setup asks for the Bluetooth permissions.
             val state = emergency?.state?.collectAsState()?.value
-            val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-                // HTTP and SMS need neither BLE nor location, so declare whatever the user answered.
-                emergency?.declare()
-            }
-            LaunchedEffect(emergency) {
-                // Flag off (no emergency): the placeholder steps, no permission prompt, no mesh.
-                if (emergency == null) return@LaunchedEffect
-                val missing = emergencyPermissions().filter {
-                    ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-                }
-                if (missing.isEmpty()) emergency.declare() else launcher.launch(missing.toTypedArray())
-            }
             TriggerConfirmationScreen(
                 // Guard: a double tap must not pop the start screen and leave a blank host.
                 onBack = {
@@ -64,23 +45,5 @@ fun MamaNavHost(
                 status = state?.toStatus(),
             )
         }
-    }
-}
-
-/**
- * Runtime permissions for the mesh and the location. Setup (#15) already asks for location, so
- * usually only the Bluetooth ones are still missing; only missing ones are requested.
- * Android 12+ ignores a FINE-only request.
- */
-private fun emergencyPermissions(): List<String> {
-    val location = listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        listOf(
-            Manifest.permission.BLUETOOTH_SCAN,
-            Manifest.permission.BLUETOOTH_ADVERTISE,
-            Manifest.permission.BLUETOOTH_CONNECT,
-        ) + location
-    } else {
-        location
     }
 }

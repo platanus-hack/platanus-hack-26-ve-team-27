@@ -19,8 +19,10 @@ import android.os.IBinder
 import android.os.SystemClock
 import androidx.core.app.ServiceCompat
 import com.team27.mama.BuildConfig
+import com.team27.mama.MamaApp
 import com.team27.mama.R
 import com.team27.mama.contract.Trigger
+import com.team27.mama.emergency.OfflineFallback
 import com.team27.mama.setup.SetupStore
 import com.team27.mama.setup.SharedPreferencesStore
 import java.io.File
@@ -132,6 +134,7 @@ class TriggerSpikeService : Service() {
             first === last -> "last_known_stale"
             else -> "fresh_late"
         }
+        var alertStatus: Int? = null
         if (first == null) {
             SpikeLog.log(this@TriggerSpikeService, "no fix at all for $incidentId")
         } else {
@@ -161,11 +164,19 @@ class TriggerSpikeService : Service() {
                 },
             )
             val (status, ms) = result.status to result.ms
+            alertStatus = status
             SpikeLog.log(
                 this@TriggerSpikeService,
                 "alert $incidentId trigger=$trigger status=$status via=${result.winner} sinceTriggerAtSendMs=$sinceTrigger postMs=$ms " +
                     "fix=${first.provider} choice=$firstChoice ageMs=${ageMs(first)} acc=${first.accuracy}",
             )
+        }
+
+        // Offline emergency (#59, only with OFFLINE_EMERGENCY_ENABLED): the alert did not reach
+        // the server, so SMS and the BLE mesh take over. Logs only the result and the phase.
+        val offline = (application as MamaApp).graph.emergency?.takeIf { OfflineFallback.shouldDeclare(alertStatus) }
+        if (offline != null) {
+            SpikeLog.log(this@TriggerSpikeService, "offline emergency declared=${offline.declare()} phase=${offline.state.value.phase}")
         }
 
         // The warm-up's GPS fix often lands after the alert: follow with the
@@ -210,6 +221,12 @@ class TriggerSpikeService : Service() {
         }.toString()
         SpikeLog.log(this@TriggerSpikeService, "note $note")
         post(SpikeEvents.noteUrl(base), note, SystemClock.elapsedRealtime() - detectedAt)
+
+        // Stay in the foreground while the offline emergency is still being delivered.
+        if (offline != null) {
+            OfflineFallback.awaitDelivered(offline)
+            SpikeLog.log(this@TriggerSpikeService, "offline emergency released phase=${offline.state.value.phase}")
+        }
     }
 
     private fun ageMs(location: Location) = (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000

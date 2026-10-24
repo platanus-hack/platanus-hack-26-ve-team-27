@@ -135,6 +135,12 @@ private fun copyFor(step: SetupStep): StepCopy = when (step) {
         action = "Permitir SMS",
         denied = "Sin SMS no hay respaldo cuando te quedas sin datos.",
     )
+    SetupStep.NEARBY -> StepCopy(
+        title = "Dispositivos cercanos",
+        why = "Para pedir ayuda a teléfonos cercanos cuando no hay señal.",
+        action = "Permitir dispositivos cercanos",
+        denied = "Sin dispositivos cercanos no podemos buscar ayuda por Bluetooth cuando no hay señal.",
+    )
     SetupStep.AUTOSTART -> StepCopy(
         title = "Inicio automático",
         why = "Para que MAMÁ siga activa después de reiniciar.",

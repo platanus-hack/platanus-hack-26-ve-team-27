@@ -89,8 +89,9 @@ class AppGraph(
     }
 
     /**
-     * #60 reads `graph.emergency?.state`; #16 calls `declare()`. Null with the flag off: the
-     * orchestrator, the mesh gateway and the trigger screen's permission request never start.
+     * #60 reads `graph.emergency?.state`. The trigger service calls `declare()` when its alert
+     * fails (`emergency.OfflineFallback`). Null with the flag off: the orchestrator and the mesh
+     * gateway never start.
      */
     val emergency: EmergencyOrchestrator? by lazy {
         if (!offlineEmergency) return@lazy null

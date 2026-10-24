@@ -1,0 +1,66 @@
+package com.team27.mama.emergency
+
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class OfflineFallbackTest {
+    private class FakeControls(phase: EmergencyPhase) : EmergencyControls {
+        val flow = MutableStateFlow(EmergencyState(phase = phase))
+        override val state: StateFlow<EmergencyState> = flow
+
+        override fun declare(): Boolean = false
+
+        override fun cancel() {}
+    }
+
+    @Test
+    fun declaresOnlyWhenTheAlertDidNotReachTheServer() {
+        assertFalse(OfflineFallback.shouldDeclare(200))
+        assertFalse(OfflineFallback.shouldDeclare(201))
+        assertTrue(OfflineFallback.shouldDeclare(-1))
+        assertTrue(OfflineFallback.shouldDeclare(422))
+        assertTrue(OfflineFallback.shouldDeclare(503))
+        assertTrue(OfflineFallback.shouldDeclare(null))
+    }
+
+    @Test
+    fun holdsWhileDeliveringAndReleasesOnAck() = runTest {
+        val controls = FakeControls(EmergencyPhase.SEARCHING_NEARBY)
+        var released = false
+        launch {
+            OfflineFallback.awaitDelivered(controls)
+            released = true
+        }
+        advanceTimeBy(60_000)
+        assertFalse(released)
+        controls.flow.value = EmergencyState(phase = EmergencyPhase.NO_CHANNEL)
+        runCurrent()
+        assertFalse(released)
+        controls.flow.value = EmergencyState(phase = EmergencyPhase.NOTIFIED)
+        runCurrent()
+        assertTrue(released)
+    }
+
+    @Test
+    fun releasesAfterTheCapWithoutAnAck() = runTest {
+        OfflineFallback.awaitDelivered(FakeControls(EmergencyPhase.SEARCHING_NEARBY))
+        assertEquals(OfflineFallback.HOLD_MAX_MS, currentTime)
+    }
+
+    @Test
+    fun cancelledEmergencyReleasesAtOnce() = runTest {
+        OfflineFallback.awaitDelivered(FakeControls(EmergencyPhase.CANCELLED))
+        assertEquals(0L, currentTime)
+    }
+}

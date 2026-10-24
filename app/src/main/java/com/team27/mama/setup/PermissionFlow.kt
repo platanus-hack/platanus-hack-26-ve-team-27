@@ -15,6 +15,8 @@ enum class SetupStep(
     val minSdk: Int = Build.VERSION_CODES.BASE,
     /** The step is a MIUI/HyperOS screen with no equivalent on other phones. */
     val xiaomiOnly: Boolean = false,
+    /** The step only exists with the OFFLINE_EMERGENCY_ENABLED build flag. */
+    val offlineOnly: Boolean = false,
 ) {
     NOTIFICATIONS(listOf(Manifest.permission.POST_NOTIFICATIONS), minSdk = Build.VERSION_CODES.TIRAMISU),
     LOCATION(listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)),
@@ -27,6 +29,18 @@ enum class SetupStep(
     SMS(
         listOf(Manifest.permission.SEND_SMS) +
             if (BuildConfig.OFFLINE_EMERGENCY_ENABLED) listOf(Manifest.permission.RECEIVE_SMS) else emptyList(),
+    ),
+
+    // The offline emergency's BLE mesh (#59). The locked trigger cannot show a dialog, so
+    // setup asks. Before Android 12 Bluetooth needs no runtime permission beyond location.
+    NEARBY(
+        listOf(
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_ADVERTISE,
+            Manifest.permission.BLUETOOTH_CONNECT,
+        ),
+        minSdk = Build.VERSION_CODES.S,
+        offlineOnly = true,
     ),
     AUTOSTART(xiaomiOnly = true),
     BATTERY,
@@ -49,8 +63,14 @@ enum class SetupStep(
          * runtime permissions first, then the Xiaomi and battery screens, and
          * accessibility always last.
          */
-        fun forDevice(sdkInt: Int, isXiaomi: Boolean): List<SetupStep> =
-            entries.filter { sdkInt >= it.minSdk && (isXiaomi || !it.xiaomiOnly) }
+        fun forDevice(
+            sdkInt: Int,
+            isXiaomi: Boolean,
+            offlineEmergency: Boolean = BuildConfig.OFFLINE_EMERGENCY_ENABLED,
+        ): List<SetupStep> =
+            entries.filter {
+                sdkInt >= it.minSdk && (isXiaomi || !it.xiaomiOnly) && (offlineEmergency || !it.offlineOnly)
+            }
     }
 }
 
