@@ -24,4 +24,4 @@ MAMÁ needs an offline Bluetooth Low Energy mesh so an emergency can leave a pho
 - ANNOUNCE-before-MESSAGE ordering is guaranteed on the first hop only. Peers two or more hops away may drop the first MESSAGE until gossip sync or periodic announces catch up, so emitters must re-emit until acked.
 - Upstream broadcast store-and-forward actually goes through gossip sync (`StoreForwardManager` skips broadcasts), so we copy both.
 - The foreground service is deferred to #60.
-- We do not track upstream automatically. Re-syncing means re-running the Task 1 copy at a new SHA and re-applying our adaptations.
+- We do not track upstream automatically. Re-syncing means copying the same upstream files again at a new SHA (the import commit `daa27db` lists them; `mesh/NOTICE.md` explains the kinds of file) and re-applying the changes recorded in each file header.
