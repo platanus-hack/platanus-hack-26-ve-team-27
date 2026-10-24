@@ -29,20 +29,24 @@ Setup it expects: Go 1.24+, a JDK (on macOS the script falls back to Android Stu
 ### Layout
 
 ```
-app/                     Android app (single Gradle module)
+app/                     Android app (MAMÁ)
   src/main/java/com/team27/mama/
   src/test/java/...      JUnit4 unit tests
+mesh/                    BLE mesh library (bitchat-android code, GPL-3.0)
+  src/main/java/com/team27/mama/mesh/   MeshGateway (public API) + upstream packages
+  NOTICE.md              upstream URL, commit and file provenance
 server/                  Go server (its own Go module)
   cmd/server/            main.go + routes.go (newMux registers every route)
   internal/              server packages, one per subdirectory
   migrations/            reserved for SQL migrations
 scripts/build.sh         the one local build-and-test command
 settings.gradle.kts, build.gradle.kts, gradle/libs.versions.toml, gradlew   Gradle root
+LICENSE                  GPL-3.0
 ```
 
 ### Conventions
 
-- **Gradle:** the repo root is the Gradle root. Kotlin DSL, versions only in `gradle/libs.versions.toml`. One Android module, `app/`.
+- **Gradle:** the repo root is the Gradle root. Kotlin DSL, versions only in `gradle/libs.versions.toml`. Two Android modules: `app/` (MAMÁ) and `mesh/` (Android library with the BLE mesh copied from bitchat-android under GPL-3.0, kept in its own module to isolate third-party code; see `mesh/NOTICE.md` and `docs/adr/0002-bitchat-mesh-module.md`). Edit copied files under `mesh/` only when needed, and record every change in the file's provenance header.
 - **App:** namespace and applicationId `com.team27.mama`, label "MAMÁ", minSdk 26, compileSdk 37 (the Compose BOM requires it), targetSdk 36. Jetpack Compose + Material3 through the Compose BOM. kotlinx-serialization is available (plugin + `kotlinx-serialization-json`). Unit tests are JUnit4 under `app/src/test/`.
 - **App theme and navigation:** `app/src/main/java/com/team27/mama/ui/theme/` and navigation belong to ticket #5. See `app/UI_RULES.md`.
 - **Server:** module `github.com/platanus-hack/platanus-hack-26-ve-team-27/server`, `go 1.24`, standard library `net/http` only. It listens on `$PORT` (default 8080). Register every route in `newMux()` in `server/cmd/server/routes.go`. Put packages under `server/internal/`.
