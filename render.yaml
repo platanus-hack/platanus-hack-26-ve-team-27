@@ -23,6 +23,12 @@ services:
       # EMERGENCY_X25519_PRIVATE_KEY set in the dashboard (README "Secrets").
       - key: EMERGENCY_OFFLINE_ENABLED
         sync: false
+      # Public origin Twilio calls for the inbound SMS webhook (#58), e.g.
+      # https://mama-server.onrender.com. Set it in the dashboard with the flag;
+      # unset, POST /sms/inbound/twilio answers 503. TWILIO_AUTH_TOKEN (README
+      # "Secrets") also verifies that webhook.
+      - key: PUBLIC_BASE_URL
+        sync: false
 
 databases:
   - name: mama-db
