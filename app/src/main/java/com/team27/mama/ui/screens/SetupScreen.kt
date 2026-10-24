@@ -149,7 +149,9 @@ private fun copyFor(step: SetupStep): StepCopy = when (step) {
         title = "Ventanas emergentes",
         why = "Para que la llamada de Mamá aparezca aunque estés en otra app.",
         action = "Abrir permisos de ventanas",
-        hint = "Permite «Mostrar ventanas emergentes en segundo plano» y vuelve aquí.",
+        // HyperOS 3 labels; the screen behind "Otros permisos" cannot be opened directly by an app.
+        hint = "Toca «Otros permisos» y permite «Abrir nuevas ventanas mientras se ejecuta en segundo plano» " +
+            "y «Mostrar en pantalla de bloqueo». Luego vuelve aquí.",
     )
     SetupStep.ACCESSIBILITY -> StepCopy(
         title = "Accesibilidad",
