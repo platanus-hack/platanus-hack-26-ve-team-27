@@ -29,6 +29,7 @@ type Config struct {
 	Twilio     Twilio
 	Kapso      Kapso
 	Anthropic  Anthropic
+	Emergency  Emergency
 }
 
 // ElevenLabs is the voice agent that places the "Mamá" call through its
@@ -68,6 +69,15 @@ type Anthropic struct {
 	DuressModel string // DURESS_LLM_MODEL, optional; blank = duress.DefaultModel
 }
 
+// Emergency is the offline emergency channel (#55): the central SMS number the
+// phones text and the server key pair they pin. Both keys are standard Base64
+// of 32 raw bytes; serverkeys validates them.
+type Emergency struct {
+	SMSNumber        string // EMERGENCY_SMS_NUMBER, E.164; blank = not served in GET /config
+	Ed25519Seed      string // EMERGENCY_ED25519_SEED, signs offline acks
+	X25519PrivateKey string // EMERGENCY_X25519_PRIVATE_KEY, opens mesh sealed boxes
+}
+
 // Load reads the config from the process environment.
 func Load() Config { return LoadFrom(os.Getenv) }
 
@@ -102,6 +112,11 @@ func LoadFrom(getenv func(string) string) Config {
 			APIKey:      get("ANTHROPIC_API_KEY"),
 			DuressModel: get("DURESS_LLM_MODEL"),
 		},
+		Emergency: Emergency{
+			SMSNumber:        get("EMERGENCY_SMS_NUMBER"),
+			Ed25519Seed:      get("EMERGENCY_ED25519_SEED"),
+			X25519PrivateKey: get("EMERGENCY_X25519_PRIVATE_KEY"),
+		},
 	}
 	if c.Port == "" {
 		c.Port = DefaultPort
@@ -116,7 +131,7 @@ func LoadFrom(getenv func(string) string) Config {
 // NOTIFIER are left out because they always have a value, DURESS_LLM_MODEL,
 // ELEVENLABS_VOICE_ID and CALL_SPIKE_TOKEN because they are optional.
 func (c Config) vars() []struct{ name, value string } {
-	return []struct{ name, value string }{
+	return append([]struct{ name, value string }{
 		{"DATABASE_URL", c.DatabaseURL},
 		{"ELEVENLABS_API_KEY", c.ElevenLabs.APIKey},
 		{"ELEVENLABS_AGENT_ID", c.ElevenLabs.AgentID},
@@ -128,6 +143,14 @@ func (c Config) vars() []struct{ name, value string } {
 		{"KAPSO_API_KEY", c.Kapso.APIKey},
 		{"KAPSO_PHONE_NUMBER_ID", c.Kapso.PhoneNumberID},
 		{"ANTHROPIC_API_KEY", c.Anthropic.APIKey},
+	}, c.Emergency.vars()...)
+}
+
+func (e Emergency) vars() []struct{ name, value string } {
+	return []struct{ name, value string }{
+		{"EMERGENCY_SMS_NUMBER", e.SMSNumber},
+		{"EMERGENCY_ED25519_SEED", e.Ed25519Seed},
+		{"EMERGENCY_X25519_PRIVATE_KEY", e.X25519PrivateKey},
 	}
 }
 
@@ -147,16 +170,31 @@ func (c Config) Missing() []string {
 // Config by mistake cannot leak a key.
 func (c Config) String() string {
 	// NOTIFIER is a channel name, not a secret, so its value is shown.
-	parts := []string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier}
-	for _, v := range c.vars() {
+	parts := append([]string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier}, setOrUnset(c.vars())...)
+	return fmt.Sprintf("config{%s}", strings.Join(parts, " "))
+}
+
+// GoString keeps %#v as safe as %v.
+func (c Config) GoString() string { return c.String() }
+
+// String reports which emergency vars are set, never their values: the
+// Ed25519 seed and the X25519 private key are the server's secret keys.
+func (e Emergency) String() string {
+	return fmt.Sprintf("emergency{%s}", strings.Join(setOrUnset(e.vars()), " "))
+}
+
+// GoString keeps %#v as safe as %v.
+func (e Emergency) GoString() string { return e.String() }
+
+// setOrUnset renders each var as NAME=set or NAME=unset.
+func setOrUnset(vars []struct{ name, value string }) []string {
+	parts := make([]string, 0, len(vars))
+	for _, v := range vars {
 		state := "set"
 		if v.value == "" {
 			state = "unset"
 		}
 		parts = append(parts, v.name+"="+state)
 	}
-	return fmt.Sprintf("config{%s}", strings.Join(parts, " "))
+	return parts
 }
-
-// GoString keeps %#v as safe as %v.
-func (c Config) GoString() string { return c.String() }

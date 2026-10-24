@@ -114,6 +114,40 @@ data class DeviceRegistration(
     @SerialName("family_numbers") val familyNumbers: List<String>,
     @SerialName("duress_phrase") val duressPhrase: String,
     @SerialName("app_version") val appVersion: String? = null,
+    /**
+     * The device's Ed25519 identity public key (bitchat's, #56), std Base64
+     * of 32 bytes; the server derives key_id from it to verify offline
+     * payloads (#57).
+     */
+    @SerialName("ed25519_public_key") val ed25519PublicKey: String? = null,
+    /**
+     * Proof the phone holds [ed25519PublicKey]'s private half: std Base64 of
+     * the 64-byte Ed25519 signature over [signedMessage] of [deviceId].
+     * Required with [ed25519PublicKey] and only with it (the server answers
+     * 400 otherwise), because bitchat broadcasts public keys on the mesh.
+     */
+    @SerialName("ed25519_signature") val ed25519Signature: String? = null,
+) {
+    companion object {
+        /** Prefixes the bytes [ed25519Signature] covers; Go's RegistrationSignatureContext. */
+        const val SIGNATURE_CONTEXT = "MAMA-device-registration-v1"
+
+        /** The ASCII context, then the UTF-8 bytes of [deviceId]; Go's RegistrationSignedMessage. */
+        fun signedMessage(deviceId: String): ByteArray =
+            SIGNATURE_CONTEXT.toByteArray(Charsets.US_ASCII) + deviceId.toByteArray(Charsets.UTF_8)
+    }
+}
+
+/**
+ * Server -> phone, reply to GET /config; the phone caches it and works
+ * offline from the cache. Keys are std Base64 of 32 bytes.
+ */
+@Serializable
+data class RemoteConfig(
+    /** E.164; omitted when the server has none. */
+    @SerialName("sms_number") val smsNumber: String? = null,
+    @SerialName("server_ed25519_public_key") val serverEd25519PublicKey: String,
+    @SerialName("server_x25519_public_key") val serverX25519PublicKey: String,
 )
 
 /**

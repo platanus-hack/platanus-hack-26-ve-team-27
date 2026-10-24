@@ -117,6 +117,7 @@ nothing sleeps. Every push to `main` deploys.
 | --- | --- |
 | `GET /version` | `{"commit":"<sha>"}` from `RENDER_GIT_COMMIT` (`"dev"` locally) |
 | `GET /health` | `200 {"status":"ok"}` when Postgres answers a ping within 2 s, `503` otherwise (also when `DATABASE_URL` is unset) |
+| `GET /config` | `200` with the central SMS number (when set) and the server public keys; public, no auth, no database needed (#55) |
 
 ### Deploy it (once)
 
@@ -160,6 +161,9 @@ the ones that are unset, never the values.
 | `TWILIO_PHONE_NUMBER` | Our Twilio number, E.164 (`+1...`); also saved as the "Mamá" contact | console.twilio.com > Phone Numbers > Active numbers |
 | `KAPSO_API_KEY` | Kapso API key (`X-API-Key` header) | Kapso dashboard > Integrations > API keys |
 | `KAPSO_PHONE_NUMBER_ID` | WhatsApp `phone_number_id` of our Kapso number | app.kapso.ai > WhatsApp > Phone numbers |
+| `EMERGENCY_SMS_NUMBER` | Central SMS number the phones text when offline, E.164; served in `GET /config`; the Twilio inbound number for #58 | Twilio console > Phone Numbers (optional: unset omits it from `GET /config`) |
+| `EMERGENCY_ED25519_SEED` | Signs offline acks; standard Base64 of 32 bytes. Required in production: on Render (`RENDER` set) the server refuses to boot without it and `EMERGENCY_X25519_PRIVATE_KEY`; locally it warns and uses an ephemeral key. Changing it breaks phones until they refresh config | Generate with `openssl rand -base64 32` |
+| `EMERGENCY_X25519_PRIVATE_KEY` | Opens mesh sealed boxes; standard Base64 of 32 bytes. Required in production, like `EMERGENCY_ED25519_SEED`; same caveat | Generate with `openssl rand -base64 32` |
 
 **On Render:** Dashboard > `mama-server` > Environment > Add Environment
 Variable, one per row above (except `DATABASE_URL` and `PORT`), then Save,
