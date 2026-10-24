@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
 )
 
 // venezuela is the only destination the spike route dials: a +58 number with
@@ -17,16 +18,20 @@ import (
 // run up premium-rate or international calls on the Twilio account.
 var venezuela = regexp.MustCompile(`^\+58[0-9]{10}$`)
 
-// Routes holds the call routes. Create it with NewRoutes.
+// Routes holds the call routes and the call engine. Create it with
+// NewRoutes.
 type Routes struct {
 	webhook    *Webhook
 	client     *Client
+	engine     *Engine // nil without a database
 	spikeToken string
 }
 
-// NewRoutes builds the routes from the ElevenLabs config.
-func NewRoutes(cfg config.ElevenLabs) *Routes {
-	return &Routes{
+// NewRoutes builds the routes from the ElevenLabs config. store is nil when
+// the server has no database: the webhook then only logs, and Starter only
+// logs the handoff.
+func NewRoutes(cfg config.ElevenLabs, store Store) *Routes {
+	rt := &Routes{
 		webhook: &Webhook{Secret: cfg.WebhookSecret},
 		client: &Client{
 			APIKey:        cfg.APIKey,
@@ -36,6 +41,21 @@ func NewRoutes(cfg config.ElevenLabs) *Routes {
 		},
 		spikeToken: cfg.CallSpikeToken,
 	}
+	if store != nil {
+		rt.engine = &Engine{Store: store, Placer: rt.client}
+		rt.webhook.Received = rt.engine.Received
+		rt.webhook.InitiationFailed = rt.engine.InitiationFailed
+	}
+	return rt
+}
+
+// Starter is what intake hands BranchCall incidents to: the engine, or
+// intake.LogHandoff without a database.
+func (rt *Routes) Starter() intake.CallStarter {
+	if rt.engine == nil {
+		return intake.LogHandoff{}
+	}
+	return rt.engine
 }
 
 // Register mounts POST /webhooks/elevenlabs always, and POST /spike/call only
@@ -43,6 +63,9 @@ func NewRoutes(cfg config.ElevenLabs) *Routes {
 func (rt *Routes) Register(mux *http.ServeMux) {
 	if rt.webhook.Secret == "" {
 		log.Print("call: WARNING: ELEVENLABS_WEBHOOK_SECRET is not set; /webhooks/elevenlabs answers 503")
+	}
+	if rt.engine != nil && (rt.client.APIKey == "" || rt.client.AgentID == "" || rt.client.PhoneNumberID == "") {
+		log.Print("call: WARNING: ElevenLabs credentials are not set; every call will fail")
 	}
 	mux.Handle("POST /webhooks/elevenlabs", rt.webhook)
 	if rt.spikeToken != "" {

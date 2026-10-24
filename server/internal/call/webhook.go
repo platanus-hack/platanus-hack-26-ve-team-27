@@ -42,19 +42,23 @@ var (
 )
 
 // Webhook handles POST /webhooks/elevenlabs. Received is called once per
-// valid post_call_transcription; it defaults to logging a summary. The call
-// engine (#18) replaces it with the code that stores the call.
+// valid post_call_transcription; it defaults to logging a summary.
+// InitiationFailed is called with the conversation_id of a call that never
+// connected; it defaults to logging the reason. The call engine sets both
+// (Engine.Received, Engine.InitiationFailed).
 type Webhook struct {
-	Secret   string // ELEVENLABS_WEBHOOK_SECRET; blank refuses every request
-	Received func(ctx context.Context, hook contract.CallWebhook)
-	Now      func() time.Time // time.Now when nil
+	Secret           string // ELEVENLABS_WEBHOOK_SECRET; blank refuses every request
+	Received         func(ctx context.Context, hook contract.CallWebhook) error
+	InitiationFailed func(ctx context.Context, conversationID string) error
+	Now              func() time.Time // time.Now when nil
 }
 
 // ServeHTTP verifies the signature over the raw body, then parses it. It
 // answers 503 when no secret is configured (fail closed: an unsigned call
-// webhook could fake a verdict), 401 on a bad signature, 400 on a bad body
-// and 200 otherwise, also for webhook types the server does not use, so
-// ElevenLabs does not retry them.
+// webhook could fake a verdict), 401 on a bad signature, 400 on a bad body,
+// 500 when storing it failed (ElevenLabs retries) and 200 otherwise, also
+// for webhook types the server does not use, so ElevenLabs does not retry
+// them.
 func (wh *Webhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBytes))
 	if err != nil {
@@ -79,13 +83,22 @@ func (wh *Webhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch hook.Type {
 	case TypeTranscription:
-		if wh.Received != nil {
-			wh.Received(r.Context(), hook)
-		} else {
+		if wh.Received == nil {
 			LogSummary(hook)
+		} else if err := wh.Received(r.Context(), hook); err != nil {
+			log.Printf("call webhook: conversation %s: store: %v", hook.Data.ConversationID, err)
+			http.Error(w, "could not store the call", http.StatusInternalServerError)
+			return
 		}
 	case TypeCallInitiationFailure:
 		logInitiationFailure(raw)
+		if wh.InitiationFailed != nil && hook.Data.ConversationID != "" {
+			if err := wh.InitiationFailed(r.Context(), hook.Data.ConversationID); err != nil {
+				log.Printf("call webhook: conversation %s: mark failed: %v", hook.Data.ConversationID, err)
+				http.Error(w, "could not store the call", http.StatusInternalServerError)
+				return
+			}
+		}
 	default:
 		log.Printf("call webhook: ignoring type %q", hook.Type)
 	}

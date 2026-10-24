@@ -147,7 +147,7 @@ func TestWebhookSignature(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
 			wh := &Webhook{Secret: "secret", Now: func() time.Time { return now },
-				Received: func(context.Context, contract.CallWebhook) { calls++ }}
+				Received: func(context.Context, contract.CallWebhook) error { calls++; return nil }}
 			rec := postWebhook(wh, tc.header, body)
 			if rec.Code != tc.want {
 				t.Fatalf("status = %d, want %d", rec.Code, tc.want)
@@ -172,7 +172,7 @@ func TestWebhookRejectsATamperedBody(t *testing.T) {
 
 // signedWebhook returns a Webhook with a fixed clock and a function that
 // posts body signed with its secret.
-func signedWebhook(received func(context.Context, contract.CallWebhook)) (*Webhook, func([]byte) *httptest.ResponseRecorder) {
+func signedWebhook(received func(context.Context, contract.CallWebhook) error) (*Webhook, func([]byte) *httptest.ResponseRecorder) {
 	now := time.Unix(1761297100, 0)
 	wh := &Webhook{Secret: "secret", Now: func() time.Time { return now }, Received: received}
 	return wh, func(body []byte) *httptest.ResponseRecorder {
@@ -182,7 +182,7 @@ func signedWebhook(received func(context.Context, contract.CallWebhook)) (*Webho
 
 func TestWebhookWithoutASecretFailsClosed(t *testing.T) {
 	called := false
-	wh := &Webhook{Received: func(context.Context, contract.CallWebhook) { called = true }}
+	wh := &Webhook{Received: func(context.Context, contract.CallWebhook) error { called = true; return nil }}
 	if rec := postWebhook(wh, "", sampleWebhook(t)); rec.Code != http.StatusServiceUnavailable || called {
 		t.Errorf("status = %d, Received called %v; want 503 and not called", rec.Code, called)
 	}
@@ -190,7 +190,7 @@ func TestWebhookWithoutASecretFailsClosed(t *testing.T) {
 
 func TestWebhookParsesTheTranscript(t *testing.T) {
 	var got contract.CallWebhook
-	_, post := signedWebhook(func(_ context.Context, h contract.CallWebhook) { got = h })
+	_, post := signedWebhook(func(_ context.Context, h contract.CallWebhook) error { got = h; return nil })
 
 	if rec := post(sampleWebhook(t)); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
@@ -209,7 +209,7 @@ func TestWebhookOtherTypesAnswer200WithoutReceived(t *testing.T) {
 		`{"type":"post_call_audio","data":{}}`,
 	} {
 		called := false
-		_, post := signedWebhook(func(context.Context, contract.CallWebhook) { called = true })
+		_, post := signedWebhook(func(context.Context, contract.CallWebhook) error { called = true; return nil })
 		if rec := post([]byte(body)); rec.Code != http.StatusOK || called {
 			t.Errorf("%s: status %d, Received called %v", body, rec.Code, called)
 		}
@@ -225,7 +225,7 @@ func TestWebhookBadJSONIs400(t *testing.T) {
 
 func spikeMux(t *testing.T, elevenLabsURL, token string) *http.ServeMux {
 	t.Helper()
-	rt := NewRoutes(config.ElevenLabs{APIKey: "key", AgentID: "a", PhoneNumberID: "p", CallSpikeToken: token})
+	rt := NewRoutes(config.ElevenLabs{APIKey: "key", AgentID: "a", PhoneNumberID: "p", CallSpikeToken: token}, nil)
 	rt.client.BaseURL = elevenLabsURL
 	mux := http.NewServeMux()
 	rt.Register(mux)

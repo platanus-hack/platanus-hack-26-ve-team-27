@@ -13,7 +13,7 @@ import (
 
 func TestRootReturnsOK(t *testing.T) {
 	rec := httptest.NewRecorder()
-	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{})).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}, nil)).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET / status = %d, want %d", rec.Code, http.StatusOK)
@@ -22,7 +22,7 @@ func TestRootReturnsOK(t *testing.T) {
 
 func TestIntakeRoutesAreMounted(t *testing.T) {
 	rec := httptest.NewRecorder()
-	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{})).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/incidents", nil))
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}, nil)).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/incidents", nil))
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("POST /incidents with no database = %d, want %d", rec.Code, http.StatusServiceUnavailable)
@@ -44,7 +44,7 @@ func TestChannelConfigured(t *testing.T) {
 func TestCallWebhookIsMounted(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/elevenlabs", strings.NewReader(`{"type":"post_call_audio"}`))
-	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{})).ServeHTTP(rec, req)
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}, nil)).ServeHTTP(rec, req)
 
 	// Mounted, and with no secret configured it fails closed.
 	if rec.Code != http.StatusServiceUnavailable {
