@@ -62,13 +62,12 @@ class InMemoryRelayStore : RelayStore {
     }
 }
 
-/** The fakes of one relay; build it with [relay] inside `runTest`. */
+/** The fakes of one relay; build it with [relay] inside `runTest`. Pass [store] to restart over another kit's state. */
 @OptIn(ExperimentalCoroutinesApi::class)
-class RelayTestKit {
+class RelayTestKit(val store: InMemoryRelayStore = InMemoryRelayStore()) {
     val mesh = FakeRelayMesh()
     val uploader = FakeUploader()
     val network = FakeNetwork()
-    val store = InMemoryRelayStore()
 
     /** Starts a relay on [scope] (default `backgroundScope`) so its collector is subscribed before any emit. */
     fun TestScope.relay(scope: CoroutineScope = backgroundScope): MeshRelay =
@@ -92,6 +91,11 @@ class RelayTestKit {
 
     /** The persisted snapshot, or null when nothing was saved. */
     internal fun saved(): RelaySnapshot? = store.json?.let { RelayJson.decodeFromString(RelaySnapshot.serializer(), it) }
+
+    /** Puts [snapshot] in the store, as a previous run would have left it. */
+    internal fun stored(snapshot: RelaySnapshot) {
+        store.json = RelayJson.encodeToString(RelaySnapshot.serializer(), snapshot)
+    }
 
     /** Advances virtual time to exactly [t] ms after the test started and runs what is due. */
     fun TestScope.at(t: Long) {

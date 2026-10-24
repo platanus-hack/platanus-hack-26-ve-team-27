@@ -66,13 +66,18 @@ class MeshRelay(
     private val own = LinkedHashSet<String>()
 
     /**
-     * Subscribes to the mesh before returning, so `relay.start(); gateway.start()` misses no
-     * early broadcast, then starts the upload worker on [scope]. Later calls do nothing.
+     * Restores the stored snapshot, then subscribes to the mesh before returning, so
+     * `relay.start(); gateway.start()` misses no early broadcast and every heard text meets the
+     * restored seen-set. Then starts the upload worker on [scope]. Later calls do nothing.
      */
     fun start() {
         if (!started.compareAndSet(false, true)) return
-        // UNDISPATCHED runs up to the first suspension, the SharedFlow subscription, on this thread.
-        scope.launch(start = CoroutineStart.UNDISPATCHED) { listen() }
+        // UNDISPATCHED runs up to the first suspension, the restore and the SharedFlow subscription, on
+        // this thread. The worker is launched after it, so it starts from the restored snapshot.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            restore()
+            listen()
+        }
         scope.launch { work() }
     }
 
@@ -93,6 +98,33 @@ class MeshRelay(
 
     private fun isOwn(hash: String): Boolean = synchronized(ownLock) { hash in own }
 
+    /**
+     * Loads the stored snapshot, ordered and capped, and drops what expired while the relay was
+     * down. A missing, unparseable or other-version store starts empty and is left as it is
+     * until the next change overwrites it.
+     */
+    private fun restore() {
+        val loaded = guard(null) { store.load()?.let { RelayJson.decodeFromString(RelaySnapshot.serializer(), it) } }
+            ?.takeIf { it.v == RelaySnapshot().v }
+            ?: RelaySnapshot()
+        val restored = pruned(loaded.copy(pending = capPending(loaded.pending), seen = capSeen(loaded.seen)), nowMs())
+        if (restored == loaded) show(restored) else commit(restored)
+        wake.trySend(Unit)
+    }
+
+    /** Drops the entries that expired by [now]; saves only when one did. */
+    private fun prune(now: Long) {
+        val next = pruned(snapshot, now)
+        if (next != snapshot) commit(next)
+    }
+
+    /** [from] without its expired pending items and seen entries. */
+    private fun pruned(from: RelaySnapshot, now: Long): RelaySnapshot {
+        val (expired, pending) = from.pending.partition { isExpired(it.heardAtMs, now) }
+        for (item in expired) note(relayHash(item.text), item.hops, "expired")
+        return from.copy(pending = pending, seen = from.seen.filterNot { isExpired(it.firstSeenAtMs, now) })
+    }
+
     /** A failing flow ends only the listener; the worker keeps delivering what is queued. */
     private suspend fun listen() {
         mesh.broadcasts.catch { if (it is CancellationException) throw it }.collect(::onHeard)
@@ -105,13 +137,15 @@ class MeshRelay(
         val hash = relayHash(text)
         if (isOwn(hash)) return
         val now = nowMs()
+        // An expired seen entry no longer blocks the text, even while the worker sleeps.
+        prune(now)
         val known = snapshot.seen.firstOrNull { it.hash == hash }
         if (known != null) return repeatAck(known, broadcast.relayHops, now)
         val hops = broadcast.relayHops
         commit(
             snapshot.copy(
-                pending = (snapshot.pending + PendingUpload(text, hops, now, nextAttemptAtMs = now)).takeLast(RelayLimits.MAX_PENDING),
-                seen = (snapshot.seen + SeenText(hash, now)).takeLast(RelayLimits.MAX_SEEN),
+                pending = capPending(snapshot.pending + PendingUpload(text, hops, now, nextAttemptAtMs = now)),
+                seen = capSeen(snapshot.seen + SeenText(hash, now)),
             ),
         )
         note(hash, hops, "queued")
@@ -133,12 +167,13 @@ class MeshRelay(
     }
 
     /**
-     * Uploads the oldest due item while online, one at a time, then waits for whichever
-     * comes first: the next retry, the offline poll, or a wake-up.
+     * Drops expired entries, uploads the oldest due item while online, one at a time, then
+     * waits for whichever comes first: the next retry, the next expiry, the offline poll, or a
+     * wake-up.
      */
     private suspend fun work() {
         while (true) {
-            // Task 3: prune expired entries here.
+            prune(nowMs())
             val online = guard(false) { network.isOnline() }
             val now = nowMs()
             val due = if (online) snapshot.pending.firstOrNull { it.nextAttemptAtMs <= now } else null
@@ -159,6 +194,9 @@ class MeshRelay(
             // Offline, an item already due waits for the poll, never for a gap <= 0.
             val gap = item.nextAttemptAtMs - now
             if (gap > 0) wait = minOf(wait ?: gap, gap)
+            // An item in backoff still leaves the queue the moment it expires.
+            val expiresIn = item.heardAtMs + RelayTiming.ENTRY_TTL_MS - now
+            if (expiresIn > 0) wait = minOf(wait ?: expiresIn, expiresIn)
         }
         return wait
     }
@@ -191,7 +229,7 @@ class MeshRelay(
         val seen = if (known) {
             snapshot.seen.map { if (it.hash == hash) it.copy(ackText = ack, lastAckBroadcastAtMs = if (sent) now else it.lastAckBroadcastAtMs) else it }
         } else {
-            (snapshot.seen + SeenText(hash, item.heardAtMs, ack, if (sent) now else 0L)).takeLast(RelayLimits.MAX_SEEN)
+            capSeen(snapshot.seen + SeenText(hash, item.heardAtMs, ack, if (sent) now else 0L))
         }
         commit(
             snapshot.copy(
@@ -218,10 +256,15 @@ class MeshRelay(
     }
 
     private fun commit(next: RelaySnapshot) {
+        show(next)
+        guard(Unit) { store.save(RelayJson.encodeToString(RelaySnapshot.serializer(), next)) }
+    }
+
+    /** Makes [next] current without saving it: only for a snapshot equal to the stored one. */
+    private fun show(next: RelaySnapshot) {
         snapshot = next
         mutablePending.value = next.pending.size
         mutableRelayed.value = next.relayedCount
-        guard(Unit) { store.save(RelayJson.encodeToString(RelaySnapshot.serializer(), next)) }
     }
 
     private fun broadcast(text: String): Boolean = guard(false) { mesh.broadcast(text) }
@@ -231,6 +274,17 @@ class MeshRelay(
     }
 
     private companion object {
+        /** A clock that went backwards never expires an entry early. */
+        fun isExpired(atMs: Long, now: Long): Boolean = now - atMs >= RelayTiming.ENTRY_TTL_MS
+
+        /** Oldest heard first, at most [RelayLimits.MAX_PENDING]: when full, the oldest heard is dropped. */
+        fun capPending(items: List<PendingUpload>): List<PendingUpload> =
+            items.sortedBy { it.heardAtMs }.takeLast(RelayLimits.MAX_PENDING)
+
+        /** Oldest first seen first, at most [RelayLimits.MAX_SEEN]: when full, the oldest first seen is evicted. */
+        fun capSeen(entries: List<SeenText>): List<SeenText> =
+            entries.sortedBy { it.firstSeenAtMs }.takeLast(RelayLimits.MAX_SEEN)
+
         /** At most [RelayLimits.MAX_TEXT_CHARS] chars and a SEAL frame with a 146-byte box. */
         fun isRelayable(text: String): Boolean =
             // Caps parsing cost on junk. parseMesh trims whitespace, so a padded valid SEAL is the only text it alone stops (test: ignoresOversizedPaddedSeal).
