@@ -49,6 +49,7 @@ func main() {
 	// The post-call hooks, in order (call.Hooks). #21 adds "duress detector
 	// -> save verdict -> notify" first, so the report closes after them.
 	calls.SetFinished(call.Hooks(
+		verdictHook(cfg, pool, notifier),
 		reportHook(closer),
 	))
 	calls.SetProgress(progressHook(cfg, pool))
