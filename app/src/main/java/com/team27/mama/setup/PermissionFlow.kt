@@ -31,6 +31,13 @@ enum class SetupStep(
 
     val isSystemScreen: Boolean get() = permissions.isEmpty()
 
+    /**
+     * Whether [granted] covers this step: every permission, except location,
+     * which counts with only "approximate" (the person's choice on Android 12+).
+     */
+    fun isGrantedBy(granted: (String) -> Boolean): Boolean =
+        if (this == LOCATION) permissions.any(granted) else permissions.isNotEmpty() && permissions.all(granted)
+
     companion object {
         /**
          * The steps this phone shows, in the product order (docs/MAMA-summary.md):

@@ -111,6 +111,7 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun submitForm() {
+        if (running) return
         val valid = _state.value.form.validated()
         if (valid == null) {
             _state.update { it.copy(showFormErrors = true) }
@@ -119,6 +120,8 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
         store.ownNumber = valid.ownNumber
         store.familyNumbers = valid.familyNumbers
         store.duressPhrase = valid.duressPhrase
+        // Until the new data reaches the server, a relaunch must not open on "done".
+        store.setupCompleted = false
         _state.update {
             it.copy(phase = SetupPhase.FINISHING, contact = SetupTask(), registration = SetupTask())
         }
@@ -206,7 +209,6 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
                 ?.any { it.startsWith(app.packageName + "/") }
                 ?: false
         SetupStep.AUTOSTART, SetupStep.POPUPS -> null
-        // Location counts when either precise or approximate was granted.
-        else -> step.permissions.any(::hasPermission)
+        else -> step.isGrantedBy(::hasPermission)
     }
 }

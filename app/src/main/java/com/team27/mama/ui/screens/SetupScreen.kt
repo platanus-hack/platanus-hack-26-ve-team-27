@@ -184,8 +184,9 @@ fun SetupScreen(viewModel: SetupViewModel = viewModel()) {
     ) { result ->
         val step = requestedStep ?: return@rememberLauncherForActivityResult
         requestedStep = null
-        // Location counts with only "approximate"; an empty result means the dialog was dismissed.
-        val granted = result.values.any { it }
+        // Empty: the request was interrupted (dismissed, activity recreated). The step stays as it was.
+        if (result.isEmpty()) return@rememberLauncherForActivityResult
+        val granted = step.isGrantedBy { result[it] == true }
         val canAskAgain = activity == null ||
             step.permissions.any { ActivityCompat.shouldShowRequestPermissionRationale(activity, it) }
         viewModel.onPermissionResult(step, granted, canAskAgain)

@@ -55,6 +55,14 @@ class PermissionFlowTest {
     }
 
     @Test
+    fun locationCountsWithApproximateButContactsNeedsReadAndWrite() {
+        assertTrue(LOCATION.isGrantedBy { it == Manifest.permission.ACCESS_COARSE_LOCATION })
+        assertFalse(CONTACTS.isGrantedBy { it == Manifest.permission.READ_CONTACTS })
+        assertTrue(CONTACTS.isGrantedBy { true })
+        assertFalse(AUTOSTART.isGrantedBy { true })
+    }
+
+    @Test
     fun currentStepIsTheFirstStillBlocking() {
         var flow = PermissionFlow.start(SetupStep.forDevice(sdkInt = 36, isXiaomi = false))
         assertEquals(NOTIFICATIONS, flow.current)
