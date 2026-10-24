@@ -222,7 +222,7 @@ func TestEveryRulesReasonIsTranslated(t *testing.T) {
 	}
 	verdicts := map[contract.Verdict]bool{}
 	for _, tc := range cases {
-		r, err := duress.Rules{}.Detect(context.Background(), tc.transcript, tc.phrase)
+		r, err := duress.Rules{}.Detect(context.Background(), tc.transcript, duress.Phrases{Duress: tc.phrase})
 		if err != nil {
 			t.Fatal(err)
 		}

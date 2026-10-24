@@ -16,18 +16,18 @@ import (
 // recorder is a Store and a Notify that log what happened, in order.
 type recorder struct {
 	events  []string
-	saved   duress.Result
+	saved   Decision
 	saveErr error
 }
 
-func (r *recorder) SaveVerdict(_ context.Context, _ string, v contract.Verdict, reason string) error {
+func (r *recorder) SaveVerdict(_ context.Context, _ string, d Decision) error {
 	r.events = append(r.events, "save")
-	r.saved = duress.Result{Verdict: v, Reason: reason}
+	r.saved = d
 	return r.saveErr
 }
 
 func (r *recorder) notify(t *testing.T) Notify {
-	return func(_ context.Context, _ Call, got duress.Result) {
+	return func(_ context.Context, _ Call, got Decision) {
 		r.events = append(r.events, "notify")
 		if got != r.saved {
 			t.Errorf("notifier got %+v, but the stored verdict is %+v", got, r.saved)
@@ -98,7 +98,7 @@ func TestDecideStillNotifiesWhenTheStoreFails(t *testing.T) {
 
 type failing struct{}
 
-func (failing) Detect(context.Context, []contract.TranscriptTurn, string) (duress.Result, error) {
+func (failing) Detect(context.Context, []contract.TranscriptTurn, duress.Phrases) (duress.Result, error) {
 	return duress.Result{}, errors.New("boom")
 }
 
@@ -107,5 +107,102 @@ func TestDecideTurnsADetectorErrorIntoUnclear(t *testing.T) {
 	got, err := Decide(context.Background(), failing{}, rec, call, nil)
 	if err != nil || got.Verdict != contract.VerdictUnclear || rec.saved != got {
 		t.Fatalf("got %+v, %v, stored %+v", got, err, rec.saved)
+	}
+}
+
+// fakeExtractor returns ficha (or err) after delay, counting its calls. It
+// ignores its context on purpose, like a stuck client.
+type fakeExtractor struct {
+	ficha contract.CallContext
+	err   error
+	delay time.Duration
+	calls int
+}
+
+func (f *fakeExtractor) Extract(context.Context, []contract.TranscriptTurn, duress.Phrases) (contract.CallContext, error) {
+	f.calls++
+	time.Sleep(f.delay)
+	return f.ficha, f.err
+}
+
+var carFicha = contract.CallContext{Lugar: "la autopista", Personas: "dos panas", Vehiculo: "un carro",
+	Rumbo: contract.CallContextUnknown, Situacion: "Va en un carro con dos panas.", Confianza: contract.ConfianzaMedia}
+
+func safeCall(said string) Call {
+	return Call{
+		ConversationID: "conv_2",
+		DuressPhrase:   "se me quemaron las arepas",
+		SafePhrase:     "ya voy llegando",
+		Transcript: []contract.TranscriptTurn{
+			{Role: duress.RoleAgent, Message: "¿Dónde estás?"},
+			{Role: duress.RoleUser, Message: said},
+		},
+	}
+}
+
+// TestDecideExtractsOnAlertOnly: the context is taken and stored on duress
+// and unclear calls, before the notifier runs, and never asked for on the
+// safe phrase.
+func TestDecideExtractsOnAlertOnly(t *testing.T) {
+	tests := []struct {
+		said      string
+		want      contract.Verdict
+		wantCalls int
+	}{
+		{"Voy en un carro con dos panas por la autopista. Se me quemaron las arepas.", contract.VerdictDuress, 1},
+		{"Voy en un carro con dos panas por la autopista.", contract.VerdictUnclear, 1},
+		{"Tranquila, ma, ya voy llegando.", contract.VerdictNoDuress, 0},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.want), func(t *testing.T) {
+			ex := &fakeExtractor{ficha: carFicha}
+			rec := &recorder{}
+			d := Decider{Detector: duress.Rules{}, Extractor: ex, Store: rec}
+			got, err := d.Decide(context.Background(), safeCall(tt.said), rec.notify(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Verdict != tt.want || ex.calls != tt.wantCalls {
+				t.Fatalf("got %s (%s) after %d extractions, want %s after %d", got.Verdict, got.Reason, ex.calls, tt.want, tt.wantCalls)
+			}
+			if tt.wantCalls == 0 {
+				if got.Ficha != nil || rec.saved.Ficha != nil {
+					t.Errorf("no_duress has a ficha: %+v", got.Ficha)
+				}
+				return
+			}
+			if rec.saved.Ficha == nil || *rec.saved.Ficha != carFicha {
+				t.Errorf("stored ficha %+v, want %+v", rec.saved.Ficha, carFicha)
+			}
+			if len(rec.events) != 2 || rec.events[0] != "save" {
+				t.Errorf("events %v, want [save notify]", rec.events)
+			}
+		})
+	}
+}
+
+// TestDecideAlertsWithoutTheFichaWhenTheLLMFails: an extraction error or a
+// timeout drops the ficha, and the notifier still runs, on time.
+func TestDecideAlertsWithoutTheFichaWhenTheLLMFails(t *testing.T) {
+	const timeout = 100 * time.Millisecond
+	for name, ex := range map[string]*fakeExtractor{
+		"error":   {err: errors.New("HTTP 529")},
+		"timeout": {ficha: carFicha, delay: 2 * time.Second},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := &recorder{}
+			d := Decider{Detector: duress.Rules{}, Extractor: ex, ExtractTimeout: timeout, Store: rec}
+			start := time.Now()
+			got, err := d.Decide(context.Background(), safeCall("Se me quemaron las arepas."), rec.notify(t))
+			if elapsed := time.Since(start); elapsed > timeout+500*time.Millisecond {
+				t.Errorf("Decide took %v, want it bounded by the %v extraction timeout", elapsed, timeout)
+			}
+			if err != nil || got.Verdict != contract.VerdictDuress || got.Ficha != nil {
+				t.Fatalf("got %+v, %v; want duress without a ficha", got, err)
+			}
+			if len(rec.events) != 2 || rec.events[1] != "notify" {
+				t.Errorf("events %v, want the notifier to run", rec.events)
+			}
+		})
 	}
 }

@@ -25,15 +25,15 @@ const verdictTimeout = 45 * time.Second
 var runVerdict = func(f func()) { go f() }
 
 // verdictHook is the post-call step of #21, wired first in call.Hooks so the
-// report closes after it: judge the transcript with the duress detector,
-// store the verdict on the call, then alert the family on duress or unclear.
-// A no_duress call alerts nobody. nil without a database.
+// report closes after it: judge the transcript with the duress detector
+// against both phrases, take the call's context on duress or unclear (#106),
+// store both on the call, then alert the family on duress or unclear. A
+// no_duress call (the safe phrase) alerts nobody. nil without a database.
 func verdictHook(cfg config.Config, pool *sql.DB, notifier intake.Notifier) func(context.Context, call.Finished) {
 	if pool == nil || notifier == nil {
 		return nil
 	}
-	det := detector(cfg)
-	store := verdict.DBStore{Pool: pool}
+	decider := verdict.Decider{Detector: detector(cfg), Extractor: extractor(cfg), Store: verdict.DBStore{Pool: pool}}
 	return func(ctx context.Context, f call.Finished) {
 		if f.Status != "done" || f.ConversationID == "" {
 			return
@@ -41,13 +41,14 @@ func verdictHook(cfg config.Config, pool *sql.DB, notifier intake.Notifier) func
 		runVerdict(func() {
 			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), verdictTimeout)
 			defer cancel()
-			inc, phrase, err := loadVerdictIncident(ctx, pool, f.IncidentID)
+			inc, phrases, err := loadVerdictIncident(ctx, pool, f.IncidentID)
 			if err != nil {
 				log.Printf("verdict: incident %s: load: %v", f.IncidentID, err)
 				return
 			}
-			c := verdict.Call{ConversationID: f.ConversationID, Transcript: f.Transcript, DuressPhrase: phrase}
-			r, err := verdict.Decide(ctx, det, store, c, func(ctx context.Context, _ verdict.Call, r duress.Result) {
+			c := verdict.Call{ConversationID: f.ConversationID, Transcript: f.Transcript,
+				DuressPhrase: phrases.Duress, SafePhrase: phrases.Safe}
+			r, err := decider.Decide(ctx, c, func(ctx context.Context, _ verdict.Call, r verdict.Decision) {
 				if r.Verdict == contract.VerdictNoDuress {
 					return
 				}
@@ -56,7 +57,8 @@ func verdictHook(cfg config.Config, pool *sql.DB, notifier intake.Notifier) func
 			if err != nil {
 				log.Printf("verdict: incident %s: %v", f.IncidentID, err)
 			}
-			log.Printf("verdict: incident %s conversation %s: %s (%s)", f.IncidentID, f.ConversationID, r.Verdict, r.Reason)
+			log.Printf("verdict: incident %s conversation %s: %s (%s), call context: %v",
+				f.IncidentID, f.ConversationID, r.Verdict, r.Reason, r.Ficha != nil)
 		})
 	}
 }
@@ -72,28 +74,38 @@ func detector(cfg config.Config) duress.Detector {
 	return duress.Chain{LLM: duress.LLM{APIKey: cfg.Anthropic.APIKey, Model: cfg.Anthropic.DuressModel}}
 }
 
+// extractor takes the call's context with the LLM when ANTHROPIC_API_KEY
+// is set; nil (no context) otherwise.
+func extractor(cfg config.Config) duress.Extractor {
+	if cfg.Anthropic.APIKey == "" {
+		return nil
+	}
+	return duress.LLM{APIKey: cfg.Anthropic.APIKey, Model: cfg.Anthropic.DuressModel}
+}
+
 // loadVerdictIncident reads what the notifier needs about the incident and
-// the device's duress phrase. The notifier reads the newest fix and the
-// verdict itself.
-func loadVerdictIncident(ctx context.Context, pool *sql.DB, incidentID string) (intake.Incident, string, error) {
+// the device's two phrases. The notifier reads the newest fix, the verdict
+// and the call's context itself.
+func loadVerdictIncident(ctx context.Context, pool *sql.DB, incidentID string) (intake.Incident, duress.Phrases, error) {
 	inc := intake.Incident{ID: incidentID}
-	var branch, phrase string
+	var branch string
+	var phrases duress.Phrases
 	var speed sql.NullFloat64
 	err := pool.QueryRowContext(ctx, `
-		SELECT i.device_id, i.branch, i.speed_mps, i.triggered_at, d.duress_phrase
+		SELECT i.device_id, i.branch, i.speed_mps, i.triggered_at, d.duress_phrase, COALESCE(d.safe_phrase, '')
 		FROM incidents i JOIN devices d ON d.id = i.device_id
 		WHERE i.id = $1`, incidentID).
-		Scan(&inc.DeviceID, &branch, &speed, &inc.TriggeredAt, &phrase)
+		Scan(&inc.DeviceID, &branch, &speed, &inc.TriggeredAt, &phrases.Duress, &phrases.Safe)
 	if errors.Is(err, sql.ErrNoRows) {
-		return inc, "", errors.New("no such incident")
+		return inc, phrases, errors.New("no such incident")
 	}
 	if err != nil {
-		return inc, "", err
+		return inc, phrases, err
 	}
 	inc.Branch = contract.Branch(branch)
 	if speed.Valid {
 		s := speed.Float64
 		inc.SpeedMPS = &s
 	}
-	return inc, phrase, nil
+	return inc, phrases, nil
 }

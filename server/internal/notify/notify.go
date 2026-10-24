@@ -1,5 +1,6 @@
 // Package notify sends the family the one message of an incident
-// (docs/contract.md "NotifierMessage"): the location and the verdict. Its
+// (docs/contract.md "NotifierMessage"): the location, the verdict and, on
+// WhatsApp, what the call said (#106). A no_duress verdict sends nothing. Its
 // only link is the private incident report (#76), added when the report is
 // on (WithReportLinks). The incident is claimed in the database before
 // sending, so a retried or concurrent Notify sends at most once per incident.
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/duress"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/ratelimit"
 )
@@ -130,9 +132,10 @@ func (n *Notifier) WithLimit(l *ratelimit.Limiter) *Notifier {
 }
 
 // cancelsAlert reports whether the verdict cancels the alert, so Notify sends
-// nothing to anyone, the reporter included. No verdict does yet: the "todo
-// bien" phrase of #106 hooks in here.
-func cancelsAlert(contract.NotifierMessage) bool { return false }
+// nothing to anyone, the reporter included: a no_duress call (the "todo
+// bien" phrase, #106) closes the incident like "Fue sin querer", and the
+// central reads it as cancelled. duress and unclear are sent.
+func cancelsAlert(msg contract.NotifierMessage) bool { return msg.Verdict == contract.VerdictNoDuress }
 
 // recipients is the family numbers plus, WithSelf, the device's own number
 // unless it is already one of them.
@@ -183,6 +186,9 @@ func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 		return
 	}
 
+	if _, sms := n.sender.(*SMS); sms {
+		msg.Ficha = nil // only the WhatsApp carries the call's context
+	}
 	body := FormatWithReport(msg, n.reportURL(ctx, inc.ID))
 	sent := 0
 	for _, num := range to {
@@ -224,12 +230,18 @@ func (n *Notifier) reportURL(ctx context.Context, incidentID string) string {
 // server image.
 var vet = time.FixedZone("VET", -4*60*60)
 
-// Format renders the family message in Spanish: who, where, the verdict and
-// the time, with no link. FormatWithReport adds the report's.
+// Format renders the family message in Spanish: who, where, the verdict,
+// what the call said (msg.Ficha, #106: only its known fields) and the time,
+// with no link. FormatWithReport adds the report's.
 //
 //	🚨 Alerta de MAMÁ
 //	Ubicación: 10.4961, -66.8531 (±12 m)
 //	Veredicto: coacción
+//	Dijo que está: la autopista
+//	Con: dos panas
+//	En: un carro
+//	Va hacia: Valencia
+//	Lo que parece: va en un carro con dos panas y dijo la frase de alerta (confianza media)
 //	Hora: 09:10 VET
 func Format(msg contract.NotifierMessage) string { return FormatWithReport(msg, "") }
 
@@ -247,6 +259,7 @@ func FormatWithReport(msg contract.NotifierMessage, reportURL string) string {
 	}
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "Veredicto: %s\n", verdictLabel(msg))
+	writeFicha(&b, msg.Ficha)
 	fmt.Fprintf(&b, "Hora: %s VET", msg.TriggeredAt.In(vet).Format("15:04"))
 	if reportURL != "" {
 		fmt.Fprintf(&b, "\nFicha: %s", reportURL)
@@ -263,7 +276,7 @@ func verdictLabel(msg contract.NotifierMessage) string {
 	case contract.VerdictNoDuress:
 		return "sin coacción"
 	case contract.VerdictUnclear:
-		return "no está claro"
+		return "no confirmó que está bien"
 	}
 	switch msg.Branch {
 	case contract.BranchImmediateAlert:
@@ -273,6 +286,31 @@ func verdictLabel(msg contract.NotifierMessage) string {
 	}
 	return "sin veredicto"
 }
+
+// writeFicha writes one line per known field of the call's context. Nothing
+// when there is none or nothing in it is known.
+func writeFicha(b *strings.Builder, c *contract.CallContext) {
+	if c == nil {
+		return
+	}
+	for _, f := range [][2]string{
+		{"Dijo que está", c.Lugar}, {"Con", c.Personas}, {"En", c.Vehiculo}, {"Va hacia", c.Rumbo},
+	} {
+		if duress.ContextKnown(f[1]) {
+			fmt.Fprintf(b, "%s: %s\n", f[0], oneLine(f[1]))
+		}
+	}
+	if duress.ContextKnown(c.Situacion) {
+		fmt.Fprintf(b, "Lo que parece: %s", oneLine(c.Situacion))
+		if duress.ContextKnown(c.Confianza) {
+			fmt.Fprintf(b, " (confianza %s)", oneLine(c.Confianza))
+		}
+		b.WriteString("\n")
+	}
+}
+
+// oneLine keeps an LLM field on its own line of the message.
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // Mask keeps the last 4 digits of a phone number for the logs. The call
 // engine's log lines use it too.

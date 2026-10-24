@@ -364,7 +364,7 @@ func tooCloseToDuress(safe, duressPhrase string) bool {
 		return false // nothing to compare with
 	}
 	said := []contract.TranscriptTurn{{Role: duress.RoleUser, Message: safe}}
-	res, err := duress.Rules{}.Detect(context.Background(), said, duressPhrase)
+	res, err := duress.Rules{}.Detect(context.Background(), said, duress.Phrases{Duress: duressPhrase})
 	return err != nil || res.Verdict != contract.VerdictNoDuress
 }
 

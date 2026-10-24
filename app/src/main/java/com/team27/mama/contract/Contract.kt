@@ -289,6 +289,7 @@ const val DYNAMIC_VAR_SAFE_PHRASE = "frase_segura"
  * [reason] are null when no call happened (immediate_alert, silent_tracker).
  * [incidentId] is the dedupe key: one message per incident. [triggeredAt] is
  * RFC 3339 UTC; produce it with `java.time.Instant.now().toString()`.
+ * [ficha] is the call's context (#106), null when the call has none.
  */
 @Serializable
 data class NotifierMessage(
@@ -300,4 +301,20 @@ data class NotifierMessage(
     val verdict: Verdict? = null,
     val reason: String? = null,
     @SerialName("triggered_at") val triggeredAt: String,
+    val ficha: CallContext? = null,
+)
+
+/**
+ * What an LLM took from a finished call's transcript (#106, `calls.ficha`).
+ * Each field is "no se sabe" when the call did not say it. [confianza] is
+ * "baja", "media" or "alta". Not the incident report's ficha.json (#76).
+ */
+@Serializable
+data class CallContext(
+    val lugar: String,
+    val personas: String,
+    val vehiculo: String,
+    val rumbo: String,
+    val situacion: String,
+    val confianza: String,
 )
