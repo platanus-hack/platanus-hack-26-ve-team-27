@@ -74,7 +74,7 @@ var errForcedFailure = errors.New("call: forced failure (CALL_FORCE_FAILURE)")
 // forcedFailure is the Placer under CALL_FORCE_FAILURE: it never dials.
 type forcedFailure struct{}
 
-func (forcedFailure) Place(context.Context, string, string) (Placed, error) {
+func (forcedFailure) Place(context.Context, Call) (Placed, error) {
 	return Placed{}, errForcedFailure
 }
 
@@ -183,7 +183,9 @@ func (rt *Routes) handleSpikeCall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
-	placed, err := rt.client.Place(r.Context(), in.To, in.IncidentID)
+	// The spike has no device: the defaults keep every variable the prompt
+	// names set.
+	placed, err := rt.client.Place(r.Context(), Call{To: in.To, Variables: CallVariables(in.IncidentID, Callee{})})
 	elapsed := time.Since(start)
 	if err != nil {
 		log.Printf("call spike: place: %v", err)

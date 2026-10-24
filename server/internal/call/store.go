@@ -29,8 +29,8 @@ var ErrUnknownIncident = errors.New("call: unknown incident")
 // Store keeps the calls rows. DBStore is the real one.
 type Store interface {
 	// Begin inserts a requested call for the incident and returns its id and
-	// the device's phone number, before the call is placed.
-	Begin(ctx context.Context, incidentID string) (callID int64, to string, err error)
+	// the device it goes to, before the call is placed.
+	Begin(ctx context.Context, incidentID string) (callID int64, to Callee, err error)
 	// Placed stores the ids ElevenLabs answered with and moves a requested
 	// call to in_progress.
 	Placed(ctx context.Context, callID int64, p Placed) error
@@ -57,18 +57,19 @@ var _ Store = DBStore{}
 // NewDBStore returns the Store on pool. pool must not be nil.
 func NewDBStore(pool *sql.DB) DBStore { return DBStore{pool: pool} }
 
-func (s DBStore) Begin(ctx context.Context, incidentID string) (int64, string, error) {
+func (s DBStore) Begin(ctx context.Context, incidentID string) (int64, Callee, error) {
 	var id int64
-	var to string
+	var to Callee
 	err := s.pool.QueryRowContext(ctx, `
 		WITH c AS (
 			INSERT INTO calls (incident_id) SELECT id FROM incidents WHERE id = $1 RETURNING id, incident_id
 		)
-		SELECT c.id, d.phone_number
+		SELECT c.id, d.phone_number, COALESCE(d.user_name, ''), d.duress_phrase,
+			COALESCE(d.safe_phrase, ''), COALESCE(d.voice_id, '')
 		FROM c JOIN incidents i ON i.id = c.incident_id JOIN devices d ON d.id = i.device_id`,
-		incidentID).Scan(&id, &to)
+		incidentID).Scan(&id, &to.Phone, &to.UserName, &to.DuressPhrase, &to.SafePhrase, &to.VoiceID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, "", ErrUnknownIncident
+		return 0, Callee{}, ErrUnknownIncident
 	}
 	return id, to, err
 }

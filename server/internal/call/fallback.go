@@ -10,8 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
 )
 
 // FallbackPath is the WebRTC fallback page (spikes/call/webrtc.html, #11).
@@ -37,7 +35,7 @@ type Fallback struct {
 	now     func() time.Time
 
 	mu   sync.Mutex
-	open map[string]time.Time // incident id -> when the fallback opened
+	open map[string]fallbackIncident // incident id -> when it opened and its call's variables
 }
 
 // NewFallback returns the fallback for the agent. publicURL is the server's
@@ -47,15 +45,17 @@ func NewFallback(agentID, publicURL string) *Fallback {
 		agentID: agentID,
 		url:     strings.TrimSuffix(publicURL, "/") + FallbackPath,
 		now:     time.Now,
-		open:    map[string]time.Time{},
+		open:    map[string]fallbackIncident{},
 	}
 }
 
 // Open puts the incident on the fallback page and logs where to find it.
-// attempts is how many +58 calls were tried.
-func (f *Fallback) Open(incidentID string, attempts int) {
+// vars are the dynamic variables of the incident's phone call
+// (CallVariables), which the browser call sends too. attempts is how many
+// +58 calls were tried.
+func (f *Fallback) Open(incidentID string, vars map[string]string, attempts int) {
 	f.mu.Lock()
-	f.open[incidentID] = f.now()
+	f.open[incidentID] = fallbackIncident{ID: incidentID, At: f.now(), vars: vars}
 	f.mu.Unlock()
 	log.Printf("call fallback: incident %s: no +58 call connected after %d attempt(s); open %s for the WebRTC call", incidentID, attempts, f.url)
 }
@@ -67,28 +67,31 @@ func (f *Fallback) pending() []fallbackIncident {
 	defer f.mu.Unlock()
 	now := f.now()
 	var out []fallbackIncident
-	for id, at := range f.open {
-		if now.Sub(at) > fallbackWindow {
+	for id, inc := range f.open {
+		if now.Sub(inc.At) > fallbackWindow {
 			delete(f.open, id)
 			continue
 		}
-		out = append(out, fallbackIncident{ID: id, At: at})
+		out = append(out, inc)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
 	return out
 }
 
 type fallbackIncident struct {
-	ID string
-	At time.Time
+	ID   string
+	At   time.Time
+	vars map[string]string // the dynamic variables of its call
 }
 
 type fallbackPage struct {
 	Incidents []fallbackIncident
 	AgentID   string // blank: no widget
-	// DynamicVars is the widget's dynamic-variables JSON: the incident_id
-	// when exactly one incident is open, so the browser call's post-call
-	// webhook lands on that incident like the phone call's would.
+	// DynamicVars is the widget's dynamic-variables JSON, the same the phone
+	// call sends: the incident's own when exactly one is open, so the browser
+	// call's post-call webhook lands on that incident like the phone call's
+	// would; with several open, the defaults and no incident_id, since the
+	// page cannot tell which one the operator is calling about.
 	DynamicVars string
 	NoAgent     bool // incidents are open but ELEVENLABS_AGENT_ID is unusable
 }
@@ -101,10 +104,15 @@ func (f *Fallback) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	if len(p.Incidents) > 0 {
 		if agentIDRE.MatchString(f.agentID) {
 			p.AgentID = f.agentID
+			vars := CallVariables("", Callee{})
 			if len(p.Incidents) == 1 {
-				vars, _ := json.Marshal(map[string]string{contract.DynamicVarIncidentID: p.Incidents[0].ID})
-				p.DynamicVars = string(vars)
+				vars = CallVariables(p.Incidents[0].ID, Callee{})
+				if p.Incidents[0].vars != nil {
+					vars = p.Incidents[0].vars
+				}
 			}
+			raw, _ := json.Marshal(vars)
+			p.DynamicVars = string(raw)
 		} else {
 			p.NoAgent = true
 		}

@@ -71,8 +71,9 @@ optional.
 ### DeviceRegistration (phone → server, `POST /devices`)
 
 Sent at the end of first-run setup and whenever the setup changes; the server
-upserts the `devices` row. `app_version`, `ed25519_public_key` and
-`ed25519_signature` are optional. Sample: `device_registration.json`.
+upserts the `devices` row. `app_version`, `user_name`, `safe_phrase`,
+`ed25519_public_key` and `ed25519_signature` are optional. Sample:
+`device_registration.json`.
 
 ```json
 {
@@ -81,10 +82,28 @@ upserts the `devices` row. `app_version`, `ed25519_public_key` and
   "family_numbers": ["+584241112233", "+584125556677"],
   "duress_phrase": "dile a la tía Carmen que llego tarde",
   "app_version": "0.1.0",
+  "user_name": "Mariana",
+  "safe_phrase": "ya llegué a la casa, todo tranquilo",
   "ed25519_public_key": "Qjj0xMgcOctYzPP1+kmbgiXDnjbvMvg+Cm1vpph2NXo=",
   "ed25519_signature": "JMio38RGA+n2az7/Xiiz4y7724rZcyDt7N90vGav0Vq8SwTXFvJSmH21VJeL323EPmedwMiyrm79YVgIjvXlAQ=="
 }
 ```
+
+`user_name` is how "Mamá" greets the person and `safe_phrase` is the "todo
+bien" phrase the person says when they are safe (#104). Both are optional so
+older apps keep working: a registration without one (or with only spaces)
+keeps the stored value, and the server trims both. Rules, answered `422`
+with an `error` that never quotes a phrase:
+
+- `user_name`: 1 to 30 characters.
+- `safe_phrase`: at least one word; different from `duress_phrase`; and not
+  close to it. The server runs the duress detector's rules
+  (`server/internal/duress`, same normalization: case, accents, stopwords,
+  one-letter typos) on the safe phrase as if the person said it: when the
+  verdict is anything but `no_duress` (the phrase, a close variant, or half
+  or more of its key words), it is too close.
+
+The phrases are never written to the server logs.
 
 `ed25519_public_key` is the device's Ed25519 identity public key (bitchat's,
 #56): standard Base64 with padding of exactly 32 bytes. The server derives
@@ -203,6 +222,22 @@ unique per call, so a repeated webhook updates the same `calls` row.
 `role` is `agent` ("Mamá") or `user`. `dynamic_variables` values are any
 JSON: ElevenLabs adds `system__*` variables, some numeric.
 
+Dynamic variables: every call "Mamá" makes, the phone call and the WebRTC
+fallback page alike, carries all four below, never one missing, because
+ElevenLabs refuses a conversation whose prompt names a variable it was not
+given. The constants are `contract.DynamicVar*` in Go and `DYNAMIC_VAR_*` in
+Kotlin.
+
+| Variable | Value |
+| --- | --- |
+| `incident_id` | the incident (blank on the fallback page while several are open) |
+| `nombre` | `devices.user_name`, or `mi amor` when unset |
+| `frase_alerta` | `devices.duress_phrase` |
+| `frase_segura` | `devices.safe_phrase`, or `""` when unset |
+
+The call speaks with `devices.voice_id` when set, otherwise with the global
+`ELEVENLABS_VOICE_ID`, otherwise with the agent's own voice.
+
 How the webhook finds its call: the call engine inserts the `calls` row
 before placing the call and stores the `conversation_id` from the
 outbound-call response. The webhook handler updates the row with that
@@ -267,15 +302,17 @@ the newest call's verdict. Sample: `notifier_message.json`.
 `ed25519_public_key` and `key_id` to `devices`; `0003_emergencies.sql` adds the `emergencies` table;
 `0004_incident_reports.sql` adds `incident_reports`, `call_recordings`,
 `incident_seals` and `call_progress` for the incident report (#76, approved
-by the Tech lead on Oct 24); `0006_notify_deliveries.sql` adds
-`notify_deliveries` (#76). The server applies pending migrations on
+by the Tech lead on Oct 24); `0005_device_setup.sql` adds `user_name`,
+`safe_phrase` and `voice_id` to `devices` (#104, approved by the Tech lead on
+Oct 24); `0006_notify_deliveries.sql` adds `notify_deliveries` (#76). The
+server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
 no-op. Without `DATABASE_URL` the server boots and skips migrations.
 
 | Table | Key | Holds |
 | --- | --- | --- |
-| `devices` | `id` = `device_id` | phone number, family numbers, duress phrase; `ed25519_public_key` (unique, 32 bytes) and `key_id` (unique, 8 bytes: the payload device_id derived from it), both NULL or both set |
+| `devices` | `id` = `device_id` | phone number, family numbers, duress phrase; `user_name`, `safe_phrase` and `voice_id` (the cloned voice, written by the voice ticket), NULL until set; `ed25519_public_key` (unique, 32 bytes) and `key_id` (unique, 8 bytes: the payload device_id derived from it), both NULL or both set |
 | `incidents` | `id` = `incident_id` | device, trigger, branch, speed used, `notified_at` |
 | `gps_points` | identity; unique `(incident_id, recorded_at)` | every fix of an incident |
 | `calls` | identity; unique `conversation_id` | call status, transcript (JSONB), duration, **verdict** |
