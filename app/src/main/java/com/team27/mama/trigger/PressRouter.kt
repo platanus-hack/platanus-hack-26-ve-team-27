@@ -1,10 +1,11 @@
-package com.team27.mama.spike
+package com.team27.mama.trigger
 
 import android.app.KeyguardManager
 import android.content.Context
-import android.os.PowerManager
 import android.os.SystemClock
 import com.team27.mama.contract.Trigger
+import com.team27.mama.setup.SetupStore
+import com.team27.mama.setup.SharedPreferencesStore
 
 /** The one detector both press sources feed (accessibility and the media session). */
 object PressRouter {
@@ -16,16 +17,20 @@ object PressRouter {
         // elapsedRealtime, not KeyEvent.eventTime (uptime stops in deep sleep).
         val now = SystemClock.elapsedRealtime()
         if (!deduper.accept(key, source, now)) {
-            SpikeLog.log(context, "key $key from=$source duplicate")
+            TriggerLog.log(context, "key $key from=$source duplicate")
             return
         }
-        val interactive = context.getSystemService(PowerManager::class.java).isInteractive
+        // Before setup is done there is no registered device to alert for.
+        if (!SetupStore(SharedPreferencesStore.forSetup(context)).setupCompleted) {
+            TriggerLog.log(context, "key $key from=$source ignored: setup not finished")
+            return
+        }
         val locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
         // Only a locked phone warms up: ordinary volume use on an unlocked
         // phone must not wake mobile data, the GPS or the server.
         if (locked) Warmup.onPress(context)
         val matched = pattern.onPress(key, now)
-        SpikeLog.log(context, "key $key from=$source screenOn=$interactive locked=$locked matched=$matched")
-        if (matched) TriggerSpikeService.start(context, Trigger.VOLUME_PATTERN, now)
+        TriggerLog.log(context, "key $key from=$source locked=$locked matched=$matched")
+        if (matched) TriggerService.start(context, Trigger.VOLUME_PATTERN, now)
     }
 }

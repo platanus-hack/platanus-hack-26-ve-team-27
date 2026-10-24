@@ -1,8 +1,4 @@
-/*
- * Spike #10 only. #16 rebuilds the locked-phone trigger on the frozen shapes
- * or deletes this package; it never ships as is.
- */
-package com.team27.mama.spike
+package com.team27.mama.trigger
 
 enum class VolumeKey { UP, DOWN }
 

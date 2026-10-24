@@ -1,7 +1,7 @@
-package com.team27.mama.spike
+package com.team27.mama.trigger
 
-import com.team27.mama.spike.PressSource.ACCESSIBILITY
-import com.team27.mama.spike.PressSource.MEDIA_SESSION
+import com.team27.mama.trigger.PressSource.ACCESSIBILITY
+import com.team27.mama.trigger.PressSource.MEDIA_SESSION
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

@@ -1,8 +1,5 @@
-package com.team27.mama.spike
+package com.team27.mama.trigger
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -17,7 +14,6 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.ServiceCompat
-import com.team27.mama.R
 
 /**
  * With the panel fully off, Android does not pass volume keys to the user, so
@@ -34,18 +30,11 @@ class VolumeSessionService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "Sincronización", NotificationManager.IMPORTANCE_LOW))
-        val notification = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_mama_mark)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText("Activa")
-            .setOngoing(true)
-            .build()
+        val notification = ForegroundNotification.build(this, "Activa")
         try {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         } catch (e: Exception) {
-            SpikeLog.log(this, "session startForeground failed ${e.javaClass.simpleName}: ${e.message}")
+            TriggerLog.log(this, "session startForeground failed ${e.javaClass.simpleName}: ${e.message}")
             stopSelf()
             return
         }
@@ -66,7 +55,7 @@ class VolumeSessionService : Service() {
             isActive = true
         }
         silence = playSilence()
-        SpikeLog.log(this, "volume session active silence=${silence?.playState}")
+        TriggerLog.log(this, "volume session active silence=${silence?.playState}")
     }
 
     /**
@@ -88,7 +77,7 @@ class VolumeSessionService : Service() {
                 play()
             }
     } catch (e: Exception) {
-        SpikeLog.log(this, "silence failed ${e.javaClass.simpleName}: ${e.message}")
+        TriggerLog.log(this, "silence failed ${e.javaClass.simpleName}: ${e.message}")
         null
     }
 
@@ -99,19 +88,18 @@ class VolumeSessionService : Service() {
         silence = null
         session?.release()
         session = null
-        SpikeLog.log(this, "volume session released")
+        TriggerLog.log(this, "volume session released")
         super.onDestroy()
     }
 
     companion object {
-        private const val CHANNEL = "mama_sync"
         private const val NOTIFICATION_ID = 11
 
         fun start(context: Context) {
             try {
                 context.startForegroundService(Intent(context, VolumeSessionService::class.java))
             } catch (e: Exception) {
-                SpikeLog.log(context, "session start failed ${e.javaClass.simpleName}: ${e.message}")
+                TriggerLog.log(context, "session start failed ${e.javaClass.simpleName}: ${e.message}")
             }
         }
 
