@@ -12,8 +12,9 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/serverkeys"
 )
 
-// EmergencyReceived is published when an emergency is first received or its
-// status changes (never for duplicates, replays or a new channel).
+// EmergencyReceived is published when an emergency is first received, its
+// status changes or a newer frame brings a fix (never for duplicates, replays
+// or a new channel).
 type EmergencyReceived struct {
 	EmergencyID string // FormatID
 	DeviceID    string // devices.id UUID
@@ -28,7 +29,8 @@ type EmergencyReceived struct {
 	ReceivedAt time.Time
 }
 
-// Publisher hands EmergencyReceived to the Kapso module (later ticket).
+// Publisher hands EmergencyReceived on. The server uses
+// intake.OfflinePublisher, which opens an incident and notifies the family.
 //
 // Delivery contract: events are published from a goroutine after the commit,
 // so for one emergency they may arrive out of order, and at most once: an
@@ -41,7 +43,7 @@ type Publisher interface {
 	Publish(ctx context.Context, ev EmergencyReceived)
 }
 
-// LogPublisher is the default Publisher: it only logs, and never the location.
+// LogPublisher only logs, and never the location. Tests use it.
 type LogPublisher struct{}
 
 var _ Publisher = LogPublisher{}

@@ -85,6 +85,11 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/trigger_widget" />
         </receiver>
+        <!-- Opt-in BLE relay (#60). Nothing starts it with the flag off; no boot receiver. -->
+        <service
+            android:name=".relay.RelayForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice|location" />
         <!-- Offline emergency ack SMS (#58); disabled unless mama.offlineEmergency is on. -->
         <receiver
             android:name=".emergency.sms.SmsAckReceiver"

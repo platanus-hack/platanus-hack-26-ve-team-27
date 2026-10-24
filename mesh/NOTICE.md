@@ -18,7 +18,7 @@ Every copied file starts with a provenance header naming the upstream commit and
 | --- | --- | --- |
 | Verbatim | All files copied unchanged except the package rename (`com.bitchat.android` to `com.team27.mama.mesh`) | Package rename only |
 | Adapted | `SecurityManager`, `MessageHandler` | Trimmed to what MAMÁ needs; changes listed in each file header |
-| Derived | `EncryptionService`, `MeshKeyStore`, `BleMeshNode`, `MeshPacketFactory` | Rewritten from upstream logic; header names the upstream files they derive from |
+| Derived | `EncryptionService`, `MeshKeyStore`, `BleMeshNode`, `MeshPacketFactory`, `app/src/main/java/com/team27/mama/relay/RelayForegroundService.kt` (from upstream `service/MeshForegroundService.kt`) | Rewritten from upstream logic; header names the upstream files they derive from |
 | Stub | `ui/debug/DebugSettingsManager` (also stands in for `DebugPreferenceManager`), `services/AppStateStore` | Written by MAMÁ with the API the copied code calls, in place of upstream UI and state code that was not copied; header names the upstream files they replace |
 
 ## Removed upstream test

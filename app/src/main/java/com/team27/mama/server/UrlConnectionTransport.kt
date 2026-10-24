@@ -4,13 +4,16 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /** Thin HttpURLConnection adapter; not unit tested (network). */
-class UrlConnectionTransport : HttpTransport {
+class UrlConnectionTransport(
+    private val connectTimeoutMs: Int = 10_000,
+    private val readTimeoutMs: Int = 10_000,
+) : HttpTransport {
     override fun execute(method: String, url: String, jsonBody: String?): HttpResponse {
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = method
-            conn.connectTimeout = TIMEOUT_MS
-            conn.readTimeout = TIMEOUT_MS
+            conn.connectTimeout = connectTimeoutMs
+            conn.readTimeout = readTimeoutMs
             if (jsonBody != null) {
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -23,9 +26,5 @@ class UrlConnectionTransport : HttpTransport {
         } finally {
             conn.disconnect()
         }
-    }
-
-    private companion object {
-        const val TIMEOUT_MS = 10_000
     }
 }

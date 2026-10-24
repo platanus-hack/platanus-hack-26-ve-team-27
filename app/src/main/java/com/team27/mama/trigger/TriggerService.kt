@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import com.team27.mama.BuildConfig
 import com.team27.mama.MamaApp
 import com.team27.mama.contract.Trigger
+import com.team27.mama.emergency.OfflineFallback
 import com.team27.mama.setup.RegistrationClient
 import com.team27.mama.setup.RegistrationResult
 import com.team27.mama.setup.SetupStore
@@ -41,7 +42,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  *    the same incident_id ([AlertSender]);
  * 3. hands off on the server's branch ([handOff]): `call` rings through
  *    [IncomingCallLauncher], the other branches open the confirmation screen;
- * 4. follows with fresh fixes as LocationUpdates for [FOLLOW_UP_MS].
+ * 4. follows with fresh fixes as LocationUpdates for [FOLLOW_UP_MS];
+ * 5. when the alert did not reach the server, declares the offline emergency
+ *    ([offlineFallback], only with OFFLINE_EMERGENCY_ENABLED).
  *
  * It only runs once setup is done, one incident at a time. It never opens
  * the camera or records audio (has_audio is false).
@@ -135,36 +138,58 @@ class TriggerService : Service() {
         val base = BuildConfig.SERVER_URL
         val fixes = LocationFixes(this)
         fixes.start()
-        try {
-            val (first, choice) = firstFix(fixes) ?: run {
+        // The AlertEvent's HTTP status for the offline fallback: null when nothing was sent.
+        val alertStatus: Int? = try {
+            val fix = firstFix(fixes)
+            if (fix == null) {
                 TriggerLog.log(this, "no fix at all for $incidentId; nothing sent")
-                return
+                null
+            } else {
+                val (first, choice) = fix
+                val event = AlertEvents.alertEvent(incidentId, deviceId, trigger, triggeredAtMs, listOf(first.toPoint()))
+                TriggerLog.log(
+                    this,
+                    "alert $incidentId trigger=$trigger sinceTriggerAtSendMs=${SystemClock.elapsedRealtime() - detectedAt} " +
+                        "fix=${first.provider} choice=$choice ageMs=${first.ageMs()} acc=${first.accuracyOrNull()} speed=${event.points.last().speedMps}",
+                )
+                val outcome = AlertSender(
+                    post = { body -> postAlert(base, body) },
+                    reregister = { reregister(store) },
+                    onAttempt = { attempt, result ->
+                        TriggerLog.log(
+                            this,
+                            "alert $incidentId attempt=$attempt status=${result.status} postMs=${result.ms} " +
+                                "sinceTriggerMs=${SystemClock.elapsedRealtime() - detectedAt}",
+                        )
+                    },
+                ).send(event)
+                val handoff = handOff(incidentId, outcome, (application as MamaApp).graph.incomingCall) {
+                    TriggerScreens.openConfirmation(this, it)
+                }
+                TriggerLog.log(this, "alert $incidentId outcome=$outcome handoff=$handoff")
+                if (outcome is AlertOutcome.Accepted) followUp(base, incidentId, deviceId, first, fixes)
+                when (outcome) {
+                    is AlertOutcome.Accepted -> 200
+                    is AlertOutcome.Rejected -> outcome.status
+                    is AlertOutcome.GaveUp -> outcome.lastStatus
+                }
             }
-            val event = AlertEvents.alertEvent(incidentId, deviceId, trigger, triggeredAtMs, listOf(first.toPoint()))
-            TriggerLog.log(
-                this,
-                "alert $incidentId trigger=$trigger sinceTriggerAtSendMs=${SystemClock.elapsedRealtime() - detectedAt} " +
-                    "fix=${first.provider} choice=$choice ageMs=${first.ageMs()} acc=${first.accuracyOrNull()} speed=${event.points.last().speedMps}",
-            )
-            val outcome = AlertSender(
-                post = { body -> postAlert(base, body) },
-                reregister = { reregister(store) },
-                onAttempt = { attempt, result ->
-                    TriggerLog.log(
-                        this,
-                        "alert $incidentId attempt=$attempt status=${result.status} postMs=${result.ms} " +
-                            "sinceTriggerMs=${SystemClock.elapsedRealtime() - detectedAt}",
-                    )
-                },
-            ).send(event)
-            val handoff = handOff(incidentId, outcome, (application as MamaApp).graph.incomingCall) {
-                TriggerScreens.openConfirmation(this, it)
-            }
-            TriggerLog.log(this, "alert $incidentId outcome=$outcome handoff=$handoff")
-            if (outcome is AlertOutcome.Accepted) followUp(base, incidentId, deviceId, first, fixes)
         } finally {
             fixes.stop()
         }
+        offlineFallback(alertStatus)
+    }
+
+    /**
+     * Offline emergency (#59, only with OFFLINE_EMERGENCY_ENABLED): the alert did not reach the
+     * server, so SMS and the BLE mesh take over. The service stays in the foreground while the
+     * emergency is being delivered. Logs only the result and the phase.
+     */
+    private suspend fun offlineFallback(alertStatus: Int?) {
+        val offline = (application as MamaApp).graph.emergency?.takeIf { OfflineFallback.shouldDeclare(alertStatus) } ?: return
+        TriggerLog.log(this, "offline emergency declared=${offline.declare()} phase=${offline.state.value.phase}")
+        OfflineFallback.awaitDelivered(offline)
+        TriggerLog.log(this, "offline emergency released phase=${offline.state.value.phase}")
     }
 
     /** The first point and how it was picked (for the log), or null with no fix at all after [FIX_TIMEOUT_MS]. */

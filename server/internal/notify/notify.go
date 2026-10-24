@@ -5,7 +5,9 @@
 // sending, so a retried or concurrent Notify sends at most once per incident.
 //
 // The channel is a Sender: Kapso WhatsApp (the default) or Twilio SMS,
-// picked by the NOTIFIER env var (see NewSender).
+// picked by the NOTIFIER env var (see NewSender). For the demo (#102),
+// NOTIFY_SELF adds the reporting device's own number to the recipients
+// (WithSelf).
 package notify
 
 import (
@@ -13,6 +15,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -79,6 +82,7 @@ type Notifier struct {
 	links      ReportLinks        // nil: no report line
 	deliveries DeliveryLog        // nil: sends are only logged
 	limit      *ratelimit.Limiter // nil: no cap
+	self       bool               // also send to the device's own number
 }
 
 var _ intake.Notifier = (*Notifier)(nil)
@@ -91,6 +95,13 @@ func New(store Store, sender Sender) *Notifier {
 // WithDeliveries records every send's outcome in log.
 func (n *Notifier) WithDeliveries(log DeliveryLog) *Notifier {
 	n.deliveries = log
+	return n
+}
+
+// WithSelf also sends the alert to the reporting device's own number
+// (NOTIFY_SELF, demo only), once even when it is a family number too.
+func (n *Notifier) WithSelf() *Notifier {
+	n.self = true
 	return n
 }
 
@@ -118,17 +129,32 @@ func (n *Notifier) WithLimit(l *ratelimit.Limiter) *Notifier {
 	return n
 }
 
+// cancelsAlert reports whether the verdict cancels the alert, so Notify sends
+// nothing to anyone, the reporter included. No verdict does yet: the "todo
+// bien" phrase of #106 hooks in here.
+func cancelsAlert(contract.NotifierMessage) bool { return false }
+
+// recipients is the family numbers plus, WithSelf, the device's own number
+// unless it is already one of them.
+func (n *Notifier) recipients(msg contract.NotifierMessage) []string {
+	if !n.self || msg.Reporter == "" || slices.Contains(msg.To, msg.Reporter) {
+		return msg.To
+	}
+	return append(slices.Clip(msg.To), msg.Reporter)
+}
+
 // WithReportLinks adds the "Ficha: <url>" line to every message, from links.
 func (n *Notifier) WithReportLinks(links ReportLinks) *Notifier {
 	n.links = links
 	return n
 }
 
-// Notify sends the incident's message to every family number, once. It only
-// logs failures: the handoff has no caller to report to. A number over the
-// limit (WithLimit) is only logged: no send and no delivery row.
+// Notify sends the incident's message to every recipient (family, and the
+// device itself WithSelf), once. It only logs failures: the handoff has no
+// caller to report to. A number over the limit (WithLimit) is only logged: no
+// send and no delivery row.
 //
-// If no family number got the message, the claim is released so a retry can
+// If no recipient got the message, the claim is released so a retry can
 // send. Once any number got it, the claim stays, so a retry never sends a
 // second message.
 func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
@@ -137,8 +163,13 @@ func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 		log.Printf("notify: incident %s: load message: %v", inc.ID, err)
 		return
 	}
-	if len(msg.To) == 0 {
-		log.Printf("notify: incident %s: the device has no family numbers; nothing sent", inc.ID)
+	if cancelsAlert(msg) {
+		log.Printf("notify: incident %s: the verdict cancels the alert; nothing sent", inc.ID)
+		return
+	}
+	to := n.recipients(msg)
+	if len(to) == 0 {
+		log.Printf("notify: incident %s: no recipients (no family numbers); nothing sent", inc.ID)
 		return
 	}
 
@@ -154,19 +185,19 @@ func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 
 	body := FormatWithReport(msg, n.reportURL(ctx, inc.ID))
 	sent := 0
-	for _, to := range msg.To {
-		if err := n.limit.Allow(to); err != nil {
-			log.Printf("notify: incident %s: message to %s %v; not sent", inc.ID, Mask(to), err)
+	for _, num := range to {
+		if err := n.limit.Allow(num); err != nil {
+			log.Printf("notify: incident %s: message to %s %v; not sent", inc.ID, Mask(num), err)
 			continue
 		}
-		if err := n.send(ctx, inc.ID, to, body); err != nil {
-			log.Printf("notify: incident %s: send to %s: %v", inc.ID, Mask(to), err)
+		if err := n.send(ctx, inc.ID, num, body); err != nil {
+			log.Printf("notify: incident %s: send to %s: %v", inc.ID, Mask(num), err)
 			continue
 		}
 		sent++
 	}
 	if sent > 0 {
-		log.Printf("notify: incident %s: sent to %d of %d family numbers", inc.ID, sent, len(msg.To))
+		log.Printf("notify: incident %s: sent to %d of %d recipients", inc.ID, sent, len(to))
 		return
 	}
 	// Nobody got it: release so a retry can try again.

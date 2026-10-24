@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.pm.PackageManager
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -47,6 +48,8 @@ data class SetupUiState(
     val formErrors: SetupFormErrors get() = form.errors()
     val anyTaskFailed: Boolean get() = contact.status == TaskStatus.FAILED || registration.status == TaskStatus.FAILED
 }
+
+private const val TAG = "MamaSetup"
 
 /**
  * First-run setup (#15): permissions in order, the form, then saving "Mamá"
@@ -194,8 +197,9 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
             SetupTask(TaskStatus.DONE)
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             // SecurityException, OperationApplicationException, RemoteException: the provider said no.
+            Log.w(TAG, "saving the Mamá contact failed", e)
             failed("No pudimos guardar a Mamá en tus contactos. Inténtalo de nuevo.")
         }
     }
@@ -203,7 +207,14 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun register(): SetupTask {
         val registration = store.registration(BuildConfig.VERSION_NAME)
             ?: return failed("Faltan tus datos. Vuelve al paso anterior.")
-        return when (val result = client.register(registration)) {
+        // With the offline flag, POST /devices also carries the device key (#59), so the server
+        // can verify this phone's offline emergencies.
+        val result = if (graph.offlineEmergency) {
+            KeyedRegistration.register(graph.deviceRegistrar(graph.deviceSigner), registration)
+        } else {
+            client.register(registration)
+        }
+        return when (result) {
             RegistrationResult.Registered -> if (graph.offlineEmergency) finishOnboarding() else SetupTask(TaskStatus.DONE)
             is RegistrationResult.Failed -> failed(result.message)
         }

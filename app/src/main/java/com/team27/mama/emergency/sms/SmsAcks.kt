@@ -30,14 +30,31 @@ class SmsAckFilter(private val config: () -> EmergencyConfig) {
     }
 }
 
-/** In-process hand-off from [SmsAckReceiver] to [SmsChannel]. Listeners run on the poster's thread. */
+/**
+ * In-process hand-off from [SmsAckReceiver] to [SmsChannel] ([subscribe], the [AckInfo]) and to
+ * #59's [SmsChannelAdapter] ([subscribeTexts], the verified body). Listeners run on the poster's thread.
+ */
 class SmsAckBus {
     private val listeners = CopyOnWriteArrayList<(AckInfo) -> Unit>()
+    private val textListeners = CopyOnWriteArrayList<(String) -> Unit>()
 
     fun subscribe(listener: (AckInfo) -> Unit): Cancellable {
         listeners += listener
         return Cancellable { listeners -= listener }
     }
 
-    fun post(ack: AckInfo) = listeners.forEach { it(ack) }
+    /**
+     * The SMS body of each verified ack, for #59's orchestrator ([SmsChannelAdapter]), which
+     * reads acks from text and verifies them again. Only posts that carry the text reach it.
+     */
+    fun subscribeTexts(listener: (String) -> Unit): Cancellable {
+        textListeners += listener
+        return Cancellable { textListeners -= listener }
+    }
+
+    /** [ack] verified by [SmsAckFilter]; [text] is the body it was read from. */
+    fun post(ack: AckInfo, text: String? = null) {
+        listeners.forEach { it(ack) }
+        if (text != null) textListeners.forEach { it(text) }
+    }
 }

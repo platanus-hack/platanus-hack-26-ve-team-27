@@ -9,8 +9,9 @@ import com.team27.mama.MamaApp
 /**
  * Hears the server's ack SMS. Enabled in the manifest only with the
  * OFFLINE_EMERGENCY_ENABLED build flag. Joins multi-part bodies per sender and
- * hands each to [SmsAckFilter]; a verified ack goes to [SmsAckBus]. Never logs
- * bodies or numbers. Android adapter; not unit tested.
+ * hands each to [SmsAckFilter]; a verified ack goes to [SmsAckBus], with its body
+ * for #59's orchestrator. Never logs bodies or numbers. Android adapter; not unit
+ * tested.
  */
 class SmsAckReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -22,7 +23,8 @@ class SmsAckReceiver : BroadcastReceiver() {
         messages.filterNotNull()
             .groupBy { it.originatingAddress }
             .forEach { (from, parts) ->
-                filter.parse(from, parts.joinToString("") { it.messageBody.orEmpty() })?.let(bus::post)
+                val body = parts.joinToString("") { it.messageBody.orEmpty() }
+                filter.parse(from, body)?.let { bus.post(it, body) }
             }
     }
 }

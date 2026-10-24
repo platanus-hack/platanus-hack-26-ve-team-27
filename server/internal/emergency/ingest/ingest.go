@@ -114,7 +114,8 @@ func knownHops(r Receipt) (int, bool) {
 }
 
 // merge applies one receipt to the stored record (nil if none). notable is
-// true for a new record or a status change: those are published.
+// true for a new record, a status change or a newer frame with a fix: those
+// are published.
 func merge(prev *Emergency, r Receipt) (next Emergency, notable bool, err error) {
 	p := r.Payload
 	cancel := p.Kind == payload.KindCancel
@@ -171,6 +172,8 @@ func merge(prev *Emergency, r Receipt) (next Emergency, notable bool, err error)
 		next.SentAt = payloadTime(p)
 		if hasFix(p) {
 			next.Location = fixOf(p)
+			// The incident (intake.OfflinePublisher) gets the new fix as a GPS point.
+			notable = prev.Status != StatusCancelled
 		}
 	}
 	if cancel && prev.Status != StatusCancelled {

@@ -27,10 +27,11 @@ func newMux(pool *sql.DB, notifier intake.Notifier, calls *call.Routes, offline 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleRoot)
 	registerDeployRoutes(mux, pool)
-	intake.New(pool, calls.Starter(), notifier).Register(mux)
+	incidents := intake.New(pool, calls.Starter(), notifier)
+	incidents.Register(mux)
 	calls.Register(mux)
 	if offline != nil {
-		offline.register(mux, pool)
+		offline.register(mux, pool, incidents.OfflinePublisher())
 	}
 	if reports != nil {
 		reports.Register(mux)
@@ -47,15 +48,17 @@ type offlineEmergency struct {
 	smsProviders map[string]sms.InboundSMSProvider
 }
 
-func (o *offlineEmergency) register(mux *http.ServeMux, pool *sql.DB) {
+// register mounts the offline emergency routes. pub turns each stored
+// emergency into an incident (intake.OfflinePublisher), whatever the channel.
+func (o *offlineEmergency) register(mux *http.ServeMux, pool *sql.DB, pub ingest.Publisher) {
 	remoteconfig.New(o.smsNumber, o.keys).Register(mux)
-	// The Kapso module replaces LogPublisher. Without a database both handlers
-	// get no service and answer 503; smsIngester stays a nil interface then,
-	// not a nil *ingest.Service, so the SMS handler sees it.
+	// Without a database both handlers get no service and answer 503;
+	// smsIngester stays a nil interface then, not a nil *ingest.Service, so
+	// the SMS handler sees it.
 	var emergencies *ingest.Service
 	var smsIngester sms.Ingester
 	if pool != nil {
-		emergencies = ingest.New(ingest.NewDBStore(pool), o.keys, ingest.LogPublisher{})
+		emergencies = ingest.New(ingest.NewDBStore(pool), o.keys, pub)
 		smsIngester = emergencies
 	}
 	ingest.NewHandler(emergencies).Register(mux)

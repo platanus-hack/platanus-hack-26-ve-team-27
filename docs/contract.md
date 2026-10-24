@@ -178,6 +178,12 @@ first (`incidents.device_id` references `devices`): for an unknown
 `device_id` the server answers `422`, and the phone re-sends its
 DeviceRegistration and then the alert. Sample: `alert_event.json`.
 
+An offline emergency (`POST /emergencies`, the inbound SMS webhook or
+`POST /emergencies/relay`) also opens an incident, server-side only: its id is
+derived from the `emergency_id`, `trigger` is `offline` (migration 0007; a phone
+never sends it), the branch is `immediate_alert`, and each frame with a fix adds
+a GPS point. An emergency already cancelled opens nothing.
+
 ```json
 {
   "incident_id": "9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f",
@@ -297,6 +303,14 @@ Before sending, the sender claims the incident with
 and sends only if that changed a row (at most once). When an incident has
 several calls, the verdict is `duress` if any call says `duress`, otherwise
 the newest call's verdict. Sample: `notifier_message.json`.
+
+`reporter` is the reporting device's own `phone_number` (left out when
+unknown). With `NOTIFY_SELF=true` (#102, off by default) the notifier adds it
+to the recipients on the `NOTIFIER` channel (WhatsApp), once even when it is
+also a family number. It is for the demo only: in production the aggressor may
+be looking at that phone. Without it the notifier sends one message per family
+number, as before. The claim covers every recipient: it is released only when
+none got the alert.
 
 ```json
 {
@@ -421,7 +435,10 @@ default; then every route below answers `404`). Code:
   the newest recorded call. No recording: `404`, and the page says "Audio no
   disponible" and keeps the transcript.
 - **Seal.** After the recording, and after waiting up to 60 s for the
-  call's verdict and `notified_at`, the server seals a `call` report once:
+  call's verdict and `notified_at`, the server seals a `call` report once,
+  for its newest finished call and only when no call of it is still
+  requested or in progress (after a failed retry, the first page view 5 min
+  after the finished call ended seals it):
   pure Ed25519 by the `GET /config` key over `MAMA-incident-report-v1 ||
   ficha.json`. `GET /i/{token}/ficha.json` serves the exact signed bytes and
   `GET /i/{token}/ficha.sig` the signature in Base64 (both `404` until

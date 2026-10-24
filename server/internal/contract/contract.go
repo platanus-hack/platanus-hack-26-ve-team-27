@@ -55,6 +55,9 @@ const (
 	TriggerWidget        Trigger = "widget"
 	TriggerTile          Trigger = "tile" // quick settings tile
 	TriggerInApp         Trigger = "in_app"
+	// TriggerOffline is server-only: the incident was opened from an offline
+	// emergency (HTTP, SMS or the BLE relay). A phone never sends it in an AlertEvent.
+	TriggerOffline Trigger = "offline"
 )
 
 // Verdict is the duress detector's result for a call.
@@ -234,9 +237,12 @@ func (w CallWebhook) IncidentID() string {
 // link (#76) is not part of it: the notifier adds it to the text.
 // Verdict and Reason are empty when no call happened (immediate_alert,
 // silent_tracker). IncidentID is the dedupe key: one message per incident.
+// Reporter is the reporting device's own phone_number; the notifier writes to
+// it only with NOTIFY_SELF (#102, demo only).
 type NotifierMessage struct {
 	IncidentID  string    `json:"incident_id"`
-	To          []string  `json:"to"` // E.164 family numbers
+	To          []string  `json:"to"`                 // E.164 family numbers
+	Reporter    string    `json:"reporter,omitempty"` // E.164, the device's own number
 	Branch      Branch    `json:"branch"`
 	Location    Point     `json:"location"`
 	Verdict     Verdict   `json:"verdict,omitempty"`
