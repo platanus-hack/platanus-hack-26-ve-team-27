@@ -77,6 +77,16 @@ func TestEmergencyRoutesAreMounted(t *testing.T) {
 	}
 }
 
+func TestSMSWebhookIsMounted(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/sms/inbound/twilio", strings.NewReader("Body=MAMA1+x"))
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testOffline(t)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("POST /sms/inbound/twilio with no database = %d, want 503", rec.Code)
+	}
+}
+
 func TestCallWebhookIsMounted(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/elevenlabs", strings.NewReader(`{"type":"post_call_audio"}`))
@@ -94,6 +104,7 @@ func TestOfflineEmergencyRoutesAreNotMountedWhenOff(t *testing.T) {
 		{http.MethodGet, "/config"},
 		{http.MethodPost, "/emergencies"},
 		{http.MethodPost, "/emergencies/relay"},
+		{http.MethodPost, "/sms/inbound/twilio"},
 	} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(c.method, c.path, strings.NewReader("MAMA1 x")))
