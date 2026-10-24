@@ -2,9 +2,10 @@
 // native Twilio integration, and receives the post-call webhook
 // (docs/contract.md "CallWebhook").
 //
-// This is the #11 spike: it proves the call rings a +58 phone and measures
-// the latency. The call engine (#18) builds on Client and Webhook; the
-// token-gated POST /spike/call route exists only for the spike.
+// The call engine (#18, Engine) takes a BranchCall incident from intake,
+// inserts the calls row, places the call with Client and stores the
+// conversation_id; the webhook stores the transcript on that row (Store).
+// The token-gated POST /spike/call route is left from the #11 spike.
 package call
 
 import (

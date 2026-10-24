@@ -57,6 +57,11 @@ fun buildSetting(property: String, vararg envVars: String, default: String = "")
         .firstNotNullOfOrNull { it.orNull?.trim()?.takeIf(String::isNotEmpty) } ?: default
 val mamaServerUrl = buildSetting("mama.serverUrl", "MAMA_SERVER_URL", default = "http://127.0.0.1:8080")
 val mamaTwilioNumber = buildSetting("mama.twilioNumber", "MAMA_TWILIO_NUMBER", "TWILIO_PHONE_NUMBER")
+// Fallback SMS number for the offline path until GET /config has been cached (#55).
+// Obviously fake placeholder (NANP 555-01xx); real deployments override it.
+val mamaDefaultSmsNumber = buildSetting("mama.defaultSmsNumber", "MAMA_DEFAULT_SMS_NUMBER", default = "+15555550100")
+// The offline emergency channel (#55) is an extra, off unless asked for: "true" or "1" turns it on.
+val mamaOfflineEmergency = buildSetting("mama.offlineEmergency", "MAMA_OFFLINE_EMERGENCY").let { it == "1" || it.equals("true", ignoreCase = true) }
 fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
@@ -74,6 +79,8 @@ android {
 
         buildConfigField("String", "SERVER_URL", mamaServerUrl.asBuildConfigString())
         buildConfigField("String", "TWILIO_NUMBER", mamaTwilioNumber.asBuildConfigString())
+        buildConfigField("String", "DEFAULT_SMS_NUMBER", mamaDefaultSmsNumber.asBuildConfigString())
+        buildConfigField("boolean", "OFFLINE_EMERGENCY_ENABLED", mamaOfflineEmergency.toString())
     }
 
     signingConfigs {
@@ -104,6 +111,17 @@ android {
     }
 }
 
+// Gradle does not track files a unit test reads at runtime. Declare the shared vector and
+// sample directories as inputs so editing them re-runs the tests instead of hitting the cache.
+tasks.withType<Test>().configureEach {
+    inputs.dir(rootProject.file("server/internal/emergency/payload/testdata"))
+        .withPropertyName("payloadVectors")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(rootProject.file("server/internal/contract/testdata"))
+        .withPropertyName("contractSamples")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -117,6 +135,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.bouncycastle.bcprov)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)

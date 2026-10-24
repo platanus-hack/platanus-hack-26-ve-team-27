@@ -37,6 +37,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.team27.mama.R
+import com.team27.mama.ui.components.MamaCharacter
+import com.team27.mama.ui.components.MamaPose
 import com.team27.mama.ui.theme.MamaSpacing
 import com.team27.mama.ui.theme.MamaTheme
 import com.team27.mama.ui.theme.MamaWordmark
@@ -50,7 +52,8 @@ import com.team27.mama.ui.theme.MamaWordmark
  * #16 shows it from the trigger, #24 drives the step states (sent, calling,
  * notified, failed) and #38 replaces the elapsed placeholder with a real
  * counter. The counter and the steps are there for the live demo (#38); keep
- * their labels neutral. Layout: message, elapsed area, steps, discreet cancel.
+ * their labels neutral. Layout: Mamá (#72), message, elapsed area, steps,
+ * discreet cancel.
  */
 
 /**
@@ -65,6 +68,20 @@ private enum class StepState(val spoken: String) {
 }
 
 private data class TriggerStep(val label: String, val state: StepState, val time: String)
+
+/**
+ * Mamá's pose for the steps, in order: sent, Mamá's call, message home. Only
+ * neutral poses here (bystander rule): never [MamaPose.Typing].
+ */
+private fun poseFor(steps: List<TriggerStep>): MamaPose {
+    if (steps.any { it.state == StepState.Failed }) return MamaPose.Idle
+    return when (steps.indexOfFirst { it.state != StepState.Done }) {
+        -1 -> MamaPose.Relieved
+        0 -> MamaPose.Alert
+        1 -> MamaPose.Calling
+        else -> MamaPose.Listening
+    }
+}
 
 // Placeholder data until #24 / #38 feed the real incident timestamps.
 private val placeholderSteps = listOf(
@@ -88,6 +105,10 @@ fun TriggerConfirmationScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(MamaSpacing.l),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(MamaSpacing.s)) {
+                MamaCharacter(
+                    pose = poseFor(placeholderSteps),
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
                 Text(
                     text = "Mamá te va a llamar",
                     style = MaterialTheme.typography.displaySmall,
