@@ -7,6 +7,9 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.media.VolumeProvider
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -23,6 +26,7 @@ import com.team27.mama.R
  */
 class VolumeSessionService : Service() {
     private var session: MediaSession? = null
+    private var silence: AudioTrack? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -55,12 +59,38 @@ class VolumeSessionService : Service() {
             setPlaybackState(PlaybackState.Builder().setState(PlaybackState.STATE_PLAYING, 0, 1f).build())
             isActive = true
         }
-        SpikeLog.log(this, "volume session active")
+        silence = playSilence()
+        SpikeLog.log(this, "volume session active silence=${silence?.playState}")
+    }
+
+    /**
+     * Android 16 routes screen-off volume keys only to the session of the app
+     * that last really played audio, so this loops one second of zeros
+     * (inaudible; no audio focus, so other music keeps playing).
+     */
+    private fun playSilence(): AudioTrack? = try {
+        val rate = 8_000
+        AudioTrack.Builder()
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .setBufferSizeInBytes(rate * 2)
+            .build()
+            .apply {
+                write(ShortArray(rate), 0, rate)
+                setLoopPoints(0, rate, -1)
+                play()
+            }
+    } catch (e: Exception) {
+        SpikeLog.log(this, "silence failed ${e.javaClass.simpleName}: ${e.message}")
+        null
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
+        silence?.run { runCatching { stop() }; release() }
+        silence = null
         session?.release()
         session = null
         SpikeLog.log(this, "volume session released")
