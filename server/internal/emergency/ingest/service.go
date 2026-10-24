@@ -29,6 +29,14 @@ type EmergencyReceived struct {
 }
 
 // Publisher hands EmergencyReceived to the Kapso module (later ticket).
+//
+// Delivery contract: events are published from a goroutine after the commit,
+// so for one emergency they may arrive out of order, and at most once: an
+// event is lost if the process crashes or redeploys before it runs, and a
+// duplicate receipt is never re-published. Consumers must treat cancelled as
+// terminal (never go cancelled to open, whatever order events arrive in), and
+// the Kapso consumer needs its own durable claim (for example a notified_at
+// column, like incidents) rather than relying on this stream. Not built here.
 type Publisher interface {
 	Publish(ctx context.Context, ev EmergencyReceived)
 }
@@ -108,9 +116,12 @@ func (s *Service) Ingest(ctx context.Context, signed []byte, ch Channel, hops in
 		return Result{}, err
 	}
 
-	rcpt := Receipt{Payload: p, DeviceID: dev.ID, Channel: ch, Hops: hops, ReceivedAt: s.now().UTC()}
+	rcpt := Receipt{Payload: p, DeviceID: dev.ID, Channel: ch, Hops: hops}
 	var notable bool
 	e, err := s.store.Update(ctx, p.EmergencyID, func(prev *Emergency) (Emergency, error) {
+		// Taken under the per-id lock, so updated_at never moves backwards
+		// when copies of one emergency contend.
+		rcpt.ReceivedAt = s.now().UTC()
 		next, n, err := merge(prev, rcpt)
 		notable = n
 		return next, err

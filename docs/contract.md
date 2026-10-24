@@ -276,4 +276,4 @@ duplicate), to be rebroadcast verbatim by a relay.
 Errors are JSON `{"error":"..."}`: `400` malformed payload, text, JSON or
 hops; `403` bad signature; `409` the `emergency_id` belongs to another device;
 `413` body over 1 KiB; `422` device not registered; `503` no database; `500`
-anything else. 4xx is permanent: retry only 5xx and 503.
+anything else. 4xx is permanent: retry only 5xx.

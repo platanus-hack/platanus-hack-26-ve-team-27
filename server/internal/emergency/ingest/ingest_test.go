@@ -189,3 +189,15 @@ func TestMergeConflict(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestMergeAfterCancelStaysCancelled(t *testing.T) {
+	a, _ := mustMerge(t, nil, receipt(payload.KindAlert, 0, true, ChannelHTTP, 0, t0))
+	c, _ := mustMerge(t, &a, receipt(payload.KindCancel, 1, false, ChannelHTTP, 0, t0.Add(time.Minute)))
+	first := *c.CancelledAt
+	for _, kind := range []payload.Kind{payload.KindUpdate, payload.KindAlert} {
+		n, notable := mustMerge(t, &c, receipt(kind, 5, true, ChannelHTTP, 0, t0.Add(time.Hour)))
+		if n.Status != StatusCancelled || n.CancelledAt == nil || !n.CancelledAt.Equal(first) || notable {
+			t.Errorf("%v after cancel: %+v notable=%v", kind, n, notable)
+		}
+	}
+}

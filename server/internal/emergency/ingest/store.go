@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/devicekeys"
@@ -29,16 +30,22 @@ const upsertEmergency = `INSERT INTO emergencies (emergency_id, device_id, statu
 	location_sent_at, channels, min_hops, first_received_at, updated_at, cancelled_at)
 	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::text[], $11, $12, $13, $14)
 	ON CONFLICT (emergency_id) DO UPDATE SET
-	device_id = EXCLUDED.device_id, status = EXCLUDED.status, seq = EXCLUDED.seq, sent_at = EXCLUDED.sent_at,
+	status = EXCLUDED.status, seq = EXCLUDED.seq, sent_at = EXCLUDED.sent_at,
 	lat_e5 = EXCLUDED.lat_e5, lon_e5 = EXCLUDED.lon_e5, loc_age_s = EXCLUDED.loc_age_s,
 	location_sent_at = EXCLUDED.location_sent_at, channels = EXCLUDED.channels, min_hops = EXCLUDED.min_hops,
-	first_received_at = EXCLUDED.first_received_at, updated_at = EXCLUDED.updated_at,
-	cancelled_at = EXCLUDED.cancelled_at`
+	updated_at = EXCLUDED.updated_at, cancelled_at = EXCLUDED.cancelled_at
+	WHERE emergencies.device_id = EXCLUDED.device_id`
 
 // Update implements Store. One transaction holds pg_advisory_xact_lock on the
 // id (this also serializes the first insert, where there is no row to lock),
 // reads the row, runs apply, and upserts the result. Another device cannot
-// overwrite a row: apply (merge) returns ErrConflict first and nothing is saved.
+// overwrite a row: apply (merge) returns ErrConflict first and nothing is saved,
+// and the upsert itself only updates a row with the same device_id (ErrConflict
+// if it touched none).
+//
+// Any other writer of emergencies (for example the Kapso module setting
+// acked) must take the same pg_advisory_xact_lock(emergency_id) in its
+// transaction, or its update can be lost to a concurrent ingest upsert.
 func (s DBStore) Update(ctx context.Context, emergencyID uint64, apply func(prev *Emergency) (Emergency, error)) (Emergency, error) {
 	tx, err := s.pool.BeginTx(ctx, nil)
 	if err != nil {
@@ -62,7 +69,7 @@ func (s DBStore) Update(ctx context.Context, emergencyID uint64, apply func(prev
 	err = tx.QueryRowContext(ctx, selectEmergency, key).Scan(&e.DeviceID, &status, &seq, &e.SentAt, &lat, &lon, &age, &locAt,
 		&channels, &minHops, &e.FirstReceivedAt, &e.UpdatedAt, &cancelledAt)
 	switch {
-	case err == sql.ErrNoRows:
+	case errors.Is(err, sql.ErrNoRows):
 	case err != nil:
 		return Emergency{}, err
 	default:
@@ -103,9 +110,15 @@ func (s DBStore) Update(ctx context.Context, emergencyID uint64, apply func(prev
 	for i, c := range next.Channels {
 		chans[i] = string(c)
 	}
-	if _, err := tx.ExecContext(ctx, upsertEmergency, key, next.DeviceID, string(next.Status), int(next.Seq), next.SentAt,
-		latV, lonV, ageV, locAtV, chans, hopsV, next.FirstReceivedAt, next.UpdatedAt, cancelV); err != nil {
+	res, err := tx.ExecContext(ctx, upsertEmergency, key, next.DeviceID, string(next.Status), int(next.Seq), next.SentAt,
+		latV, lonV, ageV, locAtV, chans, hopsV, next.FirstReceivedAt, next.UpdatedAt, cancelV)
+	if err != nil {
 		return Emergency{}, err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return Emergency{}, err
+	} else if n == 0 {
+		return Emergency{}, ErrConflict
 	}
 	if err := tx.Commit(); err != nil {
 		return Emergency{}, err

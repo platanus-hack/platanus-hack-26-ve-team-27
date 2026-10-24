@@ -64,12 +64,12 @@ func (h *Handler) handleEmergency(w http.ResponseWriter, r *http.Request) {
 	}
 	signed, err := payload.ParseSMSText(string(body))
 	if err != nil {
-		writeIngestError(w, err)
+		writeIngestError(w, r, err)
 		return
 	}
 	res, err := h.svc.Ingest(r.Context(), signed, ChannelHTTP, 0)
 	if err != nil {
-		writeIngestError(w, err)
+		writeIngestError(w, r, err)
 		return
 	}
 	writeAck(w, res)
@@ -107,7 +107,7 @@ func (h *Handler) handleRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.IngestMesh(r.Context(), up.Text, hops)
 	if err != nil {
-		writeIngestError(w, err)
+		writeIngestError(w, r, err)
 		return
 	}
 	writeAck(w, res)
@@ -138,7 +138,7 @@ func writeBodyError(w http.ResponseWriter, err error) {
 }
 
 // writeIngestError maps a service error to its status.
-func writeIngestError(w http.ResponseWriter, err error) {
+func writeIngestError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrUnknownDevice):
 		writeError(w, http.StatusUnprocessableEntity, "device not registered; send POST /devices with ed25519_public_key first")
@@ -149,7 +149,10 @@ func writeIngestError(w http.ResponseWriter, err error) {
 	case errors.Is(err, payload.ErrFormat), errors.Is(err, payload.ErrDecrypt):
 		writeError(w, http.StatusBadRequest, err.Error())
 	default:
-		log.Printf("ingest: %v", err)
+		// A client that went away cancels the request context: not a server fault.
+		if r.Context().Err() == nil {
+			log.Printf("ingest: %v", err)
+		}
 		writeError(w, http.StatusInternalServerError, "internal error")
 	}
 }

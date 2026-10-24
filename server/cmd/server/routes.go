@@ -23,7 +23,8 @@ func newMux(pool *sql.DB, notifier intake.Notifier, keys serverkeys.Keys, smsNum
 	intake.New(pool, intake.LogHandoff{}, notifier).Register(mux)
 	remoteconfig.New(smsNumber, keys).Register(mux)
 	// The Kapso module replaces LogPublisher. #58 mounts the SMS webhook with
-	// emergencies.
+	// emergencies. emergencies is nil without a database, so the webhook
+	// handler must answer 503 like ingest.Handler.ready does.
 	var emergencies *ingest.Service
 	if pool != nil {
 		emergencies = ingest.New(ingest.NewDBStore(pool), keys, ingest.LogPublisher{})

@@ -340,3 +340,37 @@ func TestConcurrentReceiptsMakeOneRecord(t *testing.T) {
 		t.Fatalf("records=%d events=%d", len(f.store.records), len(f.pub.all()))
 	}
 }
+
+type panicPublisher struct{}
+
+func (panicPublisher) Publish(context.Context, EmergencyReceived) { panic("boom") }
+
+func TestPanickingPublisherIsRecovered(t *testing.T) {
+	f := newFixture(t)
+	f.svc.pub = panicPublisher{}
+	res, err := f.svc.Ingest(context.Background(), f.signed(payload.KindAlert, 0, true), ChannelHTTP, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mustAck(res, 0)
+}
+
+type ctxPublisher struct{ errs []error }
+
+func (p *ctxPublisher) Publish(ctx context.Context, _ EmergencyReceived) {
+	p.errs = append(p.errs, ctx.Err())
+}
+
+func TestCancelledRequestContextDoesNotStopPublish(t *testing.T) {
+	f := newFixture(t)
+	cp := &ctxPublisher{}
+	f.svc.pub = cp
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := f.svc.Ingest(ctx, f.signed(payload.KindAlert, 0, true), ChannelHTTP, 0); err != nil {
+		t.Fatal(err)
+	}
+	if len(cp.errs) != 1 || cp.errs[0] != nil {
+		t.Fatalf("publish ctx errors = %v, want one nil", cp.errs)
+	}
+}
