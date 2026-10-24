@@ -122,10 +122,12 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.bouncycastle.bcprov)
+    implementation(libs.kotlinx.coroutines.android)
     implementation(project(":mesh"))
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 // Fail any build that packages or installs a release artifact without signing credentials,
