@@ -38,11 +38,6 @@ func main() {
 		log.Printf("config: not set: %s", strings.Join(missing, ", "))
 	}
 
-	intake.SetCallWhenStill(cfg.CallWhenStill)
-	if cfg.CallWhenStill {
-		log.Print("intake: CALL_WHEN_STILL is on: a still phone gets the call branch")
-	}
-
 	offline := loadOfflineEmergency(cfg, os.Getenv("RENDER") != "")
 
 	pool := openAndMigrate(cfg.DatabaseURL)

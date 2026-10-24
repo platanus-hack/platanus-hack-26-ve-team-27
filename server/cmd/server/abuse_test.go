@@ -136,9 +136,9 @@ func TestIncidentFloodIsCapped(t *testing.T) {
 	}
 	// flood builds a fresh server (fresh caps) and sends one alert per
 	// entry of phones, each from a device registered with that phone and
-	// those family numbers. speed picks the branch: walking is a call,
-	// still is the immediate alert that messages the family.
-	flood := func(t *testing.T, phones []string, family func(i int) []string, speed float64) time.Duration {
+	// those family numbers. trigger picks the branch: the volume pattern is
+	// a call, the widget is the immediate alert that messages the family.
+	flood := func(t *testing.T, phones []string, family func(i int) []string, trigger contract.Trigger) time.Duration {
 		mux := newMux(pool, newNotifier(cfg, pool, nil, nil), newCallRoutes(cfg, pool), nil, nil)
 		start := time.Now()
 		for i, phone := range phones {
@@ -148,8 +148,8 @@ func TestIncidentFloodIsCapped(t *testing.T) {
 				t.Fatalf("POST /devices = %d %s", w.Code, w.Body)
 			}
 			ev, _ := json.Marshal(contract.AlertEvent{
-				IncidentID: newIncident(), DeviceID: device, Trigger: contract.TriggerWidget, TriggeredAt: time.Now(),
-				Points: []contract.Point{{Lat: 10.4961, Lng: -66.8531, SpeedMPS: &speed, RecordedAt: time.Now()}},
+				IncidentID: newIncident(), DeviceID: device, Trigger: trigger, TriggeredAt: time.Now(),
+				Points: []contract.Point{{Lat: 10.4961, Lng: -66.8531, RecordedAt: time.Now()}},
 			})
 			if w := serve(mux, "/incidents", ev); w.Code != http.StatusCreated {
 				t.Fatalf("POST /incidents = %d %s", w.Code, w.Body)
@@ -166,14 +166,14 @@ func TestIncidentFloodIsCapped(t *testing.T) {
 			time.Sleep(20 * time.Millisecond)
 		}
 	}
-	const walking, still = 2.0, 0.0
+	const call, message = contract.TriggerVolumePattern, contract.TriggerWidget
 	none := func(int) []string { return nil }
 
 	same := make([]string, 200)
 	for i := range same {
 		same[i] = "+584141234567"
 	}
-	took := flood(t, same, none, walking)
+	took := flood(t, same, none, call)
 	waitFor(t, func() bool { return logs.count("call timing: ") == 200 })
 	calls, _, _ := rec.counts()
 	t.Logf("200 alerts to one number in %s: %d calls placed, %d rate_limited", took, calls, logs.count("outcome=rate_limited"))
@@ -185,7 +185,7 @@ func TestIncidentFloodIsCapped(t *testing.T) {
 	for i := range many {
 		many[i] = fmt.Sprintf("+58414%07d", i)
 	}
-	took = flood(t, many, none, walking)
+	took = flood(t, many, none, call)
 	waitFor(t, func() bool { return logs.count("call timing: ") == 400 })
 	total, _, perNumber := rec.counts()
 	t.Logf("200 alerts to 200 numbers in %s: %d calls placed", took, total-calls)
@@ -201,7 +201,7 @@ func TestIncidentFloodIsCapped(t *testing.T) {
 	fiveRelatives := func(int) []string {
 		return []string{"+584241110001", "+584241110002", "+584241110003", "+584241110004", "+584241110005"}
 	}
-	took = flood(t, same, fiveRelatives, still)
+	took = flood(t, same, fiveRelatives, message)
 	notified := func(want int) func() bool {
 		return func() bool {
 			_, messages, _ := rec.counts()
@@ -218,7 +218,7 @@ func TestIncidentFloodIsCapped(t *testing.T) {
 	twoEach := func(i int) []string {
 		return []string{fmt.Sprintf("+58424%07d", 2*i), fmt.Sprintf("+58424%07d", 2*i+1)}
 	}
-	took = flood(t, same, twoEach, still)
+	took = flood(t, same, twoEach, message)
 	waitFor(t, notified(200*5+200*2))
 	_, all, perNumber := rec.counts()
 	t.Logf("200 alerts to 400 different relatives in %s: %d messages sent", took, all-messages)

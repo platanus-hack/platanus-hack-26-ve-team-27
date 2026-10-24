@@ -120,6 +120,15 @@ func alert(id string, speed *float64) []byte {
 	return raw
 }
 
+// widgetAlert is alert started from the home-screen widget: the immediate alert, no call.
+func widgetAlert(id string, speed *float64) []byte {
+	var ev contract.AlertEvent
+	_ = json.Unmarshal(alert(id, speed), &ev)
+	ev.Trigger = contract.TriggerWidget
+	raw, _ := json.Marshal(ev)
+	return raw
+}
+
 func decodeResponse(t *testing.T, rec *httptest.ResponseRecorder) contract.AlertResponse {
 	t.Helper()
 	var resp contract.AlertResponse
@@ -131,41 +140,6 @@ func decodeResponse(t *testing.T, rec *httptest.ResponseRecorder) contract.Alert
 	return resp
 }
 
-// One speed sample per branch, through the HTTP handler: acceptance
-// criterion 1 of #17.
-func TestAlertPicksBranchBySpeed(t *testing.T) {
-	e := newEnv(t)
-	cases := []struct {
-		name  string
-		id    string
-		speed *float64
-		want  contract.Branch
-	}{
-		{"still", "00000000-0000-4000-8000-000000000001", ptr(0.4), contract.BranchImmediateAlert},
-		{"walking", "00000000-0000-4000-8000-000000000002", ptr(1.4), contract.BranchCall},
-		{"unknown speed", "00000000-0000-4000-8000-000000000003", nil, contract.BranchCall},
-		{"in a car", "00000000-0000-4000-8000-000000000004", ptr(11.2), contract.BranchSilentTracker},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			rec := e.post("/incidents", alert(c.id, c.speed))
-			if rec.Code != http.StatusCreated {
-				t.Fatalf("status = %d %s, want 201", rec.Code, rec.Body)
-			}
-			resp := decodeResponse(t, rec)
-			if resp.IncidentID != c.id || resp.Branch != c.want {
-				t.Fatalf("response = %+v, want branch %s for %s", resp, c.want, c.id)
-			}
-			if (resp.SpeedMPS == nil) != (c.speed == nil) || (c.speed != nil && *resp.SpeedMPS != *c.speed) {
-				t.Fatalf("speed_mps = %v, want %v", resp.SpeedMPS, c.speed)
-			}
-			var stored string
-			if err := e.pool.QueryRow(`SELECT branch FROM incidents WHERE id = $1`, c.id).Scan(&stored); err != nil || stored != string(c.want) {
-				t.Fatalf("stored branch = %q (err %v), want %s", stored, err, c.want)
-			}
-		})
-	}
-}
 
 func TestAlertStoresIncidentAndPoints(t *testing.T) {
 	e := newEnv(t)
@@ -173,8 +147,8 @@ func TestAlertStoresIncidentAndPoints(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d %s", rec.Code, rec.Body)
 	}
-	if got := decodeResponse(t, rec); got.Branch != contract.BranchImmediateAlert || got.SpeedMPS == nil || *got.SpeedMPS != 0.4 {
-		t.Fatalf("response = %+v, want the alert_response.json decision", got)
+	if got := decodeResponse(t, rec); got.Branch != contract.BranchCall || got.SpeedMPS == nil || *got.SpeedMPS != 0.4 {
+		t.Fatalf("response = %+v, want call at 0.4 (a volume pattern always calls)", got)
 	}
 
 	var trigger, branch string
@@ -187,7 +161,7 @@ func TestAlertStoresIncidentAndPoints(t *testing.T) {
 		t.Fatalf("incident row: %v", err)
 	}
 	wantAt := time.Date(2026, 10, 24, 9, 10, 0, 253_000_000, time.UTC)
-	if trigger != "volume_pattern" || branch != "immediate_alert" || speed != 0.4 || hasAudio || !triggeredAt.Equal(wantAt) {
+	if trigger != "volume_pattern" || branch != "call" || speed != 0.4 || hasAudio || !triggeredAt.Equal(wantAt) {
 		t.Fatalf("incident row = %s %s %v %v %v", trigger, branch, speed, hasAudio, triggeredAt)
 	}
 
@@ -205,11 +179,11 @@ func TestAlertStoresIncidentAndPoints(t *testing.T) {
 // points and is not handed off again.
 func TestAlertRetryReturnsStoredDecision(t *testing.T) {
 	e := newEnv(t)
-	if rec := e.post("/incidents", alert(incidentID, ptr(0.4))); rec.Code != http.StatusCreated {
+	if rec := e.post("/incidents", widgetAlert(incidentID, ptr(0.4))); rec.Code != http.StatusCreated {
 		t.Fatalf("first = %d %s", rec.Code, rec.Body)
 	}
 
-	// The retry's newest point is fast and new: it would pick silent_tracker.
+	// The retry comes from the volume pattern with a new point: it would pick call.
 	var ev contract.AlertEvent
 	_ = json.Unmarshal(alert(incidentID, ptr(0.4)), &ev)
 	ev.Points = append(ev.Points, contract.Point{Lat: 10.4975, Lng: -66.8502, SpeedMPS: ptr(11.2), RecordedAt: at(15)})
@@ -275,18 +249,17 @@ func TestAlertIncidentOfAnotherDeviceIs409(t *testing.T) {
 // to the notifier for the other two branches.
 func TestAlertHandsOffByBranch(t *testing.T) {
 	e := newEnv(t)
-	e.post("/incidents", alert("00000000-0000-4000-8000-000000000001", ptr(0.4)))
+	e.post("/incidents", widgetAlert("00000000-0000-4000-8000-000000000001", ptr(0.4)))
 	e.post("/incidents", alert("00000000-0000-4000-8000-000000000002", ptr(2)))
 	e.post("/incidents", alert("00000000-0000-4000-8000-000000000003", ptr(9)))
 	e.post("/incidents", alert("00000000-0000-4000-8000-000000000002", ptr(2))) // retry
 
-	if len(e.fake.calls) != 1 || e.fake.calls[0].ID != "00000000-0000-4000-8000-000000000002" || e.fake.calls[0].Branch != contract.BranchCall {
-		t.Fatalf("calls = %+v, want the call incident once", e.fake.calls)
+	if len(e.fake.calls) != 2 || e.fake.calls[0].ID != "00000000-0000-4000-8000-000000000002" ||
+		e.fake.calls[1].ID != "00000000-0000-4000-8000-000000000003" || e.fake.calls[0].Branch != contract.BranchCall {
+		t.Fatalf("calls = %+v, want the two volume-pattern incidents once each", e.fake.calls)
 	}
-	if len(e.fake.notifies) != 2 ||
-		e.fake.notifies[0].Branch != contract.BranchImmediateAlert ||
-		e.fake.notifies[1].Branch != contract.BranchSilentTracker {
-		t.Fatalf("notifies = %+v, want immediate_alert then silent_tracker", e.fake.notifies)
+	if len(e.fake.notifies) != 1 || e.fake.notifies[0].Branch != contract.BranchImmediateAlert {
+		t.Fatalf("notifies = %+v, want the widget incident as immediate_alert", e.fake.notifies)
 	}
 	c := e.fake.calls[0]
 	if c.DeviceID != deviceID || c.Location.Lat != 10.4961 || !c.TriggeredAt.Equal(at(0)) || c.SpeedMPS == nil || *c.SpeedMPS != 2 {
@@ -294,56 +267,58 @@ func TestAlertHandsOffByBranch(t *testing.T) {
 	}
 }
 
-// CALL_WHEN_STILL on: a still phone gets the call branch, is stored as
-// call and goes to the call engine; walking, unknown and fast do not change.
-func TestCallWhenStillSendsStillPhoneToCall(t *testing.T) {
-	SetCallWhenStill(true)
-	t.Cleanup(func() { SetCallWhenStill(false) })
+// Every trigger but the widget gets the call, whatever the speed: still,
+// walking, unknown and fast are all stored as call and go to the call engine.
+func TestNonWidgetTriggersAlwaysCall(t *testing.T) {
 	e := newEnv(t)
 	cases := []struct {
 		id    string
 		speed *float64
-		want  contract.Branch
 	}{
-		{"00000000-0000-4000-8000-000000000001", ptr(0.4), contract.BranchCall},
-		{"00000000-0000-4000-8000-000000000002", ptr(1.4), contract.BranchCall},
-		{"00000000-0000-4000-8000-000000000003", nil, contract.BranchCall},
-		{"00000000-0000-4000-8000-000000000004", ptr(11.2), contract.BranchSilentTracker},
+		{"00000000-0000-4000-8000-000000000001", ptr(0)},
+		{"00000000-0000-4000-8000-000000000002", ptr(1.4)},
+		{"00000000-0000-4000-8000-000000000003", nil},
+		{"00000000-0000-4000-8000-000000000004", ptr(11.2)},
 	}
 	for _, c := range cases {
 		rec := e.post("/incidents", alert(c.id, c.speed))
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("%s: status = %d %s, want 201", c.id, rec.Code, rec.Body)
 		}
-		if got := decodeResponse(t, rec); got.Branch != c.want {
-			t.Fatalf("%s: branch = %s, want %s", c.id, got.Branch, c.want)
+		if got := decodeResponse(t, rec); got.Branch != contract.BranchCall {
+			t.Fatalf("%s: branch = %s, want call", c.id, got.Branch)
 		}
 		var stored string
-		if err := e.pool.QueryRow(`SELECT branch FROM incidents WHERE id = $1`, c.id).Scan(&stored); err != nil || stored != string(c.want) {
-			t.Fatalf("%s: stored branch = %q (err %v), want %s", c.id, stored, err, c.want)
+		if err := e.pool.QueryRow(`SELECT branch FROM incidents WHERE id = $1`, c.id).Scan(&stored); err != nil || stored != string(contract.BranchCall) {
+			t.Fatalf("%s: stored branch = %q (err %v), want call", c.id, stored, err)
 		}
 	}
-	if len(e.fake.calls) != 3 || e.fake.calls[0].ID != cases[0].id {
-		t.Fatalf("calls = %+v, want the still, walking and unknown incidents", e.fake.calls)
+	if len(e.fake.calls) != len(cases) {
+		t.Fatalf("calls = %d, want %d", len(e.fake.calls), len(cases))
 	}
-	if len(e.fake.notifies) != 1 || e.fake.notifies[0].Branch != contract.BranchSilentTracker {
-		t.Fatalf("notifies = %+v, want only the fast incident", e.fake.notifies)
+	if len(e.fake.notifies) != 0 {
+		t.Fatalf("notifies = %+v, want none", e.fake.notifies)
 	}
 }
 
-// Off (the default) keeps the contract rule: still is the immediate alert.
-func TestChooseBranchDefaultKeepsImmediateAlert(t *testing.T) {
-	var ev contract.AlertEvent
-	if err := json.Unmarshal(alert("00000000-0000-4000-8000-000000000001", ptr(0.4)), &ev); err != nil {
-		t.Fatal(err)
-	}
-	if got := chooseBranch(ev); got != contract.BranchImmediateAlert {
-		t.Fatalf("chooseBranch with the switch off = %s, want immediate_alert", got)
-	}
-	SetCallWhenStill(true)
-	t.Cleanup(func() { SetCallWhenStill(false) })
-	if got := chooseBranch(ev); got != contract.BranchCall {
-		t.Fatalf("chooseBranch with the switch on = %s, want call", got)
+func TestChooseBranchByTrigger(t *testing.T) {
+	for _, c := range []struct {
+		trigger contract.Trigger
+		speed   *float64
+		want    contract.Branch
+	}{
+		{contract.TriggerWidget, ptr(0), contract.BranchImmediateAlert},
+		{contract.TriggerWidget, ptr(11.2), contract.BranchImmediateAlert},
+		{contract.TriggerWidget, nil, contract.BranchImmediateAlert},
+		{contract.TriggerVolumePattern, ptr(0), contract.BranchCall},
+		{contract.TriggerVolumePattern, ptr(11.2), contract.BranchCall},
+		{contract.TriggerTile, ptr(0), contract.BranchCall},
+		{contract.TriggerInApp, nil, contract.BranchCall},
+	} {
+		ev := contract.AlertEvent{Trigger: c.trigger, Points: []contract.Point{{SpeedMPS: c.speed}}}
+		if got := chooseBranch(ev); got != c.want {
+			t.Errorf("chooseBranch(%s, speed %v) = %s, want %s", c.trigger, c.speed, got, c.want)
+		}
 	}
 }
 

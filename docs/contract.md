@@ -31,28 +31,25 @@ field fails) and check the re-emitted JSON is the same.
   `incident_id` is a UUID the app makes per alert, so a retried alert is the
   same incident.
 
-## The 3 branches by speed
+## The branch: by trigger
 
-The server picks the branch from the speed of the **newest** point in the
-alert. Thresholds live in one place per side: `contract.StillBelowMPS` and
-`contract.FastFromMPS` in Go, mirrored by `SpeedThresholds` in Kotlin.
+The server picks the branch from **how the alert was started**, not from the
+speed (product decision, 24 Oct; it replaces the speed rule and the old
+`CALL_WHEN_STILL` switch):
 
-| Branch | `branch` value | Speed (m/s) | Speed (km/h) | What happens |
-| --- | --- | --- | --- | --- |
-| Still | `immediate_alert` | `< 1.0` | `< 3.6` | The family is alerted at once, no call. |
-| Otherwise | `call` | `1.0` to `< 7.0`, or unknown | `3.6` to `< 25.2` | "Mamá" calls. |
-| Moving fast (a car) | `silent_tracker` | `>= 7.0` | `>= 25.2` | Silent tracker mode: the phone keeps sending points, no call. |
+| Trigger | `branch` value | What happens |
+| --- | --- | --- |
+| `widget` (home-screen widget) | `immediate_alert` | The family is alerted at once, no call. |
+| `volume_pattern`, `tile`, `in_app` | `call` | "Mamá" always calls, whether the phone is still, walking, in a car or reports no speed. |
 
-With `CALL_WHEN_STILL=true` on the server, the still row picks `call` too: a
-person standing still (as on stage) still gets "Mamá". The fast row and the
-unknown-speed rule do not change. The switch lives only on the server (the
-response carries the branch), so Kotlin's `chooseBranch` stays as it is.
-
-An unknown speed (the fix has no `speed_mps`, or it is negative) picks
-`call`, because the call asks the person (the phone must leave `speed_mps`
-out rather than send `0`, see Conventions). `ChooseBranch` (Go) and
-`chooseBranch` (Kotlin) implement this table; `TestChooseBranch` and its
-Kotlin mirror test both sides of every threshold.
+`silent_tracker` stays a valid `branch` value in the shape (and in stored
+incidents), but the server no longer picks it. The response still carries
+`speed_mps` from the newest point, and every point is stored. The rule lives
+only on the server (`chooseBranch` in `server/internal/intake/branch.go`,
+tested by `TestChooseBranchByTrigger`); the phone follows the `branch` in the
+response. `ChooseBranch` (Go) and `chooseBranch` (Kotlin), the old speed
+table with `contract.StillBelowMPS` and `contract.FastFromMPS`, remain in the
+contract code but no longer decide the branch.
 
 ## Messages
 

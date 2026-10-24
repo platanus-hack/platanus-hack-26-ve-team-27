@@ -53,10 +53,6 @@ type Config struct {
 	// server's public base URL, optional. Log lines that point the operator
 	// at a page (the call fallback) use it; blank logs the bare path.
 	PublicURL string
-	// CallWhenStill is CALL_WHEN_STILL, "true" or "1"; anything else or
-	// unset is off. On, a still phone gets the call branch instead of the
-	// immediate alert, so a person standing still still gets "Mamá".
-	CallWhenStill bool
 	// NotifySelf is NOTIFY_SELF, "true" or "1"; off by default. On, the
 	// reporting device's own phone_number also gets the alert (#102), so the
 	// demo shows it arriving on the same phone. Demo only: in production the
@@ -184,7 +180,6 @@ func LoadFrom(getenv func(string) string) Config {
 		DatabaseURL:   get("DATABASE_URL"),
 		Notifier:      strings.ToLower(get("NOTIFIER")),
 		PublicURL:     get("PUBLIC_URL"),
-		CallWhenStill: isOn(get("CALL_WHEN_STILL")),
 		NotifySelf:    isOn(get("NOTIFY_SELF")),
 		ElevenLabs: ElevenLabs{
 			APIKey:           get("ELEVENLABS_API_KEY"),
@@ -301,7 +296,6 @@ func (c Config) String() string {
 	// NOTIFIER is a channel name, not a secret, so its value is shown.
 	parts := append([]string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier,
 		fmt.Sprintf("EMERGENCY_OFFLINE_ENABLED=%t", c.Emergency.Enabled),
-		fmt.Sprintf("CALL_WHEN_STILL=%t", c.CallWhenStill),
 		fmt.Sprintf("NOTIFY_SELF=%t", c.NotifySelf),
 		fmt.Sprintf("INCIDENT_REPORT_ENABLED=%t", c.Report.Enabled)}, setOrUnset(c.vars())...)
 	return fmt.Sprintf("config{%s}", strings.Join(parts, " "))
