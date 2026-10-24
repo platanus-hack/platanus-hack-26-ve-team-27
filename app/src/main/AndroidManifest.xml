@@ -17,6 +17,14 @@
     <!-- POST /devices and GET /config. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Locked-phone trigger spike (#10): the service both triggers start. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Spike question only: can the locked trigger record video with nothing on screen? -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
 
     <application
         android:name=".MamaApp"
@@ -35,6 +43,39 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Spike #10, rebuilt or deleted by #16. -->
+        <service
+            android:name=".spike.VolumePatternService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/volume_pattern_service" />
+        </service>
+        <service
+            android:name=".spike.TriggerSpikeService"
+            android:exported="false"
+            android:foregroundServiceType="location|microphone|camera" />
+        <service
+            android:name=".spike.VolumeSessionService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+        <receiver
+            android:name=".spike.TriggerWidgetProvider"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/trigger_widget" />
+        </receiver>
         <!-- Offline emergency ack SMS (#58); disabled unless mama.offlineEmergency is on. -->
         <receiver
             android:name=".emergency.sms.SmsAckReceiver"
