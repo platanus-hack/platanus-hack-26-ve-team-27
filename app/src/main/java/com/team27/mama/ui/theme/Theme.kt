@@ -1,67 +1,113 @@
 package com.team27.mama.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import com.team27.mama.R
 
 /*
  * THE ONE THEME FILE.
  *
- * Every color, font and corner radius the app uses lives here. Screens read
- * them through MaterialTheme.colorScheme / typography / shapes, so changing a
- * value below changes every screen. No other file may define colors or fonts
- * (see app/UI_RULES.md).
+ * Every color, the font, the type scale, the corner radii, the spacing scale
+ * and the MAMÁ wordmark live here. Screens read them through
+ * MaterialTheme.colorScheme / typography / shapes, MamaSpacing and
+ * MamaWordmark(), so changing a value below changes every screen. No other
+ * file may define colors or fonts (see app/UI_RULES.md).
  *
- * The palette below is a calm, neutral placeholder. Ticket #8 (visual
- * identity) replaces it.
+ * Identity (#8): taken from the Platanus Hack 26 Caracas logo
+ * (project-logo.png): charcoal #181918 and chartreuse #EFFE00, plus its ↗
+ * arrow as the mark. Dark mode is the logo itself (chartreuse on charcoal).
+ * Chartreuse is unreadable on white, so light mode uses a deep olive of the
+ * same hue for primary and keeps chartreuse as a soft container. Secondary is
+ * a warm graphite (the logo's charcoal) and tertiary a muted periwinkle (the
+ * chartreuse complement) for calm accents. Red is only for errors: MAMÁ must
+ * look like a family app, never like a panic button. Every text/background
+ * pair below passes WCAG AA (4.5:1) in both modes.
  */
 
 // ---------------------------------------------------------------- Palette
 
-private val Ink = Color(0xFF1F2A33)
-private val Slate = Color(0xFF3E5566)
-private val SlateLight = Color(0xFFA9C1D1)
-private val SlateContainer = Color(0xFFD5E4EE)
-private val Sage = Color(0xFF5B6E5D)
-private val SageLight = Color(0xFFC0D3C1)
-private val SageContainer = Color(0xFFDCE9DC)
-private val SageDeep = Color(0xFF475848)
-private val Clay = Color(0xFF7A5C4F)
-private val ClayLight = Color(0xFFE6C3B5)
-private val ClayContainer = Color(0xFFF6E1D8)
+// Brand: straight from the logo.
+private val Charcoal = Color(0xFF181918) // logo background
+private val Chartreuse = Color(0xFFEFFE00) // logo yellow
+// Primary ramp (chartreuse hue).
+private val Olive = Color(0xFF4A5400)
+private val OliveDeep = Color(0xFF3C4400)
+private val OliveInk = Color(0xFF161A00)
+private val LimeSoft = Color(0xFFE9F68C)
+private val LimeDim = Color(0xFFCDDA62)
+// Secondary ramp (warm graphite).
+private val Graphite = Color(0xFF5D5F52)
+private val GraphiteDeep = Color(0xFF45483B)
+private val GraphiteInk = Color(0xFF1A1C13)
+private val GraphiteDark = Color(0xFF2F3126)
+private val StoneSoft = Color(0xFFE3E4D3)
+private val StoneDim = Color(0xFFC6C8B6)
+// Tertiary ramp (periwinkle, the complement of chartreuse).
+private val Periwinkle = Color(0xFF4F5B92)
+private val PeriwinkleDeep = Color(0xFF374379)
+private val PeriwinkleInk = Color(0xFF0B1849)
+private val PeriwinkleDark = Color(0xFF1F2C61)
+private val PeriwinkleSoft = Color(0xFFDDE1FF)
+private val PeriwinkleDim = Color(0xFFB8C4FF)
+// Error ramp (errors only, never brand).
 private val Alert = Color(0xFFB3261E)
-private val AlertLight = Color(0xFFF2B8B5)
-private val AlertContainer = Color(0xFFF9DEDC)
-private val Paper = Color(0xFFF8F9FA)
-private val PaperVariant = Color(0xFFDEE3E7)
-private val Line = Color(0xFF72787E)
-private val Night = Color(0xFF111417)
-private val NightVariant = Color(0xFF40484E)
-private val Mist = Color(0xFFE1E3E5)
+private val AlertDeep = Color(0xFF8C1D18)
+private val AlertInk = Color(0xFF410E0B)
+private val AlertDark = Color(0xFF601410)
+private val AlertSoft = Color(0xFFF9DEDC)
+private val AlertDim = Color(0xFFF2B8B5)
+// Neutrals (warm, slightly yellow paper).
+private val Paper = Color(0xFFFBFBF2)
+private val PaperVariant = Color(0xFFE4E4D4)
+private val Ink = Color(0xFF1B1C16)
+private val InkVariant = Color(0xFF46483B)
+private val Line = Color(0xFF76786A)
+private val LineSoft = Color(0xFFC7C8B6)
+private val LineDark = Color(0xFF919283)
+private val Mist = Color(0xFFE5E5DB)
 private val White = Color(0xFFFFFFFF)
 private val Black = Color(0xFF000000)
 // Surface ramps (lowest -> highest) used by cards, sheets, menus and bars.
 private val PaperLowest = Color(0xFFFFFFFF)
-private val PaperLow = Color(0xFFF2F4F6)
-private val PaperMid = Color(0xFFECEFF1)
-private val PaperHigh = Color(0xFFE6E9EC)
-private val PaperHighest = Color(0xFFE0E4E7)
-private val PaperDim = Color(0xFFD8DCDF)
-private val NightLowest = Color(0xFF0C0F11) // below surface, by design
-private val NightLow = Color(0xFF181C1F)
-private val NightMid = Color(0xFF1D2226)
-private val NightHigh = Color(0xFF272C30)
-private val NightHighest = Color(0xFF32373B)
-private val NightBright = Color(0xFF363B3F)
-private val LineSoft = Color(0xFFC2C8CD)
+private val PaperLow = Color(0xFFF5F5EC)
+private val PaperMid = Color(0xFFEFEFE6)
+private val PaperHigh = Color(0xFFEAEAE0)
+private val PaperHighest = Color(0xFFE4E4DA)
+private val PaperDim = Color(0xFFDBDBD2)
+private val NightLowest = Color(0xFF121312) // below surface, by design
+private val NightLow = Color(0xFF1F201D)
+private val NightMid = Color(0xFF242521)
+private val NightHigh = Color(0xFF2E2F2B)
+private val NightHighest = Color(0xFF393A35)
+private val NightBright = Color(0xFF3F403A)
 
 /*
  * Both schemes use the full ColorScheme constructor, which has no defaults:
@@ -70,33 +116,33 @@ private val LineSoft = Color(0xFFC2C8CD)
  */
 
 val MamaLightColors: ColorScheme = ColorScheme(
-    primary = Slate,
+    primary = Olive,
     onPrimary = White,
-    primaryContainer = SlateContainer,
-    onPrimaryContainer = Ink,
-    secondary = Sage,
+    primaryContainer = LimeSoft,
+    onPrimaryContainer = OliveInk,
+    secondary = Graphite,
     onSecondary = White,
-    secondaryContainer = SageContainer,
-    onSecondaryContainer = Ink,
-    tertiary = Clay,
+    secondaryContainer = StoneSoft,
+    onSecondaryContainer = GraphiteInk,
+    tertiary = Periwinkle,
     onTertiary = White,
-    tertiaryContainer = ClayContainer,
-    onTertiaryContainer = Ink,
+    tertiaryContainer = PeriwinkleSoft,
+    onTertiaryContainer = PeriwinkleInk,
     error = Alert,
     onError = White,
-    errorContainer = AlertContainer,
-    onErrorContainer = Ink,
+    errorContainer = AlertSoft,
+    onErrorContainer = AlertInk,
     background = Paper,
     onBackground = Ink,
     surface = Paper,
     onSurface = Ink,
     surfaceVariant = PaperVariant,
-    onSurfaceVariant = Slate,
+    onSurfaceVariant = InkVariant,
     outline = Line,
     outlineVariant = LineSoft,
-    surfaceTint = Slate,
-    inversePrimary = SlateLight,
-    inverseSurface = NightHigh,
+    surfaceTint = Olive,
+    inversePrimary = Chartreuse,
+    inverseSurface = Charcoal,
     inverseOnSurface = Mist,
     scrim = Black,
     surfaceBright = Paper,
@@ -106,108 +152,183 @@ val MamaLightColors: ColorScheme = ColorScheme(
     surfaceContainer = PaperMid,
     surfaceContainerHigh = PaperHigh,
     surfaceContainerHighest = PaperHighest,
-    primaryFixed = SlateContainer,
-    primaryFixedDim = SlateLight,
-    onPrimaryFixed = Ink,
-    onPrimaryFixedVariant = Slate,
-    secondaryFixed = SageContainer,
-    secondaryFixedDim = SageLight,
-    onSecondaryFixed = Ink,
-    onSecondaryFixedVariant = Sage,
-    tertiaryFixed = ClayContainer,
-    tertiaryFixedDim = ClayLight,
-    onTertiaryFixed = Ink,
-    onTertiaryFixedVariant = Clay,
+    primaryFixed = LimeSoft,
+    primaryFixedDim = LimeDim,
+    onPrimaryFixed = OliveInk,
+    onPrimaryFixedVariant = OliveDeep,
+    secondaryFixed = StoneSoft,
+    secondaryFixedDim = StoneDim,
+    onSecondaryFixed = GraphiteInk,
+    onSecondaryFixedVariant = GraphiteDeep,
+    tertiaryFixed = PeriwinkleSoft,
+    tertiaryFixedDim = PeriwinkleDim,
+    onTertiaryFixed = PeriwinkleInk,
+    onTertiaryFixedVariant = PeriwinkleDeep,
 )
 
 val MamaDarkColors: ColorScheme = ColorScheme(
-    primary = SlateLight,
-    onPrimary = Ink,
-    primaryContainer = Slate,
-    onPrimaryContainer = SlateContainer,
-    secondary = SageLight,
-    onSecondary = Ink,
-    secondaryContainer = SageDeep,
-    onSecondaryContainer = SageContainer,
-    tertiary = ClayLight,
-    onTertiary = Ink,
-    tertiaryContainer = Clay,
-    onTertiaryContainer = ClayContainer,
-    error = AlertLight,
-    onError = Ink,
-    errorContainer = Alert,
-    onErrorContainer = AlertContainer,
-    background = Night,
+    primary = Chartreuse,
+    onPrimary = Charcoal,
+    primaryContainer = OliveDeep,
+    onPrimaryContainer = LimeSoft,
+    secondary = StoneDim,
+    onSecondary = GraphiteDark,
+    secondaryContainer = GraphiteDeep,
+    onSecondaryContainer = StoneSoft,
+    tertiary = PeriwinkleDim,
+    onTertiary = PeriwinkleDark,
+    tertiaryContainer = PeriwinkleDeep,
+    onTertiaryContainer = PeriwinkleSoft,
+    error = AlertDim,
+    onError = AlertDark,
+    errorContainer = AlertDeep,
+    onErrorContainer = AlertSoft,
+    background = Charcoal,
     onBackground = Mist,
-    surface = Night,
+    surface = Charcoal,
     onSurface = Mist,
-    surfaceVariant = NightVariant,
-    onSurfaceVariant = SlateLight,
-    outline = Line,
-    outlineVariant = NightVariant,
-    surfaceTint = SlateLight,
-    inversePrimary = Slate,
+    surfaceVariant = InkVariant,
+    onSurfaceVariant = LineSoft,
+    outline = LineDark,
+    outlineVariant = InkVariant,
+    surfaceTint = Chartreuse,
+    inversePrimary = Olive,
     inverseSurface = Mist,
     inverseOnSurface = Ink,
     scrim = Black,
     surfaceBright = NightBright,
-    surfaceDim = Night,
+    surfaceDim = Charcoal,
     surfaceContainerLowest = NightLowest,
     surfaceContainerLow = NightLow,
     surfaceContainer = NightMid,
     surfaceContainerHigh = NightHigh,
     surfaceContainerHighest = NightHighest,
-    primaryFixed = SlateContainer,
-    primaryFixedDim = SlateLight,
-    onPrimaryFixed = Ink,
-    onPrimaryFixedVariant = Slate,
-    secondaryFixed = SageContainer,
-    secondaryFixedDim = SageLight,
-    onSecondaryFixed = Ink,
-    onSecondaryFixedVariant = Sage,
-    tertiaryFixed = ClayContainer,
-    tertiaryFixedDim = ClayLight,
-    onTertiaryFixed = Ink,
-    onTertiaryFixedVariant = Clay,
+    primaryFixed = LimeSoft,
+    primaryFixedDim = LimeDim,
+    onPrimaryFixed = OliveInk,
+    onPrimaryFixedVariant = OliveDeep,
+    secondaryFixed = StoneSoft,
+    secondaryFixedDim = StoneDim,
+    onSecondaryFixed = GraphiteInk,
+    onSecondaryFixedVariant = GraphiteDeep,
+    tertiaryFixed = PeriwinkleSoft,
+    tertiaryFixedDim = PeriwinkleDim,
+    onTertiaryFixed = PeriwinkleInk,
+    onTertiaryFixedVariant = PeriwinkleDeep,
 )
 
 // ------------------------------------------------------------- Typography
 
-/** Swap this one line to change the font of the whole app. */
-val MamaFontFamily: FontFamily = FontFamily.Default
+/*
+ * Lexend (SIL OFL 1.1, google/fonts; license in assets/licenses/Lexend-OFL.txt).
+ * Designed to cut visual stress while reading, which is the job here, and its
+ * wide geometric shapes echo the logo's lettering. Bundled (no downloadable
+ * fonts: the demo phone may be offline) as three static Latin-subset weights.
+ * Swap this one line to change the font of the whole app.
+ */
+val MamaFontFamily: FontFamily = FontFamily(Font(R.font.lexend_regular, FontWeight.Normal), Font(R.font.lexend_medium, FontWeight.Medium), Font(R.font.lexend_bold, FontWeight.Bold))
 
-private fun Typography.withFont(font: FontFamily): Typography {
-    fun TextStyle.f() = copy(fontFamily = font)
-    return copy(
-        displayLarge = displayLarge.f(),
-        displayMedium = displayMedium.f(),
-        displaySmall = displaySmall.f(),
-        headlineLarge = headlineLarge.f(),
-        headlineMedium = headlineMedium.f(),
-        headlineSmall = headlineSmall.f(),
-        titleLarge = titleLarge.f(),
-        titleMedium = titleMedium.f(),
-        titleSmall = titleSmall.f(),
-        bodyLarge = bodyLarge.f(),
-        bodyMedium = bodyMedium.f(),
-        bodySmall = bodySmall.f(),
-        labelLarge = labelLarge.f(),
-        labelMedium = labelMedium.f(),
-        labelSmall = labelSmall.f(),
-    )
-}
+private fun style(weight: FontWeight, size: Int, line: Int, tracking: Double = 0.0) = TextStyle(
+    fontFamily = MamaFontFamily,
+    fontWeight = weight,
+    fontSize = size.sp,
+    lineHeight = line.sp,
+    letterSpacing = tracking.sp,
+)
 
-val MamaTypography: Typography = Typography().withFont(MamaFontFamily)
+/** The full Material3 type scale, in the three bundled weights. */
+val MamaTypography: Typography = Typography(
+    displayLarge = style(FontWeight.Bold, 56, 64, -0.5),
+    displayMedium = style(FontWeight.Bold, 44, 52),
+    displaySmall = style(FontWeight.Bold, 36, 44),
+    headlineLarge = style(FontWeight.Bold, 32, 40),
+    headlineMedium = style(FontWeight.Bold, 28, 36),
+    headlineSmall = style(FontWeight.Medium, 24, 32),
+    titleLarge = style(FontWeight.Medium, 22, 28),
+    titleMedium = style(FontWeight.Medium, 16, 24, 0.1),
+    titleSmall = style(FontWeight.Medium, 14, 20, 0.1),
+    bodyLarge = style(FontWeight.Normal, 16, 24, 0.2),
+    bodyMedium = style(FontWeight.Normal, 14, 20, 0.2),
+    bodySmall = style(FontWeight.Normal, 12, 16, 0.3),
+    labelLarge = style(FontWeight.Medium, 14, 20, 0.1),
+    labelMedium = style(FontWeight.Medium, 12, 16, 0.4),
+    labelSmall = style(FontWeight.Medium, 11, 16, 0.5),
+)
 
 // ----------------------------------------------------------------- Shapes
 
+/** Soft, generous corners: friendly, not clinical. */
 val MamaShapes: Shapes = Shapes(
-    extraSmall = RoundedCornerShape(4.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(32.dp),
 )
+
+// ---------------------------------------------------------------- Spacing
+
+/** The spacing scale (4 dp grid). Use these for padding and gaps in screens. */
+object MamaSpacing {
+    val xs: Dp = 4.dp
+    val s: Dp = 8.dp
+    val m: Dp = 16.dp
+    val l: Dp = 24.dp
+    val xl: Dp = 32.dp
+    val xxl: Dp = 48.dp
+
+    /** Side margin of every screen. */
+    val screen: Dp = 24.dp
+}
+
+// --------------------------------------------------------------- Wordmark
+
+/**
+ * The MAMÁ wordmark: the ↗ mark from the event logo in a rounded tile, then
+ * "MAMÁ". Colors come from the color scheme (primary / onPrimary for the
+ * tile, onSurface for the letters) and the type from MamaTypography, so it
+ * follows every palette or font change in this file. [compact] is the
+ * top-bar size.
+ */
+@Composable
+fun MamaWordmark(modifier: Modifier = Modifier, compact: Boolean = false) {
+    val tile = if (compact) 32.dp else 48.dp
+    val text = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge
+    Row(
+        modifier = modifier.clearAndSetSemantics {
+            contentDescription = "MAMÁ"
+            heading()
+        },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(if (compact) MamaSpacing.s else 12.dp),
+    ) {
+        MamaMark(size = tile)
+        Text(
+            text = "MAMÁ",
+            style = text.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.04.em),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+/** The mark alone (the launcher icon draws the same arrow, see res/drawable/ic_launcher_foreground.xml). */
+@Composable
+fun MamaMark(size: Dp, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.size(size),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                painter = painterResource(R.drawable.ic_mama_mark),
+                contentDescription = null,
+                modifier = Modifier.padding(size / 6),
+            )
+        }
+    }
+}
 
 // ------------------------------------------------------------------ Theme
 

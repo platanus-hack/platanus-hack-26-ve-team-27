@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Check mark for finished steps. Single color; screens tint it from the theme. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M9.55,18 L3.85,12.3 L5.98,10.18 L9.55,13.75 L18.02,5.28 L20.15,7.4 Z" />
+</vector>
