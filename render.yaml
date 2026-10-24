@@ -1,0 +1,29 @@
+# Render Blueprint: one Go web service + one Postgres, both on the smallest
+# paid plan so nothing sleeps. Spec: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: mama-server
+    runtime: go
+    region: virginia # closest US region to Caracas; can't change after creation
+    plan: 0.5c-512mb # smallest paid web plan (free sleeps)
+    branch: main
+    rootDir: server
+    buildCommand: go build -o bin/server ./cmd/server
+    startCommand: ./bin/server
+    healthCheckPath: /health
+    autoDeployTrigger: commit # deploy every push to main
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mama-db
+          property: connectionString # private-network URL
+
+databases:
+  - name: mama-db
+    region: virginia # must match the web service for the private network
+    plan: 0.1c-256mb # smallest paid Postgres plan (free expires)
+    diskSizeGB: 1 # minimum; Basic plans default to 15 GB, billed separately
+    databaseName: mama
+    user: mama
+    # ipAllowList omitted: external connections allowed (password-protected)
+    # so teammates can psql in with the External Database URL.

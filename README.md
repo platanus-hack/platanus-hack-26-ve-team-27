@@ -73,3 +73,37 @@ code to a personal repo:
 Your commits stay mirrored here for judging, while the deploy runs from the repo you control.
 
 Have fun! 🚀
+
+## Server deploy (Render)
+
+The Go server (`server/`) and its Postgres run on Render from the
+[`render.yaml`](./render.yaml) Blueprint: a `0.5c-512mb` web service and a
+`0.1c-256mb` Postgres in `virginia`. Both are the smallest paid plans, so
+nothing sleeps. Every push to `main` deploys.
+
+**Live URL:** `https://<pending>.onrender.com`
+
+| Route | Returns |
+| --- | --- |
+| `GET /version` | `{"commit":"<sha>"}` from `RENDER_GIT_COMMIT` (`"dev"` locally) |
+| `GET /health` | `200 {"status":"ok"}` when Postgres answers a ping within 2 s, `503` otherwise (also when `DATABASE_URL` is unset) |
+
+### Deploy it (once)
+
+1. Render can't be connected to this org repo (see above), so mirror it to a
+   personal repo. Merges made in the GitHub UI don't reach the mirror on their
+   own: a scheduled Action in the mirror (every 5 min, plus manual runs)
+   force-pushes this repo's `main` into the mirror's `main`. SHAs stay
+   identical, so `/version` still matches this repo.
+2. In the Render dashboard: **New > Blueprint**, pick the mirror repo, branch
+   `main`. Render reads `render.yaml` and creates `mama-server` and `mama-db`.
+   `DATABASE_URL` is wired from the database automatically.
+3. Put the service URL in the **Live URL** line above.
+
+### Check a deploy
+
+```bash
+git fetch origin && git rev-parse origin/main
+curl https://<pending>.onrender.com/version   # commit must match the sha above
+curl -i https://<pending>.onrender.com/health # 200 {"status":"ok"}
+```
