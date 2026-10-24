@@ -102,6 +102,7 @@
     <span class="status" data-live="status">{{template "sec-status" .}}</span>
     <span class="c-now" data-now aria-label="Hora de Caracas">—</span>
     {{template "central-theme"}}
+    <a class="pdf-btn c-trace-link" href="/central/r/{{.Case.ID}}/traza">Ver traza</a>
     <a class="pdf-btn" href="{{.PDFURL}}" download aria-label="Descargar PDF"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V9h5.5L13 3.5ZM12 11a1 1 0 0 0-1 1v4.59l-1.3-1.3a1 1 0 1 0-1.4 1.42l3 3a1 1 0 0 0 1.4 0l3-3a1 1 0 0 0-1.4-1.42L13 16.6V12a1 1 0 0 0-1-1Z"/></svg><span class="pdf-text">PDF</span></a>
   </div>
 </header>

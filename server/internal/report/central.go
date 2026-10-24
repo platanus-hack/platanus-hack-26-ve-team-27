@@ -82,6 +82,9 @@ func (h *Handler) registerCentral(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+CentralPrefix+"r/{id}", c.gate(h.centralCase))
 	mux.HandleFunc("GET "+CentralPrefix+"r/{id}/live", c.gate(h.centralCaseLive))
 	mux.HandleFunc("GET "+CentralPrefix+"r/{id}/estado.json", c.gate(h.centralCaseState))
+	mux.HandleFunc("GET "+CentralPrefix+"r/{id}/traza", c.gate(h.centralTrace))
+	mux.HandleFunc("GET "+CentralPrefix+"r/{id}/traza/live", c.gate(h.centralTraceLive))
+	mux.HandleFunc("GET "+CentralPrefix+"r/{id}/traza/estado.json", c.gate(h.centralTraceState))
 }
 
 // ---------------------------------------------------------------- access

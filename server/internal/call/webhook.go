@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/trace"
 )
 
 // SignatureHeader carries the HMAC of the post-call webhook:
@@ -67,11 +68,15 @@ func (wh *Webhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if wh.Secret == "" {
 		log.Print("call webhook: rejected: ELEVENLABS_WEBHOOK_SECRET is not set")
+		trace.Log(unverifiedIncident(raw), "webhook_rejected", "level", "ERROR", "reason", "no_secret",
+			"hint", "ELEVENLABS_WEBHOOK_SECRET is not set on this server: every ElevenLabs webhook is refused, so no verdict and no alert")
 		http.Error(w, "webhook secret not configured", http.StatusServiceUnavailable)
 		return
 	}
 	if err := verifySignature(r.Header.Get(SignatureHeader), raw, wh.Secret, wh.now()); err != nil {
 		log.Printf("call webhook: rejected: %v", err)
+		trace.Log(unverifiedIncident(raw), "webhook_rejected", "level", "ERROR", "reason", err,
+			"hint", "the HMAC does not match: ELEVENLABS_WEBHOOK_SECRET must be the secret of this webhook in ElevenLabs; the call gets no verdict and no alert")
 		http.Error(w, "invalid signature", http.StatusUnauthorized)
 		return
 	}
@@ -91,7 +96,8 @@ func (wh *Webhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case TypeCallInitiationFailure:
-		logInitiationFailure(raw)
+		reason := logInitiationFailure(raw)
+		trace.Log(hook.IncidentID(), "call_failed", "conversation_id", hook.Data.ConversationID, "reason", "elevenlabs_initiation_failure", "detail", reason)
 		if wh.InitiationFailed != nil && hook.Data.ConversationID != "" {
 			if err := wh.InitiationFailed(r.Context(), hook); err != nil {
 				log.Printf("call webhook: conversation %s: mark failed: %v", hook.Data.ConversationID, err)
@@ -176,7 +182,7 @@ func LogSummary(hook contract.CallWebhook) {
 // logInitiationFailure logs why a call never connected (busy, no answer,
 // Twilio refused the number). The spike needs this to tell a blocked +58
 // route from an unanswered phone.
-func logInitiationFailure(raw []byte) {
+func logInitiationFailure(raw []byte) string {
 	var f struct {
 		Data struct {
 			ConversationID string `json:"conversation_id"`
@@ -185,4 +191,15 @@ func logInitiationFailure(raw []byte) {
 	}
 	_ = json.Unmarshal(raw, &f)
 	log.Printf("call webhook: call_initiation_failure conversation %s reason %q", f.Data.ConversationID, f.Data.FailureReason)
+	return f.Data.FailureReason
+}
+
+// unverifiedIncident is the incident_id a rejected webhook claims, for the
+// trace only: the body is not trusted, so it is never acted on.
+func unverifiedIncident(raw []byte) string {
+	var hook contract.CallWebhook
+	if json.Unmarshal(raw, &hook) != nil {
+		return ""
+	}
+	return hook.IncidentID()
 }
