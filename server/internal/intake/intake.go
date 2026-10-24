@@ -8,8 +8,9 @@
 //	POST /devices                          204 stored; 400 bad body, malformed ed25519_public_key,
 //	                                       or missing/invalid ed25519_signature; 409
 //	                                       ed25519_public_key registered to another device; 422
-//	                                       user_name not 1 to 30 characters, or safe_phrase
-//	                                       without a word or too close to duress_phrase
+//	                                       user_name not 1 to 30 characters, duress_phrase or
+//	                                       safe_phrase over 150 characters or 20 words, or
+//	                                       safe_phrase without a word or too close to duress_phrase
 //	POST /incidents                        201 new incident, 200 retried incident_id (stored decision);
 //	                                       400 bad body; 409 incident_id taken by another device;
 //	                                       422 device not registered
@@ -262,12 +263,33 @@ func validateKeyProof(reg contract.DeviceRegistration) error {
 // paragraph.
 const maxUserNameRunes = 30
 
+// maxPhraseRunes and maxPhraseWords bound duress_phrase and safe_phrase. The
+// person says them as the answer to "¿cómo vas?" in a call that has to sound
+// ordinary: the app's default and the longest eval phrase are 8 words and
+// under 40 characters, so the caps leave more than twice that. They also
+// bound the duress detector, whose cost grows with the cube of the words when
+// it compares the two phrases (two 1,000-word phrases took over 10 s of CPU)
+// and with the square of the duress phrase's words when it judges a call.
+// POST /devices has no auth, so both caps are checked before the detector
+// ever sees a phrase.
+const (
+	maxPhraseRunes = 150
+	maxPhraseWords = 20
+)
+
 // validateSetup checks the optional setup fields of a registration whose
-// user_name and safe_phrase are already trimmed. Absent ("") is fine: the
-// stored value is kept. The errors never quote a phrase.
+// user_name and safe_phrase are already trimmed, and caps both phrases.
+// Absent ("") is fine: the stored value is kept. The errors never quote a
+// phrase.
 func validateSetup(reg contract.DeviceRegistration) error {
 	if n := utf8.RuneCountInString(reg.UserName); n > maxUserNameRunes {
 		return fmt.Errorf("user_name must be 1 to %d characters", maxUserNameRunes)
+	}
+	if err := checkPhraseLength("duress_phrase", reg.DuressPhrase); err != nil {
+		return err
+	}
+	if err := checkPhraseLength("safe_phrase", reg.SafePhrase); err != nil {
+		return err
 	}
 	switch {
 	case reg.SafePhrase == "":
@@ -291,6 +313,29 @@ func tooCloseToDuress(safe, duressPhrase string) bool {
 	said := []contract.TranscriptTurn{{Role: duress.RoleUser, Message: safe}}
 	res, err := duress.Rules{}.Detect(context.Background(), said, duressPhrase)
 	return err != nil || res.Verdict != contract.VerdictNoDuress
+}
+
+// checkPhraseLength rejects a phrase over maxPhraseRunes or maxPhraseWords.
+// The error names field and the caps, never the phrase.
+func checkPhraseLength(field, phrase string) error {
+	if utf8.RuneCountInString(phrase) > maxPhraseRunes || countWords(phrase) > maxPhraseWords {
+		return fmt.Errorf("%s must be at most %d characters and %d words", field, maxPhraseRunes, maxPhraseWords)
+	}
+	return nil
+}
+
+// countWords counts the runs of letters and digits in s. The duress detector
+// splits a phrase on everything else, so this is the most words it can see.
+func countWords(s string) int {
+	n, inWord := 0, false
+	for _, r := range s {
+		word := unicode.IsLetter(r) || unicode.IsDigit(r)
+		if word && !inWord {
+			n++
+		}
+		inWord = word
+	}
+	return n
 }
 
 // hasWord reports whether s has a letter or a digit.
