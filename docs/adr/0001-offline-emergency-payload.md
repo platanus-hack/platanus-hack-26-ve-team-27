@@ -31,11 +31,11 @@ All multi-byte integers are big-endian and unsigned, except `lat_e5` and
 | 1 | 1 | kind | `1` alert, `2` update, `3` cancel (`4` is ack-only and rejected here) |
 | 2 | 8 | device_id | first 8 bytes of SHA-256 of the device Ed25519 public key (32 raw bytes) |
 | 10 | 8 | emergency_id | random 64-bit value, the same for the alert, updates and cancel of one emergency |
-| 18 | 2 | seq | 0 for the first alert, +1 per update or cancel |
-| 20 | 4 | lat_e5 | degrees x 1e5, in [-9000000, 9000000] |
-| 24 | 4 | lon_e5 | degrees x 1e5, in [-18000000, 18000000] |
-| 28 | 2 | loc_age_s | seconds since the fix, `0..65534` (saturates at 65534); `65535` means no fix |
-| 30 | 4 | timestamp | unix seconds |
+| 18 | 2 | seq (uint16) | 0 for the first alert, +1 per update or cancel |
+| 20 | 4 | lat_e5 (int32) | degrees x 1e5, in [-9000000, 9000000] |
+| 24 | 4 | lon_e5 (int32) | degrees x 1e5, in [-18000000, 18000000] |
+| 28 | 2 | loc_age_s (uint16) | seconds since the fix, `0..65534` (saturates at 65534); `65535` means no fix |
+| 30 | 4 | timestamp (uint32) | unix seconds |
 
 No fix: `loc_age_s = 65535` and then `lat_e5` and `lon_e5` must both be 0.
 Anything else with 65535 is a format error. A first alert or a cancel may be
@@ -149,8 +149,10 @@ e. The server has a dedicated X25519 key for the sealed box.
 
 ## Consequences
 
-- The codec does no clock or replay checks. The server dedups by `emergency_id` + `seq` (#57).
+- The codec does no clock or replay checks. The server dedups by `seq` within an emergency (#57).
+- Emergencies are keyed by (`device_id`, `emergency_id`). `emergency_id` travels in clear in SMS and mesh acks, so an update or cancel is accepted only from the `device_id` that sent the alert (#57 enforces it).
 - An SMS is readable by the carrier and the SMS provider, by design: it is signed, not encrypted.
-- Mesh relays see only the `MAMA1:` prefix, the tag and the length.
+- Mesh relays cannot read the payload: they see the `MAMA1:` prefix, the tag and the length. They are not anonymous, though: the bitchat packet carries the originator's sender identity (the same Ed25519 key as the device, so linkable to `device_id`), and mesh acks expose `emergency_id` and `seq`.
+- A relay cannot match a mesh ack to the `MAMA1:SEAL:` texts it carries, because `emergency_id` is inside the sealed box. Acks therefore do not stop mesh propagation by themselves: relays keep forwarding until the bitchat TTL or gossip expiry, and the server's dedup absorbs the duplicates. A relay may drop a pending upload when the server's answer to its own upload is the ack. A cleartext correlator was considered and rejected, because it would let relays link updates of one emergency; a future MAMA2 could add it.
 - There is no forward secrecy against the server's X25519 key: if it leaks, past mesh captures can be read.
 - A format change means `version 2` and new `MAMA2` prefixes.
