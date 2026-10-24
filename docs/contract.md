@@ -458,9 +458,12 @@ default; then every route below answers `404`). Code:
   server re-reads the case every second. The event data is JSON:
   `version`, `state`, `live`, `end`, `server_now`, and `sections`, the page's
   sections rendered as HTML, so the page has a single renderer. A
-  `: keep-alive` comment goes out every 15 s. An `end` event follows the seal,
-  or `{"gone":true}` when the link stops working; then the stream closes. It
-  also closes after 30 min, and the browser reconnects.
+  `: keep-alive` comment goes out every 15 s. An `end` event follows the seal
+  or the moment the case stops being live (nothing stored for 30 min, which
+  is how a report that is never sealed ends), after that last state; or
+  `{"gone":true}` when the link stops working. Then the stream closes, and
+  the polling fallback stops on the same rule. A live stream also closes
+  after 30 min, and the browser reconnects.
   `GET /i/{token}/estado.json` is the same snapshot, for polling when the
   stream fails. The family page streams `report.FamilySections` (`status`,
   `header`, `track`, `call`, `route`, `family`). Other pages, such as the
