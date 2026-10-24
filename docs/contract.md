@@ -403,7 +403,10 @@ default; then every route below answers `404`). Code:
   served from `/ficha/static/{file}`, so opening a report makes no request to
   anyone else. There is no map with tiles: each location has an "Abrir en
   Maps" link and the path is drawn in SVG. The page never shows the full phone
-  number (only `+58 ···67`), the device id or the duress phrase.
+  number (only `+58 ···67`), the device id or the duress phrase. No other
+  response under `/i/` (`ficha.json`, `estado.json`, `/live`, the PDF)
+  carries the device id either: it is the device's only credential on
+  `POST /devices` and `POST /incidents/{incident_id}/points`.
 - **Recording.** The server's post-call hooks are a list in `main.go`
   (`call.Hooks`), run in order after the webhook stored the transcript. The
   report's hook takes a `done` call and, in the background, asks ElevenLabs
