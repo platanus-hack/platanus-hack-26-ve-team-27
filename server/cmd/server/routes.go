@@ -8,13 +8,14 @@ import (
 )
 
 // newMux registers every HTTP route. Add new routes here so there is one
-// place to see the whole API surface. pool is nil when DATABASE_URL is unset.
-func newMux(pool *sql.DB) *http.ServeMux {
+// place to see the whole API surface. pool is nil when DATABASE_URL is unset;
+// notifier alerts the family for the incidents that skip the call.
+func newMux(pool *sql.DB, notifier intake.Notifier) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleRoot)
 	registerDeployRoutes(mux, pool)
-	// The call engine (#18) and the notifier (#20) replace LogHandoff.
-	intake.New(pool, intake.LogHandoff{}, intake.LogHandoff{}).Register(mux)
+	// The call engine (#18) replaces LogHandoff.
+	intake.New(pool, intake.LogHandoff{}, notifier).Register(mux)
 	return mux
 }
 
