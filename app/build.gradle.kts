@@ -58,6 +58,17 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+
+        // Gradle property, else env var, else the default; no trailing slash.
+        val serverUrl = providers.gradleProperty("mama.serverUrl")
+            .orElse(providers.environmentVariable("MAMA_SERVER_URL"))
+            .orElse("https://mama-server.onrender.com").get().trim().trimEnd('/')
+        // Obviously fake placeholder (NANP 555-01xx); real deployments override it.
+        val defaultSmsNumber = providers.gradleProperty("mama.defaultSmsNumber")
+            .orElse(providers.environmentVariable("MAMA_DEFAULT_SMS_NUMBER"))
+            .orElse("+15555550100").get().trim()
+        buildConfigField("String", "SERVER_URL", "\"$serverUrl\"")
+        buildConfigField("String", "DEFAULT_SMS_NUMBER", "\"$defaultSmsNumber\"")
     }
 
     signingConfigs {
@@ -84,6 +95,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
