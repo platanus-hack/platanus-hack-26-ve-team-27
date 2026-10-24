@@ -10,6 +10,7 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/serverkeys"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/sms"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/report"
 )
 
 // newMux registers every HTTP route. Add new routes here so there is one
@@ -19,8 +20,10 @@ import (
 // offline is the offline emergency channel (#55, #57, #58), an extra behind
 // EMERGENCY_OFFLINE_ENABLED: nil leaves GET /config, POST /emergencies* and
 // POST /sms/inbound/{provider} unmounted (404). With it, and without a pool,
-// the emergency routes answer 503.
-func newMux(pool *sql.DB, notifier intake.Notifier, calls *call.Routes, offline *offlineEmergency) *http.ServeMux {
+// the emergency routes answer 503. reports is the incident report page (#76),
+// an extra behind INCIDENT_REPORT_ENABLED: nil leaves GET /i/{token} and its
+// files unmounted (404).
+func newMux(pool *sql.DB, notifier intake.Notifier, calls *call.Routes, offline *offlineEmergency, reports *report.Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleRoot)
 	registerDeployRoutes(mux, pool)
@@ -28,6 +31,9 @@ func newMux(pool *sql.DB, notifier intake.Notifier, calls *call.Routes, offline 
 	calls.Register(mux)
 	if offline != nil {
 		offline.register(mux, pool)
+	}
+	if reports != nil {
+		reports.Register(mux)
 	}
 	return mux
 }

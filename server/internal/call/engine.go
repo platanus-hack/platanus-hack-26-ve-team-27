@@ -64,6 +64,11 @@ type Engine struct {
 	// a repeated webhook, so it must be idempotent (db.SaveVerdict
 	// overwrites, and the notifier claims the incident once).
 	Finished func(ctx context.Context, f Finished)
+	// Progress, when set, gets every change of Twilio's call status the
+	// engine polls (Status), with the server time it saw it: the incident
+	// report shows when the phone rang and was answered (#76). It runs in
+	// the engine's goroutine, so it must be quick.
+	Progress func(ctx context.Context, callID int64, twilioStatus string, at time.Time)
 
 	RetryDelay     time.Duration    // pause before the retry; zero retries at once
 	OutcomeTimeout time.Duration    // defaultOutcomeTimeout when zero
@@ -217,6 +222,7 @@ func (e *Engine) await(ctx context.Context, incidentID string, callID int64, pla
 		poll = ticker.C
 	}
 	pollErrLogged := false
+	lastStatus := ""
 	for {
 		select {
 		case <-ctx.Done():
@@ -251,6 +257,10 @@ func (e *Engine) await(ctx context.Context, incidentID string, callID int64, pla
 				}
 				continue
 			}
+			if status != lastStatus && e.Progress != nil {
+				e.Progress(ctx, callID, status, e.now())
+			}
+			lastStatus = status
 			switch status {
 			case TwilioRinging, TwilioInProgress, TwilioCompleted:
 				if t.ringing.IsZero() {

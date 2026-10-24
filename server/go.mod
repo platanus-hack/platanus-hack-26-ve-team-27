@@ -2,7 +2,10 @@ module github.com/platanus-hack/platanus-hack-26-ve-team-27/server
 
 go 1.24
 
-require github.com/jackc/pgx/v5 v5.7.6
+require (
+	github.com/go-pdf/fpdf v0.9.0
+	github.com/jackc/pgx/v5 v5.7.6
+)
 
 require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect

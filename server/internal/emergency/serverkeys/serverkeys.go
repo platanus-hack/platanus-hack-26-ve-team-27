@@ -107,3 +107,16 @@ func decode(name, v string) ([]byte, error) {
 	}
 	return b, nil
 }
+
+// SigningKey decodes only the Ed25519 seed (EMERGENCY_ED25519_SEED), for a
+// feature that signs but opens no sealed box: the incident report's seal
+// (#76). Unset gives nil and no error, and nothing is generated: an
+// ephemeral key would seal reports nobody can verify after a restart. A
+// malformed seed is an error naming the variable, never its value.
+func SigningKey(c config.Emergency) (ed25519.PrivateKey, error) {
+	seed, err := decode(seedVar, c.Ed25519Seed)
+	if err != nil || seed == nil {
+		return nil, err
+	}
+	return ed25519.NewKeyFromSeed(seed), nil
+}

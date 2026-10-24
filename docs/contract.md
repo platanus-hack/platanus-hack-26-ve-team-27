@@ -236,9 +236,12 @@ NULL; only if there is none does it insert. Sample: `call_webhook.json`.
 
 ### NotifierMessage (server → notifier)
 
-What the notifier sends to the family: the location and the verdict, and
-**no link**. `verdict` is `duress`, `no_duress` or `unclear`; `verdict` and
-`reason` are left out when no call happened (`immediate_alert`,
+What the notifier sends to the family: the location and the verdict. Its only
+link is the incident report's (#76): with `INCIDENT_REPORT_ENABLED` on and
+`PUBLIC_URL` set, the text ends with a `Ficha: <url>` line, sent with
+`preview_url: false` so WhatsApp fetches no preview. The link is added to the
+text, not to this JSON shape. `verdict` is `duress`, `no_duress` or
+`unclear`; `verdict` and `reason` are left out when no call happened (`immediate_alert`,
 `silent_tracker`). `incident_id` is the dedupe key: one message per incident.
 Before sending, the sender claims the incident with
 `UPDATE incidents SET notified_at = now() WHERE id = $1 AND notified_at IS NULL`
@@ -261,7 +264,11 @@ the newest call's verdict. Sample: `notifier_message.json`.
 ## Postgres schema
 
 `server/migrations/0001_init.sql`; `0002_device_keys.sql` adds
-`ed25519_public_key` and `key_id` to `devices`; `0003_emergencies.sql` adds the `emergencies` table. The server applies pending migrations on
+`ed25519_public_key` and `key_id` to `devices`; `0003_emergencies.sql` adds the `emergencies` table;
+`0004_incident_reports.sql` adds `incident_reports`, `call_recordings`,
+`incident_seals` and `call_progress` for the incident report (#76, approved
+by the Tech lead on Oct 24); `0006_notify_deliveries.sql` adds
+`notify_deliveries` (#76). The server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
 no-op. Without `DATABASE_URL` the server boots and skips migrations.
@@ -273,6 +280,11 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 | `gps_points` | identity; unique `(incident_id, recorded_at)` | every fix of an incident |
 | `calls` | identity; unique `conversation_id` | call status, transcript (JSONB), duration, **verdict** |
 | `emergencies` | `emergency_id` (16 hex) | offline emergency: device, status, highest seq, last fix, channels, min hops (#57) |
+| `incident_reports` | `incident_id` | the report link: `token` (unique, 22 base64url chars), `created_at`, `expires_at` (#76) |
+| `call_recordings` | `call_id` | a call's recording: `content_type`, `audio` (bytes), `sha256`, `stored_at` (#76) |
+| `incident_seals` | `incident_id` | the seal: `sealed_at`, `document` (exact bytes of `ficha.json`), `signature`, `public_key` (#76) |
+| `call_progress` | `call_id` | what the call engine saw polling Twilio: last `twilio_status`, `ringing_at`, `answered_at` (server clock, #76) |
+| `notify_deliveries` | identity; unique `message_id` | each family message the notifier sent: masked `recipient`, `channel`, provider `message_id` (Kapso wamid), `status` (`accepted`, `failed`, `sent`, `delivered`, `read`), `error`, `sent_at`, `delivered_at`, `read_at` (#76) |
 | `schema_migrations` | `version` | applied migration files |
 
 The verdict lives on `calls` (`verdict`, `verdict_reason`, `verdict_at`)
@@ -317,3 +329,115 @@ Errors are JSON `{"error":"..."}`: `400` malformed payload, text, JSON or
 hops; `403` bad signature; `409` the `emergency_id` belongs to another device;
 `413` body over 1 KiB; `422` device not registered; `503` no database; `500`
 anything else. 4xx is permanent: retry only 5xx.
+
+## Incident report (#76)
+
+A private page per incident for the family: the timeline, the locations, the
+call transcript and recording, the verdict and the server's seal. It exists
+only when the server runs with `INCIDENT_REPORT_ENABLED=true` (off by
+default; then every route below answers `404`). Code:
+`server/internal/report`.
+
+- **Link.** `GET /i/{token}`. `token` is 128 random bits in base64url without
+  padding (22 characters), made by the server and unrelated to the
+  `incident_id` the phone made. One link per incident
+  (`incident_reports`); it lives `INCIDENT_REPORT_TTL_DAYS` days (default 30)
+  and the next request for a link after it expired gets a new token. An
+  unknown, malformed or expired token answers `404`, all alike. The absolute
+  URL uses `PUBLIC_URL` (else `RENDER_EXTERNAL_URL`); the family message's
+  `Ficha: <url>` line creates the link (see NotifierMessage).
+  `go run ./cmd/ficha <incident_id>` prints the link of an incident, creating it if needed.
+- **Privacy.** Every response under `/i/` carries `Referrer-Policy:
+  no-referrer`, `X-Robots-Tag: noindex, nofollow, noarchive`, `Cache-Control:
+  no-store` and a `Content-Security-Policy` that allows only this server.
+  Fonts (Lexend, OFL), images, CSS and JS are embedded in the binary and
+  served from `/ficha/static/{file}`, so opening a report makes no request to
+  anyone else. There is no map with tiles: each location has an "Abrir en
+  Maps" link and the path is drawn in SVG. The page never shows the full phone
+  number (only `+58 ···67`), the device id or the duress phrase.
+- **Recording.** The server's post-call hooks are a list in `main.go`
+  (`call.Hooks`), run in order after the webhook stored the transcript. The
+  report's hook takes a `done` call and, in the background, asks ElevenLabs
+  for its audio with `ELEVENLABS_API_KEY` (`GET
+  /v1/convai/conversations/{id}`, then `.../audio` once `has_audio` is true),
+  retrying for about 2 minutes. It stores the bytes and their SHA-256 in
+  `call_recordings` once per call. `GET /i/{token}/audio.mp3?llamada=N`
+  serves it from this server (never a link to ElevenLabs), with Range
+  support; `N` is the call's 1-based number in request order, and without it
+  the newest recorded call. No recording: `404`, and the page says "Audio no
+  disponible" and keeps the transcript.
+- **Seal.** After the recording, and after waiting up to 60 s for the
+  call's verdict and `notified_at`, the server seals a `call` report once:
+  pure Ed25519 by the `GET /config` key over `MAMA-incident-report-v1 ||
+  ficha.json`. `GET /i/{token}/ficha.json` serves the exact signed bytes and
+  `GET /i/{token}/ficha.sig` the signature in Base64 (both `404` until
+  sealed). `go run ./cmd/verify-ficha ficha.json ficha.sig <key>` checks
+  them. Without `EMERGENCY_ED25519_SEED` (or the offline channel's key)
+  reports stay "Sin sellar" and the server still boots. Format, timing and
+  limits: [`docs/adr/0005-incident-report-seal.md`](adr/0005-incident-report-seal.md).
+- **The page.** It is mobile first, because the family opens it from
+  WhatsApp. From 1024 px wide it fits one screen with no page scroll (the
+  projector):
+  - a header with the state and the clock since the gesture;
+  - a horizontal track of the case's stages (Pidió ayuda → Llegó al servidor →
+    Mamá llamó → Sonó → Contestó → Colgó → Veredicto → Familia avisada →
+    Sellado);
+  - three panels: the route, the call (the player and the transcript, once it
+    ends) and the family (one chip per relative with what Kapso reported).
+  - `devices.user_name`, when the column exists (#104), names the person.
+- **PDF.** `GET /i/{token}/reporte.pdf` is the detailed report for the
+  authorities. Once sealed, it is built from the stored `ficha.json`; before
+  that it is marked "Borrador, sin sellar". The family messages and linked
+  offline emergencies come from the live record and are labelled as outside
+  the seal. It uses `github.com/go-pdf/fpdf` with Lexend embedded.
+- **Family messages.** With the report on, the notifier records every send in
+  `notify_deliveries`, with the number masked. Kapso's message status webhook
+  (`whatsapp.message.sent`, `.delivered`, `.read`, `.failed`) goes to
+  `POST /webhooks/kapso`:
+  - It is signed in `X-Webhook-Signature` with the hex HMAC-SHA256 of the raw
+    body and `KAPSO_WEBHOOK_SECRET`. A bad signature answers `401`; without
+    the secret the route is not mounted.
+  - Statuses only move forward, and a failure never overrides "read".
+  - Other events and unknown message ids answer `200`.
+- **Live.** `GET /i/{token}/live` is a Server-Sent Events stream. It sends
+  an `update` event at once and then one each time the case changes; the
+  server re-reads the case every second. The event data is JSON:
+  `version`, `state`, `live`, `end`, `server_now`, and `sections`, the page's
+  sections rendered as HTML, so the page has a single renderer. A
+  `: keep-alive` comment goes out every 15 s. An `end` event follows the seal,
+  or `{"gone":true}` when the link stops working; then the stream closes. It
+  also closes after 30 min, and the browser reconnects.
+  `GET /i/{token}/estado.json` is the same snapshot, for polling when the
+  stream fails. The family page streams `report.FamilySections` (`status`,
+  `header`, `track`, `call`, `route`, `family`). Other pages, such as the
+  central dashboard (#99), call `report.RenderSections` and
+  `report.Handler.Stream` with their own loader and any sections. They can
+  also use `report.BlockSections` (`timeline`, `points`, `latency`, `calls`,
+  `emergencies`, `seal`), which the family page does not show
+  (`templates/blocks.html` says where each goes). "En vivo", the clock since the gesture and the call timer run
+  while the case is unsealed and something happened in the last 30 min.
+- **What the page adds beyond the seal.** These appear on the page but are
+  not in `ficha.json`:
+  - Twilio's ringing and answer times (`call_progress`). The engine's
+    optional `Progress` hook stores them while the report is on.
+  - Retries (each `calls` row).
+  - The WebRTC fallback, derived: no call connected, and the last one failed
+    after the retry or on a non-+58 number.
+  - Offline emergencies (`emergencies`) of the same device whose
+    `[first_received_at, updated_at]` overlaps the incident's span ±10 min.
+    The schema has no link between the two, so they are matched by phone
+    and time and labelled so.
+  - Big latency numbers from the gesture (phone clock) to the server, to
+    "Mamá llamando", to the phone ringing (when Twilio was polled) and to
+    the WhatsApp claim.
+- **Demo.** With `DEMO_KEY` set, `GET /demo/latest?key=K` redirects to the
+  newest incident's report (creating its link). `GET /demo/next?key=K` waits
+  for the next incident, using the database's clock, and opens its report
+  when it arrives. The key is compared in constant time; a wrong or missing
+  key answers `404`.
+- **Clocks.** Each timeline row says which clock its time comes from: the
+  phone (`triggered_at`, `gps_points.recorded_at`), the server
+  (`incidents.created_at`, `calls.requested_at`, `verdict_at`, `notified_at`,
+  recording and seal times) or ElevenLabs (the call's start, turns and end,
+  from the post-call webhook). `notified_at` is claimed before sending, so the
+  page says "enviado", never "recibido".

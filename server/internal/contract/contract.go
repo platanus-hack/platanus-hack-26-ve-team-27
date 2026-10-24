@@ -212,7 +212,8 @@ func (w CallWebhook) IncidentID() string {
 }
 
 // NotifierMessage is server -> notifier: the one message the family gets for
-// an incident. It carries the location and the verdict, and never a link.
+// an incident. It carries the location and the verdict. The incident report
+// link (#76) is not part of it: the notifier adds it to the text.
 // Verdict and Reason are empty when no call happened (immediate_alert,
 // silent_tracker). IncidentID is the dedupe key: one message per incident.
 type NotifierMessage struct {

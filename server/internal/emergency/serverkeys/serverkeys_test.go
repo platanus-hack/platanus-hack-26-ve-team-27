@@ -121,3 +121,21 @@ func TestGenerateReadsReader(t *testing.T) {
 		t.Error("Generate from a 10-byte reader: want an error")
 	}
 }
+
+func TestSigningKey(t *testing.T) {
+	if k, err := SigningKey(config.Emergency{}); k != nil || err != nil {
+		t.Errorf("unset: %v %v, want nil, nil", k, err)
+	}
+	seed := bytes.Repeat([]byte{7}, 32)
+	k, err := SigningKey(config.Emergency{Ed25519Seed: base64.StdEncoding.EncodeToString(seed)})
+	if err != nil || !k.Equal(ed25519.NewKeyFromSeed(seed)) {
+		t.Errorf("set: %v", err)
+	}
+	full, _, err := FromConfig(config.Emergency{Ed25519Seed: base64.StdEncoding.EncodeToString(seed)}, bytes.NewReader(make([]byte, 64)))
+	if err != nil || !full.Signing.Equal(k) {
+		t.Errorf("SigningKey and FromConfig disagree: %v", err)
+	}
+	if _, err := SigningKey(config.Emergency{Ed25519Seed: "c2VjcmV0LXNlZWQ="}); err == nil || strings.Contains(err.Error(), "c2VjcmV0") || !strings.Contains(err.Error(), "EMERGENCY_ED25519_SEED") {
+		t.Errorf("malformed: %v, want an error naming the variable only", err)
+	}
+}

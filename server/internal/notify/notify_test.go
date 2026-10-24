@@ -253,3 +253,158 @@ func TestFormatWithoutAccuracy(t *testing.T) {
 		t.Fatalf("Format =\n%s\nwant the location line without accuracy", got)
 	}
 }
+
+// bodySender records every message body.
+type bodySender struct {
+	mu     sync.Mutex
+	bodies []string
+}
+
+func (b *bodySender) Send(_ context.Context, _, body string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.bodies = append(b.bodies, body)
+	return nil
+}
+
+type fakeLinks struct {
+	url string
+	err error
+	ids []string
+}
+
+func (f *fakeLinks) ReportURL(_ context.Context, id string) (string, error) {
+	f.ids = append(f.ids, id)
+	return f.url, f.err
+}
+
+// #76: with the report on, the message ends with the report link.
+func TestFormatWithReportAddsTheLinkLast(t *testing.T) {
+	got := FormatWithReport(sampleMessage(), "https://mama.example.com/i/Mq-7vD8oe12cyws_nqXsWg")
+	want := Format(sampleMessage()) + "\nFicha: https://mama.example.com/i/Mq-7vD8oe12cyws_nqXsWg"
+	if got != want {
+		t.Fatalf("FormatWithReport =\n%s\nwant\n%s", got, want)
+	}
+	if FormatWithReport(sampleMessage(), "") != Format(sampleMessage()) {
+		t.Error("a blank report URL changes the message")
+	}
+}
+
+func TestNotifySendsTheReportLink(t *testing.T) {
+	msg := sampleMessage()
+	msg.To = []string{"+584241112233", "+584125556677"}
+	sender := &bodySender{}
+	links := &fakeLinks{url: "https://mama.example.com/i/Mq-7vD8oe12cyws_nqXsWg"}
+	New(&fakeStore{msg: msg}, sender).WithReportLinks(links).Notify(context.Background(), intake.Incident{ID: incidentID})
+	if len(sender.bodies) != 2 || len(links.ids) != 1 || links.ids[0] != incidentID {
+		t.Fatalf("bodies %d, link asked for %v", len(sender.bodies), links.ids)
+	}
+	for _, b := range sender.bodies {
+		if !strings.HasSuffix(b, "\nFicha: https://mama.example.com/i/Mq-7vD8oe12cyws_nqXsWg") {
+			t.Errorf("body =\n%s\nwant the report line last", b)
+		}
+	}
+}
+
+// A link that cannot be made never stops the alert.
+func TestNotifyWithoutAReportLinkStillSends(t *testing.T) {
+	for _, links := range []*fakeLinks{{err: errors.New("db down")}, {url: ""}} {
+		sender := &bodySender{}
+		New(&fakeStore{msg: sampleMessage()}, sender).WithReportLinks(links).Notify(context.Background(), intake.Incident{ID: incidentID})
+		if len(sender.bodies) != 1 {
+			t.Fatalf("sent %d messages, want 1", len(sender.bodies))
+		}
+		assertNoLink(t, sender.bodies[0])
+	}
+	// Report off: no links at all.
+	sender := &bodySender{}
+	New(&fakeStore{msg: sampleMessage()}, sender).Notify(context.Background(), intake.Incident{ID: incidentID})
+	assertNoLink(t, sender.bodies[0])
+}
+
+// The report link goes through Kapso with previews off.
+func TestKapsoSendsTheReportLinkWithoutPreview(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+	}))
+	defer srv.Close()
+	k := &Kapso{BaseURL: srv.URL, APIKey: "k", PhoneNumberID: "1", Client: srv.Client()}
+	if err := k.Send(context.Background(), "+584241112233", FormatWithReport(sampleMessage(), "https://mama.example.com/i/Mq-7vD8oe12cyws_nqXsWg")); err != nil {
+		t.Fatal(err)
+	}
+	text, _ := got["text"].(map[string]any)
+	if text["preview_url"] != false || !strings.Contains(text["body"].(string), "Ficha: https://") {
+		t.Errorf("text = %v, want the link with preview_url false", text)
+	}
+}
+
+// #76: Kapso answers with Meta's shape; messages[0].id is the wamid its
+// status webhooks carry.
+func TestKapsoSendWithIDReturnsTheMessageID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"messaging_product":"whatsapp","contacts":[{"input":"584241112233","wa_id":"584241112233"}],"messages":[{"id":"wamid.HBgN123=="}]}`))
+	}))
+	defer srv.Close()
+	k := &Kapso{BaseURL: srv.URL, APIKey: "k", PhoneNumberID: "1", Client: srv.Client()}
+	id, err := k.SendWithID(context.Background(), "+584241112233", "hola")
+	if err != nil || id != "wamid.HBgN123==" {
+		t.Fatalf("SendWithID = %q, %v", id, err)
+	}
+}
+
+type deliveryEntry struct {
+	incident, to, id string
+	failed           bool
+}
+
+type fakeDeliveries struct {
+	mu      sync.Mutex
+	entries []deliveryEntry
+}
+
+func (f *fakeDeliveries) Sent(_ context.Context, incidentID, to, _, messageID string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.entries = append(f.entries, deliveryEntry{incidentID, to, messageID, err != nil})
+}
+
+// idSender returns a message id per number and fails for the ones in fail.
+type idSender struct{ fail map[string]bool }
+
+func (s idSender) Send(ctx context.Context, to, body string) error {
+	_, err := s.SendWithID(ctx, to, body)
+	return err
+}
+
+func (s idSender) SendWithID(_ context.Context, to, _ string) (string, error) {
+	if s.fail[to] {
+		return "", errors.New("provider down")
+	}
+	return "wamid." + to[len(to)-4:], nil
+}
+
+// Every send is recorded, the failed one too, with the provider's id.
+func TestNotifyRecordsEveryDelivery(t *testing.T) {
+	msg := sampleMessage()
+	msg.To = []string{"+584241112233", "+584125556677"}
+	log := &fakeDeliveries{}
+	New(&fakeStore{msg: msg}, idSender{fail: map[string]bool{"+584125556677": true}}).WithDeliveries(log).
+		Notify(context.Background(), intake.Incident{ID: incidentID})
+	want := []deliveryEntry{{incidentID, "+584241112233", "wamid.2233", false}, {incidentID, "+584125556677", "", true}}
+	if len(log.entries) != 2 || log.entries[0] != want[0] || log.entries[1] != want[1] {
+		t.Errorf("deliveries = %+v, want %+v", log.entries, want)
+	}
+	// A plain Sender (Twilio SMS) still records, with no id.
+	log = &fakeDeliveries{}
+	New(&fakeStore{msg: sampleMessage()}, &fakeSender{}).WithDeliveries(log).Notify(context.Background(), intake.Incident{ID: incidentID})
+	if len(log.entries) != 1 || log.entries[0].id != "" || log.entries[0].failed {
+		t.Errorf("plain sender deliveries = %+v", log.entries)
+	}
+}
+
+func TestChannelOf(t *testing.T) {
+	if ChannelOf(&Kapso{}) != "whatsapp" || ChannelOf(&SMS{}) != "sms" || ChannelOf(&fakeSender{}) != "" {
+		t.Error("ChannelOf")
+	}
+}
