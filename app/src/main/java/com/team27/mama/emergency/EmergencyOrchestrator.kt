@@ -57,6 +57,11 @@ object EmergencyTiming {
  * may be called from any thread: a short [lock] guards only `declared` and their phase
  * compare-and-set.
  *
+ * [declare] is refused only while an emergency is still alerting. During CANCELLING it starts a
+ * new emergency with a new id: the server applies a cancel only to its own emergency_id, so a
+ * real trigger right after a false alarm is never dropped. The old cancel stops when the new
+ * emergency begins, and the old session can no longer touch the state.
+ *
  * [onError] receives every failure the emergency survives (a port that threw, a refused HTTP
  * reply, an HTTP timeout): a short tag such as `http: HTTP 422`, never location, frame bytes,
  * SMS text or phone numbers. Cancellation is never reported.
@@ -89,16 +94,17 @@ class EmergencyOrchestrator(
     private var declared: Session? = null
 
     override fun declare(): Boolean {
-        // Caller code runs before the lock; the results are dropped when an emergency is already active.
+        // Caller code runs before the lock; the results are dropped when an emergency is already alerting.
         val id = newEmergencyId()
         val override = channelOverride()
         val config = config()
         val fix = orElse("fix", null) { location.lastKnown() }
         val next = synchronized(lock) {
+            // A CANCELLING emergency gives way: offline its cancel can take CANCEL_WINDOW_MS to end.
             val before = mutableState.getAndUpdate {
-                if (it.phase.isActive) it else EmergencyState(phase = EmergencyPhase.SENDING, emergencyId = id)
+                if (it.phase.isCancellable) it else EmergencyState(phase = EmergencyPhase.SENDING, emergencyId = id)
             }
-            if (before.phase.isActive) return false
+            if (before.phase.isCancellable) return false
             Session(id, override, config, fix).also { declared = it }
         }
         scope.launch { next.begin() }
@@ -106,8 +112,9 @@ class EmergencyOrchestrator(
     }
 
     /**
-     * CANCELLING right away, on the calling thread, so a second cancel or a declare sees it.
-     * The scope then cancels exactly the session that was declared, never a later one.
+     * CANCELLING right away, on the calling thread, so a second cancel sees it and a declare
+     * starts a new emergency. The scope then cancels exactly the session that was declared, never
+     * a later one.
      */
     override fun cancel() {
         val target = synchronized(lock) {
@@ -164,9 +171,13 @@ class EmergencyOrchestrator(
         /** True once `mesh.start()` succeeded; reset when a broadcast is refused. */
         var meshRunning = false
 
-        /** Applies [f] to the state unless this session was replaced or cancelled. */
+        /**
+         * Applies [f] to the state unless this session was replaced or cancelled. The id check
+         * covers the gap between a [declare] during CANCELLING and the new session's [begin]: this
+         * session is still current there, but the state already belongs to the new emergency.
+         */
         fun update(f: (EmergencyState) -> EmergencyState) {
-            if (session === this) mutableState.update(f)
+            if (session === this) mutableState.update { if (it.emergencyId == id) f(it) else it }
         }
 
         fun use(channel: Channel) = update { it.copy(channelsUsed = it.channelsUsed + channel) }
@@ -223,10 +234,10 @@ class EmergencyOrchestrator(
             }
         }
 
-        /** CANCELLED: every job of this emergency stops and [declare] works again. */
+        /** CANCELLED: every job of this emergency stops and [declare] works again. A newer emergency's state is left alone. */
         fun finish() {
             if (session !== this) return
-            mutableState.update { it.copy(phase = EmergencyPhase.CANCELLED) }
+            mutableState.update { if (it.emergencyId == id) it.copy(phase = EmergencyPhase.CANCELLED) else it }
             session = null
             jobs.cancel()
         }

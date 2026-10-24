@@ -487,7 +487,6 @@ class EmergencyLifecycleTest {
                 assertEquals(1, sms.sent.size)
                 o.cancel()
                 assertEquals(EmergencyPhase.CANCELLING, o.state.value.phase)
-                assertFalse(o.declare())
                 runCurrent()
                 assertEquals(listOf(Kind.ALERT, Kind.CANCEL), mesh.broadcasts.map { decodeMesh(it).kind })
                 assertEquals(2, sms.sent.size)
@@ -526,7 +525,6 @@ class EmergencyLifecycleTest {
             o.declare()
             o.cancel()
             o.cancel()
-            assertFalse(o.declare())
             runCurrent()
             assertEquals(EmergencyPhase.CANCELLED, o.state.value.phase)
             advanceTimeBy(600_000)
@@ -584,6 +582,68 @@ class EmergencyLifecycleTest {
             at(testScheduler.currentTime + 5_000)
             assertEquals(n + 1, mesh.broadcasts.size)
             assertEquals(EmergencyPhase.SEARCHING_NEARBY, o.state.value.phase)
+        }
+    }
+
+    /** Ids 42, 43, … so a second emergency is told apart from the first. */
+    private fun newIds(): () -> Long {
+        val ids = generateSequence(42L) { it + 1 }.iterator()
+        return { ids.next() }
+    }
+
+    @Test
+    fun declareWhileCancellingStartsANewEmergency() = runTest {
+        with(EmergencyTestKit()) {
+            val o = orchestrator(newEmergencyId = newIds())
+            o.declare()
+            at(6_000)
+            o.cancel()
+            runCurrent()
+            assertEquals(Kind.CANCEL, decodeMesh(mesh.broadcasts.last()).kind)
+            // Offline, no ack comes back: the cancel would hold CANCELLING for the whole window.
+            assertTrue(o.declare())
+            assertEquals(EmergencyPhase.SENDING to 43L, o.state.value.phase to o.state.value.emergencyId)
+            runCurrent()
+            val alert = decodeMesh(mesh.broadcasts.last())
+            assertEquals(Triple(Kind.ALERT, 43L, 0), Triple(alert.kind, alert.emergencyId, alert.seq))
+            assertEquals(alert, decodeSms(sms.sent.last().second))
+            assertEquals(EmergencyPhase.SEARCHING_NEARBY, o.state.value.phase)
+            assertEquals(0, o.state.value.seq)
+            val started = mesh.broadcasts.size - 1
+            // The old cancel's ack and its window end touch only emergency 42.
+            mesh.incoming.emit(meshAck(42, 1))
+            runCurrent()
+            at(6_000 + EmergencyTiming.CANCEL_WINDOW_MS + 1)
+            assertEquals(EmergencyPhase.SEARCHING_NEARBY to 43L, o.state.value.phase to o.state.value.emergencyId)
+            assertTrue(mesh.broadcasts.drop(started).map(::decodeMesh).all { it.kind == Kind.ALERT && it.emergencyId == 43L })
+            // "Fue sin querer" now cancels the new emergency.
+            o.cancel()
+            runCurrent()
+            val cancel = decodeMesh(mesh.broadcasts.last())
+            assertEquals(Triple(Kind.CANCEL, 43L, 1), Triple(cancel.kind, cancel.emergencyId, cancel.seq))
+        }
+    }
+
+    @Test
+    fun oldCancelEndingBeforeTheNewEmergencyRunsNeverEndsIt() = runTest {
+        with(EmergencyTestKit()) {
+            val o = orchestrator(newEmergencyId = newIds())
+            o.declare()
+            at(6_000)
+            o.cancel()
+            runCurrent()
+            // Up to the instant the cancel window ends, without running it: the old session's
+            // finish is queued ahead of the new emergency's begin.
+            advanceTimeBy(6_000 + EmergencyTiming.CANCEL_WINDOW_MS - testScheduler.currentTime)
+            assertEquals(EmergencyPhase.CANCELLING, o.state.value.phase)
+            assertTrue(o.declare())
+            runCurrent()
+            assertEquals(EmergencyPhase.SEARCHING_NEARBY to 43L, o.state.value.phase to o.state.value.emergencyId)
+            val alert = decodeMesh(mesh.broadcasts.last())
+            assertEquals(Kind.ALERT to 43L, alert.kind to alert.emergencyId)
+            val n = mesh.broadcasts.size
+            at(testScheduler.currentTime + 5_000)
+            assertEquals(n + 1, mesh.broadcasts.size)
         }
     }
 }

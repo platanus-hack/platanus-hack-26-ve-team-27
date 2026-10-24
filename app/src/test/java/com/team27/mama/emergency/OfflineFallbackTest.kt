@@ -59,6 +59,12 @@ class OfflineFallbackTest {
     }
 
     @Test
+    fun cancellingReleasesAtOnceSoTheTriggerTakesANewAlert() = runTest {
+        OfflineFallback.awaitDelivered(FakeControls(EmergencyPhase.CANCELLING))
+        assertEquals(0L, currentTime)
+    }
+
+    @Test
     fun cancelledEmergencyReleasesAtOnce() = runTest {
         OfflineFallback.awaitDelivered(FakeControls(EmergencyPhase.CANCELLED))
         assertEquals(0L, currentTime)
