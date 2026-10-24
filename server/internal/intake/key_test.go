@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
-	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/devicekeys"
 )
 
 const vectorKeyB64 = "Qjj0xMgcOctYzPP1+kmbgiXDnjbvMvg+Cm1vpph2NXo="
@@ -130,21 +129,15 @@ func TestDeviceRegistrationStoresKey(t *testing.T) {
 	}
 }
 
-func TestReRegistrationWithoutKeyKeepsKey(t *testing.T) {
-	e := newEnv(t)
-	var m map[string]any
-	if err := json.Unmarshal(sample(t, "device_registration.json"), &m); err != nil {
-		t.Fatal(err)
+// deviceRow is what a refused registration must leave untouched.
+func (e *env) deviceRow(id string) string {
+	e.t.Helper()
+	var row string
+	err := e.pool.QueryRow(`SELECT phone_number || '|' || family_numbers::text || '|' || duress_phrase || '|' || coalesce(app_version, '') || '|' || updated_at::text FROM devices WHERE id = $1`, id).Scan(&row)
+	if err != nil {
+		e.t.Fatal(err)
 	}
-	delete(m, "ed25519_public_key")
-	delete(m, "ed25519_signature")
-	body, _ := json.Marshal(m)
-	if rec := e.post("/devices", body); rec.Code != http.StatusNoContent {
-		t.Fatalf("status = %d %s", rec.Code, rec.Body)
-	}
-	if _, kid := e.keyOf(deviceID); kid != "6e664c27c4356d73" {
-		t.Fatalf("key_id = %q after re-registration without a key", kid)
-	}
+	return row
 }
 
 func TestDeviceKeyRegistration(t *testing.T) {
@@ -162,14 +155,67 @@ func TestDeviceKeyRegistration(t *testing.T) {
 			t.Fatalf("status = %d %s", rec.Code, rec.Body)
 		}
 	})
-	t.Run("new key replaces", func(t *testing.T) {
+	t.Run("same key updates the registration", func(t *testing.T) {
 		e := newEnv(t)
-		if rec := e.post("/devices", reg(deviceID, onesKey)); rec.Code != http.StatusNoContent {
+		r := signedReg(deviceID, vectorKey)
+		r.PhoneNumber, r.FamilyNumbers = "+584149998877", []string{"+584241112233"}
+		raw, _ := json.Marshal(r)
+		if rec := e.post("/devices", raw); rec.Code != http.StatusNoContent {
 			t.Fatalf("status = %d %s", rec.Code, rec.Body)
 		}
-		key, kid := e.keyOf(deviceID)
-		if !bytes.Equal(key, ones) || kid != hex.EncodeToString(devicekeys.KeyID(ones)) {
-			t.Fatalf("key = %x, key_id = %s", key, kid)
+		if row := e.deviceRow(deviceID); !strings.HasPrefix(row, "+584149998877|{+584241112233}|") {
+			t.Fatalf("device row = %s", row)
+		}
+		if _, kid := e.keyOf(deviceID); kid != "6e664c27c4356d73" {
+			t.Fatalf("key_id = %q", kid)
+		}
+	})
+	t.Run("different key is refused", func(t *testing.T) {
+		e := newEnv(t)
+		before := e.deviceRow(deviceID)
+		rec := e.post("/devices", reg(deviceID, onesKey))
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "registered key") {
+			t.Fatalf("status = %d %s, want 409", rec.Code, rec.Body)
+		}
+		want, _ := base64.StdEncoding.DecodeString(vectorKeyB64)
+		if key, kid := e.keyOf(deviceID); !bytes.Equal(key, want) || kid != "6e664c27c4356d73" || bytes.Equal(key, ones) {
+			t.Fatalf("key = %x, key_id = %s after refused registration", key, kid)
+		}
+		if after := e.deviceRow(deviceID); after != before {
+			t.Fatalf("device row changed: %s -> %s", before, after)
+		}
+	})
+	t.Run("keyless registration of a bound device is refused", func(t *testing.T) {
+		e := newEnv(t)
+		before := e.deviceRow(deviceID)
+		body := []byte(`{"device_id":"` + deviceID + `","phone_number":"+584149998877","family_numbers":["+584241112233"],"duress_phrase":"otra frase"}`)
+		if rec := e.post("/devices", body); rec.Code != http.StatusConflict {
+			t.Fatalf("status = %d %s, want 409", rec.Code, rec.Body)
+		}
+		if _, kid := e.keyOf(deviceID); kid != "6e664c27c4356d73" {
+			t.Fatalf("key_id = %q", kid)
+		}
+		if after := e.deviceRow(deviceID); after != before {
+			t.Fatalf("device row changed: %s -> %s", before, after)
+		}
+	})
+	t.Run("device without a key keeps keyless registration", func(t *testing.T) {
+		e := newEnv(t)
+		body := []byte(`{"device_id":"` + other + `","phone_number":"+584141234567","family_numbers":[],"duress_phrase":"p"}`)
+		for i := 0; i < 2; i++ {
+			if rec := e.post("/devices", body); rec.Code != http.StatusNoContent {
+				t.Fatalf("status = %d %s", rec.Code, rec.Body)
+			}
+		}
+		if key, kid := e.keyOf(other); key != nil || kid != "" {
+			t.Fatalf("key = %x, key_id = %s, want none", key, kid)
+		}
+		// It can still bind a key later.
+		if rec := e.post("/devices", reg(other, onesKey)); rec.Code != http.StatusNoContent {
+			t.Fatalf("bind later: status = %d %s", rec.Code, rec.Body)
+		}
+		if key, _ := e.keyOf(other); !bytes.Equal(key, ones) {
+			t.Fatalf("key = %x, want the bound one", key)
 		}
 	})
 	t.Run("key of another device", func(t *testing.T) {

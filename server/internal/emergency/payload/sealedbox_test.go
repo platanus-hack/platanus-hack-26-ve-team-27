@@ -129,6 +129,17 @@ func TestOpenRejects(t *testing.T) {
 	}
 }
 
+func TestOpenRejectsBadRecipient(t *testing.T) {
+	k := serverX25519()
+	box, _ := Seal(rand.Reader, k.PublicKey(), []byte("x"))
+	p, _ := ecdh.P256().GenerateKey(rand.Reader)
+	for name, key := range map[string]*ecdh.PrivateKey{"nil": nil, "wrong curve": p} {
+		if _, err := Open(key, box); err == nil {
+			t.Errorf("%s: want error", name)
+		}
+	}
+}
+
 func TestSealRejectsWrongCurve(t *testing.T) {
 	p, _ := ecdh.P256().GenerateKey(rand.Reader)
 	if _, err := Seal(rand.Reader, p.PublicKey(), []byte("x")); err == nil {

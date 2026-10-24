@@ -145,3 +145,21 @@ func TestDuressModelIsOptional(t *testing.T) {
 		}
 	}
 }
+
+func TestCallSpikeVarsAreOptional(t *testing.T) {
+	c := LoadFrom(envFrom(map[string]string{
+		"ELEVENLABS_VOICE_ID": " voice123 ",
+		"CALL_SPIKE_TOKEN":    " tok ",
+	}))
+	if c.ElevenLabs.VoiceID != "voice123" || c.ElevenLabs.CallSpikeToken != "tok" {
+		t.Errorf("VoiceID, CallSpikeToken = %q, %q; want voice123, tok", c.ElevenLabs.VoiceID, c.ElevenLabs.CallSpikeToken)
+	}
+	for _, name := range LoadFrom(envFrom(nil)).Missing() {
+		if name == "ELEVENLABS_VOICE_ID" || name == "CALL_SPIKE_TOKEN" {
+			t.Errorf("Missing() lists the optional %s", name)
+		}
+	}
+	if s := c.String(); strings.Contains(s, "tok") || strings.Contains(s, "voice123") {
+		t.Errorf("String() leaks a value: %s", s)
+	}
+}

@@ -26,7 +26,7 @@ func Sign(p Payload, key ed25519.PrivateKey) ([]byte, error) {
 		return nil, err
 	}
 	if p.DeviceID != DeviceID(key.Public().(ed25519.PublicKey)) {
-		return nil, fmt.Errorf("payload: device_id does not match the signing key")
+		return nil, fmt.Errorf("%w: device_id does not match the signing key", ErrSignature)
 	}
 	return append(body, ed25519.Sign(key, signedMessage(body))...), nil
 }
@@ -53,8 +53,20 @@ func Verify(b []byte, pub ed25519.PublicKey) (Payload, error) {
 	if p.DeviceID != DeviceID(pub) {
 		return Payload{}, fmt.Errorf("%w: device_id does not match the public key", ErrSignature)
 	}
-	if !ed25519.Verify(pub, signedMessage(b[:BodySize]), b[BodySize:]) {
-		return Payload{}, fmt.Errorf("%w: Ed25519 verification failed", ErrSignature)
+	if err := verifySignature(pub, b[:BodySize], b[BodySize:]); err != nil {
+		return Payload{}, err
 	}
 	return p, nil
+}
+
+// verifySignature checks sig over the context plus body; Verify and VerifyAck
+// share it. It also rejects a public key of the wrong length as ErrSignature.
+func verifySignature(pub ed25519.PublicKey, body, sig []byte) error {
+	if len(pub) != ed25519.PublicKeySize {
+		return fmt.Errorf("%w: public key is %d bytes", ErrSignature, len(pub))
+	}
+	if !ed25519.Verify(pub, signedMessage(body), sig) {
+		return fmt.Errorf("%w: Ed25519 verification failed", ErrSignature)
+	}
+	return nil
 }

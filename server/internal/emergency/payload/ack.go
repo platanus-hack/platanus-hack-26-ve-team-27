@@ -33,11 +33,8 @@ func VerifyAck(b []byte, pub ed25519.PublicKey) (Ack, error) {
 	if Kind(b[1]) != KindAck {
 		return Ack{}, fmt.Errorf("%w: ack kind %d", ErrFormat, b[1])
 	}
-	if len(pub) != ed25519.PublicKeySize {
-		return Ack{}, fmt.Errorf("%w: public key is %d bytes", ErrSignature, len(pub))
-	}
-	if !ed25519.Verify(pub, signedMessage(b[:AckBodySize]), b[AckBodySize:]) {
-		return Ack{}, fmt.Errorf("%w: Ed25519 verification failed", ErrSignature)
+	if err := verifySignature(pub, b[:AckBodySize], b[AckBodySize:]); err != nil {
+		return Ack{}, err
 	}
 	return Ack{
 		EmergencyID: binary.BigEndian.Uint64(b[2:]),

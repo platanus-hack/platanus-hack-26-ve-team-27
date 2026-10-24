@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/call"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/db"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/remoteconfig"
@@ -41,7 +42,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newMux(pool, notifier, keys, cfg.Emergency.SMSNumber),
+		Handler:           newMux(pool, notifier, call.NewRoutes(cfg.ElevenLabs), keys, cfg.Emergency.SMSNumber),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

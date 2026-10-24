@@ -215,8 +215,8 @@ func TestVerifyBadPublicKeyLength(t *testing.T) {
 }
 
 func TestSignRejectsMismatchedDeviceID(t *testing.T) {
-	if _, err := Sign(devicePayload(), serverKey()); err == nil {
-		t.Fatal("expected error")
+	if _, err := Sign(devicePayload(), serverKey()); !errors.Is(err, ErrSignature) {
+		t.Fatalf("err = %v, want ErrSignature", err)
 	}
 }
 

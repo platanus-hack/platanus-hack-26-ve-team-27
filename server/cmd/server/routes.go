@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/call"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/ingest"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/remoteconfig"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/serverkeys"
@@ -12,15 +13,17 @@ import (
 
 // newMux registers every HTTP route. Add new routes here so there is one
 // place to see the whole API surface. pool is nil when DATABASE_URL is unset;
-// notifier alerts the family for the incidents that skip the call. keys is the
-// server key pair and smsNumber the central SMS number served in GET /config.
+// notifier alerts the family for the incidents that skip the call; calls
+// holds the ElevenLabs webhook and the #11 spike route. keys is the server key
+// pair and smsNumber the central SMS number served in GET /config.
 // Without a pool the offline emergency routes answer 503.
-func newMux(pool *sql.DB, notifier intake.Notifier, keys serverkeys.Keys, smsNumber string) *http.ServeMux {
+func newMux(pool *sql.DB, notifier intake.Notifier, calls *call.Routes, keys serverkeys.Keys, smsNumber string) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleRoot)
 	registerDeployRoutes(mux, pool)
 	// The call engine (#18) replaces LogHandoff.
 	intake.New(pool, intake.LogHandoff{}, notifier).Register(mux)
+	calls.Register(mux)
 	remoteconfig.New(smsNumber, keys).Register(mux)
 	// The Kapso module replaces LogPublisher. #58 mounts the SMS webhook with
 	// emergencies. emergencies is nil without a database, so the webhook
