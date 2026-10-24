@@ -19,9 +19,10 @@ var _ Store = DBStore{}
 // NewDBStore returns the Store on pool. pool must not be nil.
 func NewDBStore(pool *sql.DB) DBStore { return DBStore{pool: pool} }
 
-// Message reads the family numbers of the incident's device, its newest GPS
-// fix (inc.Location when none is stored) and its verdict: duress if any call
-// says duress, otherwise the newest judged call's verdict.
+// Message reads the family numbers and own phone number of the incident's
+// device, its newest GPS fix (inc.Location when none is stored) and its
+// verdict: duress if any call says duress, otherwise the newest judged call's
+// verdict.
 func (s DBStore) Message(ctx context.Context, inc intake.Incident) (contract.NotifierMessage, error) {
 	msg := contract.NotifierMessage{
 		IncidentID:  inc.ID,
@@ -29,6 +30,14 @@ func (s DBStore) Message(ctx context.Context, inc intake.Incident) (contract.Not
 		Branch:      inc.Branch,
 		Location:    inc.Location,
 		TriggeredAt: inc.TriggeredAt,
+	}
+
+	err := s.pool.QueryRowContext(ctx, `
+		SELECT d.phone_number
+		FROM incidents i JOIN devices d ON d.id = i.device_id
+		WHERE i.id = $1`, inc.ID).Scan(&msg.Reporter)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return msg, err
 	}
 
 	rows, err := s.pool.QueryContext(ctx, `
