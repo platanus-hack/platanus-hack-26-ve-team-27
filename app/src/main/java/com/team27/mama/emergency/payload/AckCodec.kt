@@ -17,9 +17,7 @@ object AckCodec {
             .putLong(ack.emergencyId)
             .putShort(ack.seq.toShort())
             .array()
-        val sig = signer.sign(SIGNATURE_CONTEXT_BYTES + body)
-        check(sig.size == PayloadFormat.SIGNATURE_SIZE) { "signer returned ${sig.size} bytes" }
-        return body + sig
+        return signWithContext(body, signer)
     }
 
     fun verify(bytes: ByteArray, serverPublicKey: ByteArray): AckInfo {
@@ -38,9 +36,7 @@ object AckCodec {
         if (kind != PayloadFormat.KIND_ACK) {
             throw PayloadException(PayloadException.Reason.FORMAT, "not an ack: kind $kind")
         }
-        if (serverPublicKey.size != 32) {
-            throw PayloadException(PayloadException.Reason.SIGNATURE, "public key must be 32 bytes")
-        }
+        requirePublicKeySize(serverPublicKey)
         val emergencyId = b.long
         val seq = b.short.toInt() and 0xFFFF
         val body = bytes.copyOfRange(0, PayloadFormat.ACK_BODY_SIZE)

@@ -46,6 +46,22 @@ val missingReleaseSigning: String? = run {
     }
 }
 
+// First-run setup (#15): where the app sends DeviceRegistration and the number it
+// saves as the "Mamá" contact. Each comes from a Gradle property (-Pmama.serverUrl=...,
+// or ~/.gradle/gradle.properties), else an env var. Neither is a secret, but both
+// change per deploy, so they are not hard-coded. The server URL defaults to
+// http://127.0.0.1:8080, which reaches a laptop's local server after
+// `adb reverse tcp:8080 tcp:8080`.
+fun buildSetting(property: String, vararg envVars: String, default: String = ""): String =
+    (listOf(providers.gradleProperty(property)) + envVars.map { providers.environmentVariable(it) })
+        .firstNotNullOfOrNull { it.orNull?.trim()?.takeIf(String::isNotEmpty) } ?: default
+val mamaServerUrl = buildSetting("mama.serverUrl", "MAMA_SERVER_URL", default = "http://127.0.0.1:8080")
+val mamaTwilioNumber = buildSetting("mama.twilioNumber", "MAMA_TWILIO_NUMBER", "TWILIO_PHONE_NUMBER")
+// Fallback SMS number for the offline path until GET /config has been cached (#55).
+// Obviously fake placeholder (NANP 555-01xx); real deployments override it.
+val mamaDefaultSmsNumber = buildSetting("mama.defaultSmsNumber", "MAMA_DEFAULT_SMS_NUMBER", default = "+15555550100")
+fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 android {
     namespace = "com.team27.mama"
     compileSdk {
@@ -59,16 +75,9 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        // Gradle property, else env var, else the default; no trailing slash.
-        val serverUrl = providers.gradleProperty("mama.serverUrl")
-            .orElse(providers.environmentVariable("MAMA_SERVER_URL"))
-            .orElse("https://mama-server.onrender.com").get().trim().trimEnd('/')
-        // Obviously fake placeholder (NANP 555-01xx); real deployments override it.
-        val defaultSmsNumber = providers.gradleProperty("mama.defaultSmsNumber")
-            .orElse(providers.environmentVariable("MAMA_DEFAULT_SMS_NUMBER"))
-            .orElse("+15555550100").get().trim()
-        buildConfigField("String", "SERVER_URL", "\"$serverUrl\"")
-        buildConfigField("String", "DEFAULT_SMS_NUMBER", "\"$defaultSmsNumber\"")
+        buildConfigField("String", "SERVER_URL", mamaServerUrl.asBuildConfigString())
+        buildConfigField("String", "TWILIO_NUMBER", mamaTwilioNumber.asBuildConfigString())
+        buildConfigField("String", "DEFAULT_SMS_NUMBER", mamaDefaultSmsNumber.asBuildConfigString())
     }
 
     signingConfigs {
@@ -113,6 +122,8 @@ tasks.withType<Test>().configureEach {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

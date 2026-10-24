@@ -39,6 +39,14 @@ type ElevenLabs struct {
 	AgentID       string // ELEVENLABS_AGENT_ID, the agent_id of the "Mamá" agent
 	PhoneNumberID string // ELEVENLABS_PHONE_NUMBER_ID, agent_phone_number_id of the imported Twilio number
 	WebhookSecret string // ELEVENLABS_WEBHOOK_SECRET, HMAC secret of the post-call webhook
+	// VoiceID is ELEVENLABS_VOICE_ID, optional: when set, each call
+	// overrides the agent's voice with it (Mariana's cloned voice, #35).
+	// Blank keeps the voice set on the agent.
+	VoiceID string
+	// CallSpikeToken is CALL_SPIKE_TOKEN, optional: the bearer token of the
+	// #11 spike route POST /spike/call. Blank leaves the route off, so a
+	// deploy never exposes an open "call any number" endpoint.
+	CallSpikeToken string
 }
 
 // Twilio owns the caller number and sends the SMS fallback.
@@ -84,10 +92,12 @@ func LoadFrom(getenv func(string) string) Config {
 		DatabaseURL: get("DATABASE_URL"),
 		Notifier:    strings.ToLower(get("NOTIFIER")),
 		ElevenLabs: ElevenLabs{
-			APIKey:        get("ELEVENLABS_API_KEY"),
-			AgentID:       get("ELEVENLABS_AGENT_ID"),
-			PhoneNumberID: get("ELEVENLABS_PHONE_NUMBER_ID"),
-			WebhookSecret: get("ELEVENLABS_WEBHOOK_SECRET"),
+			APIKey:         get("ELEVENLABS_API_KEY"),
+			AgentID:        get("ELEVENLABS_AGENT_ID"),
+			PhoneNumberID:  get("ELEVENLABS_PHONE_NUMBER_ID"),
+			WebhookSecret:  get("ELEVENLABS_WEBHOOK_SECRET"),
+			VoiceID:        get("ELEVENLABS_VOICE_ID"),
+			CallSpikeToken: get("CALL_SPIKE_TOKEN"),
 		},
 		Twilio: Twilio{
 			AccountSID:  get("TWILIO_ACCOUNT_SID"),
@@ -118,8 +128,8 @@ func LoadFrom(getenv func(string) string) Config {
 }
 
 // vars lists every env var name with its value, in a fixed order. PORT and
-// NOTIFIER are left out because they always have a value, DURESS_LLM_MODEL
-// because it is optional.
+// NOTIFIER are left out because they always have a value, DURESS_LLM_MODEL,
+// ELEVENLABS_VOICE_ID and CALL_SPIKE_TOKEN because they are optional.
 func (c Config) vars() []struct{ name, value string } {
 	return append([]struct{ name, value string }{
 		{"DATABASE_URL", c.DatabaseURL},
