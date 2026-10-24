@@ -56,6 +56,13 @@ class MeshGatewayImplTest {
         assertEquals(0, toBroadcastOrNull(id, "MAMA1:x", 9u, 1L, null)!!.relayHops)
     }
 
+    @Test fun ttlIsClampedToSeven() {
+        assertEquals(7, toBroadcastOrNull(id, "MAMA1:x", 9u, 1L, null)!!.ttl)
+        assertEquals(7, toBroadcastOrNull(id, "MAMA1:x", 255u, 1L, null)!!.ttl)
+        assertEquals(5, toBroadcastOrNull(id, "MAMA1:x", 5u, 1L, null)!!.ttl)
+        assertEquals(0, toBroadcastOrNull(id, "MAMA1:x", 0u, 1L, null)!!.ttl)
+    }
+
     @Test fun signingKeyIsHex() {
         val b = toBroadcastOrNull(id, "MAMA1:x", 7u, 1L, byteArrayOf(0x0a, 0xff.toByte()))!!
         assertEquals("0aff", b.senderPublicKeyHex)
@@ -168,6 +175,27 @@ class MeshGatewayImplTest {
         val g = MeshGatewayImpl(identity) { identity.peerId; FakeNode() }
         assertFalse(g.start())
         assertFalse(g.isRunning)
+    }
+
+    @Test fun failedIdentityWrite_startFalseThenRetrySucceeds() {
+        var commits = 0
+        val store = object : com.team27.mama.mesh.crypto.KeyValueStore {
+            val map = HashMap<String, String>()
+            override fun getString(key: String): String? = map[key]
+            override fun putString(key: String, value: String) { map[key] = value }
+            override fun putStrings(values: Map<String, String>): Boolean {
+                if (commits++ == 0) return false // first commit() fails, nothing written
+                map.putAll(values)
+                return true
+            }
+        }
+        val identity = LazyMeshIdentity { com.team27.mama.mesh.crypto.MeshKeyStore.loadOrCreate(store) }
+        val g = MeshGatewayImpl(identity) { identity.peerId; FakeNode() }
+        assertFalse(g.start())
+        assertTrue(store.map.isEmpty())
+        assertTrue(g.start())
+        assertEquals(2, store.map.size)
+        assertEquals(identity.peerId, com.team27.mama.mesh.crypto.MeshKeyStore.loadOrCreate(store).myPeerID)
     }
 
     private class MapStore : com.team27.mama.mesh.crypto.KeyValueStore {

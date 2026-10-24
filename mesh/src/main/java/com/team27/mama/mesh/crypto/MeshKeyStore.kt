@@ -3,7 +3,8 @@
 // dfc67dad41691128bc6e7425bd69f2f409cb5bbf, file app/src/main/java/com/bitchat/android/crypto/EncryptionService.kt.
 // GPL-3.0: see LICENSE and mesh/NOTICE.md.
 // MAMÁ changes: only key persistence is kept (setUpEncryptedPrefs, same schemes, our own prefs file);
-// both private keys are stored as Base64 and regenerated together when either is missing or invalid.
+// both private keys are stored as Base64 and regenerated together when either is missing or invalid;
+// a failed write throws instead of returning an identity that was never saved.
 
 package com.team27.mama.mesh.crypto
 
@@ -19,9 +20,13 @@ internal interface KeyValueStore {
     fun getString(key: String): String?
     fun putString(key: String, value: String)
 
-    /** Writes all [values] together; implementations should make this a single atomic write. */
-    fun putStrings(values: Map<String, String>) {
+    /**
+     * Writes all [values] together; implementations should make this a single atomic write.
+     * Returns false when the write did not reach storage.
+     */
+    fun putStrings(values: Map<String, String>): Boolean {
         values.forEach { (k, v) -> putString(k, v) }
+        return true
     }
 }
 
@@ -36,6 +41,7 @@ internal object MeshKeyStore {
     const val KEY_STATIC_PRIVATE = "x25519_static_private_key"
     const val KEY_SIGNING_PRIVATE = "ed25519_signing_private_key"
 
+    /** Throws IllegalStateException when a new identity cannot be persisted; nothing unsaved is returned. */
     fun loadOrCreate(store: KeyValueStore, random: SecureRandom = SecureRandom()): EncryptionService {
         val staticKey = decode(store.getString(KEY_STATIC_PRIVATE))
         val signingKey = decode(store.getString(KEY_SIGNING_PRIVATE))
@@ -46,12 +52,14 @@ internal object MeshKeyStore {
         Log.i(TAG, "No valid stored mesh identity; generating a new one")
         val (freshStatic, freshSigning) = EncryptionService.generatePrivateKeys(random)
         val encoder = Base64.getEncoder()
-        store.putStrings(
+        val saved = store.putStrings(
             mapOf(
                 KEY_STATIC_PRIVATE to encoder.encodeToString(freshStatic),
                 KEY_SIGNING_PRIVATE to encoder.encodeToString(freshSigning)
             )
         )
+        // An unsaved identity would change on the next start while the server holds the old public key.
+        check(saved) { "Failed to persist mesh identity" }
         return EncryptionService(freshStatic, freshSigning)
     }
 
@@ -75,15 +83,17 @@ internal object MeshKeyStore {
         return object : KeyValueStore {
             override fun getString(key: String): String? = prefs.getString(key, null)
 
-            override fun putString(key: String, value: String) = putStrings(mapOf(key to value))
+            override fun putString(key: String, value: String) {
+                check(putStrings(mapOf(key to value))) { "Failed to persist $key" }
+            }
 
             // One commit(), not apply(): the identity must be on disk, both keys together, before it is announced.
-            override fun putStrings(values: Map<String, String>) {
+            override fun putStrings(values: Map<String, String>): Boolean {
                 val editor = prefs.edit()
                 values.forEach { (k, v) -> editor.putString(k, v) }
-                if (!editor.commit()) {
-                    Log.e(TAG, "Failed to persist mesh identity: commit() returned false")
-                }
+                val committed = editor.commit()
+                if (!committed) Log.e(TAG, "Failed to persist mesh identity: commit() returned false")
+                return committed
             }
         }
     }

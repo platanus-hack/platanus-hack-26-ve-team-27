@@ -4,6 +4,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.util.Base64
 
@@ -72,10 +73,20 @@ class MeshKeyStoreTest {
             val map = HashMap<String, String>()
             override fun getString(key: String): String? = map[key]
             override fun putString(key: String, value: String) { map[key] = value }
-            override fun putStrings(values: Map<String, String>) { batches++; map.putAll(values) }
+            override fun putStrings(values: Map<String, String>): Boolean { batches++; map.putAll(values); return true }
         }
         MeshKeyStore.loadOrCreate(store)
         assertEquals(1, batches)
         assertEquals(2, store.map.size)
+    }
+
+    @Test
+    fun failedWrite_throwsInsteadOfReturningUnsavedIdentity() {
+        val store = object : KeyValueStore {
+            override fun getString(key: String): String? = null
+            override fun putString(key: String, value: String) = Unit
+            override fun putStrings(values: Map<String, String>): Boolean = false // commit() returned false
+        }
+        assertThrows(IllegalStateException::class.java) { MeshKeyStore.loadOrCreate(store) }
     }
 }

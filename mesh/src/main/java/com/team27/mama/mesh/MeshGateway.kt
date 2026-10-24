@@ -14,15 +14,34 @@ import kotlinx.coroutines.flow.Flow
  * - [MeshBroadcast.relayHops] assumes the sender started at TTL 7, which is bitchat's default.
  */
 interface MeshGateway {
+    /**
+     * True when the last [start] succeeded and [stop] has not been called since. It does not follow the
+     * radio: if Bluetooth is turned off (or advertising fails silently) it stays true while nothing is
+     * sent or received. Callers (#60) should listen for `BluetoothAdapter.ACTION_STATE_CHANGED` and call
+     * [stop] then [start] when Bluetooth comes back on.
+     */
     val isRunning: Boolean
 
-    /** Received public broadcasts whose text starts with [MESSAGE_PREFIX]; each packet once. */
+    /**
+     * Received public broadcasts whose text starts with [MESSAGE_PREFIX].
+     *
+     * - No replay: broadcasts that arrive while nobody collects are lost, so subscribe before [start].
+     * - Not exactly-once: the packet dedup window is about 5 minutes, and gossip sync can deliver the
+     *   same packet again later; a [stop] + [start] also forgets what was seen. Consumers must deduplicate themselves (for example by sender + text).
+     */
     val broadcasts: Flow<MeshBroadcast>
 
     /** This device's mesh identity. Reading it can throw if the key store is unusable. */
     val identity: MeshIdentity
 
-    /** Starts BLE discovery + GATT. False if Bluetooth is off, unsupported or permissions are missing. Idempotent. */
+    /**
+     * Starts BLE discovery + GATT. False if Bluetooth is off, unsupported or permissions are missing, or
+     * the identity cannot be loaded; a later call retries. Idempotent.
+     *
+     * Call it off the main thread: the first call loads or creates the identity (Android Keystore +
+     * EncryptedSharedPreferences, a synchronous disk write) while holding the gateway lock, which also
+     * blocks concurrent [broadcast] and [stop] calls.
+     */
     fun start(): Boolean
 
     /** Sends LEAVE and tears the node down. Idempotent. */
@@ -77,7 +96,7 @@ data class MeshBroadcast(
     val senderPeerId: String,
     /** Sender's Ed25519 key from its verified ANNOUNCE, lowercase hex, null if unknown. */
     val senderPublicKeyHex: String?,
-    /** TTL as received, 0..7. */
+    /** TTL as received, clamped to 0..7. */
     val ttl: Int,
     /** Relays between sender and us: (7 - ttl).coerceIn(0, 7); 0 = direct neighbor. */
     val relayHops: Int,

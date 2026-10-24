@@ -35,13 +35,13 @@ internal class MeshGatewayImpl(
         ): MeshBroadcast? {
             if (!content.startsWith(MeshGateway.MESSAGE_PREFIX)) return null
             val max = AppConstants.MESSAGE_TTL_HOPS.toInt()
-            val ttlInt = ttl.toInt()
+            val ttlInt = ttl.toInt().coerceIn(0, max)
             return MeshBroadcast(
                 text = content,
                 senderPeerId = senderPeerId,
                 senderPublicKeyHex = senderSigningKey?.joinToString("") { "%02x".format(it) },
                 ttl = ttlInt,
-                relayHops = (max - ttlInt).coerceIn(0, max),
+                relayHops = max - ttlInt,
                 timestampMs = timestampMs
             )
         }
