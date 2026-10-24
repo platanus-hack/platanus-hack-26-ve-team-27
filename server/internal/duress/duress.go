@@ -1,7 +1,8 @@
 // Package duress judges a "Mamá" call transcript against the user's duress
-// phrase. Detector is the seam: Rules is the first, deterministic step; the
-// LLM step (#22) comes later behind the same interface and takes over the
-// calls Rules marks unclear.
+// phrase. Detector is the seam: Rules is the first, deterministic step; LLM
+// (#22) is the second, behind the same interface; Chain runs Rules and asks
+// the LLM only about the calls Rules marks unclear, falling back to the rules
+// verdict when the LLM fails. Production uses Chain.
 package duress
 
 import (
@@ -59,7 +60,8 @@ const (
 //
 // Only user turns count: "Mamá" saying the phrase is not the user saying it.
 // A third party is heard on the user's channel, so a call where only the
-// robber talks is not silence; the LLM step has to judge that one.
+// robber talks is not silence. Chain keeps that no duress for now (see its
+// override policy).
 type Rules struct{}
 
 var _ Detector = Rules{}
