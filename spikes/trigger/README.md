@@ -16,6 +16,7 @@ What lives where (all spike code is in `app/src/main/java/com/team27/mama/spike/
 | Keys with the panel fully off | `VolumeSessionService.kt` (silent media session) |
 | Widget | `TriggerWidgetProvider.kt`, `res/layout/widget_trigger.xml` |
 | Network and GPS warm-up on the first press | `Warmup.kt`, `SpikeHttp.kt` (keep-alive reuse) |
+| Same alert on mobile data if the Wi-Fi is slow (tested) | `Cellular.kt`, `Hedge.kt` |
 | What a trigger starts: AlertEvent, LocationUpdate, mic and camera probes, video upload | `TriggerSpikeService.kt`, `CameraProbe.kt`, `SpikeEvents.kt` |
 | Evidence on the phone | `SpikeLog.kt` (`files/spike.log`) |
 | Test endpoint, no database | `spikes/trigger/receiver.go` |

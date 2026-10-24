@@ -1,6 +1,6 @@
 # Spike #10 results: locked-phone trigger on the demo Xiaomi
 
-Run on Sat Oct 24, 2026, 11:05–13:20 VET, after the issue's 05:05 VET due time.
+Run on Sat Oct 24, 2026, 11:05–13:40 VET, after the issue's 05:05 VET due time.
 All times are VET (UTC-4); `spike.log` itself writes UTC. Every
 press below is a physical press by a person unless it says **simulated**.
 Evidence: the phone's `files/spike.log`, the receiver log
@@ -20,7 +20,7 @@ Evidence: the phone's `files/spike.log`, the receiver log
 
 | Criterion | Result | Evidence |
 | --- | --- | --- |
-| Under 2 s from the pattern to the server with GPS, after 30 min locked in a pocket | **pass on mobile data after 2 min; 30 min not run; fails on the venue Wi-Fi** | Unplugged, in a pocket, through a Cloudflare tunnel, with the warm-up (finding 4). **Mobile data (Movistar LTE), ~2 min in the pocket, 13:18:01:** received **179 ms** after the pattern (phone clock 51 ms ahead, so ~130 ms real); first point a fused fix at 13 m, ~1 s old. **Venue Wi-Fi "Hackathon" (−68 dBm on a table), ~9 min in the pocket, 13:11:59:** received **20.4 s** after the pattern; the warm-up GET alone took 4.8 s and the alert request 20 s; point 15 m. Before the warm-up, on the same Wi-Fi (~1.5 min, 12:27:56): 4.26 s and a 230 s old 100 m point. The 30 min run was not done (the tester declined the wait). Over USB (`adb reverse`), locked, panel off: 54–209 ms. |
+| Under 2 s from the pattern to the server with GPS, after 30 min locked in a pocket | **pass after 2 min in a pocket (mobile data and venue Wi-Fi); 30 min not run; one venue Wi-Fi run failed** | Unplugged, in a pocket, through a Cloudflare tunnel, with the warm-up (finding 4). **Mobile data (Movistar LTE), ~2 min, 13:18:01:** received **179 ms** after the pattern (~130 ms after the 51 ms clock offset); fused fix 13 m, ~1 s old. **Venue Wi-Fi "Hackathon" (−70 dBm), mobile data on for the hedge, ~2 min, 13:36:41:** received **1.30 s** after the pattern (1231 ms + the phone's 71 ms clock lead) over Wi-Fi, so the hedge did not fire; 904 ms of it was the wait for a fresh fix (14.7 m). **Same Wi-Fi without the hedge, ~9 min, 13:11:59:** received **20.4 s** after the pattern; the warm-up GET alone took 4.8 s and the alert request 20 s; point 15 m. Before the warm-up, on the same Wi-Fi (~1.5 min, 12:27:56): 4.26 s and a 230 s old 100 m point. The 30 min run was not done (the tester declined the wait). Over USB (`adb reverse`), locked, panel off: 54–209 ms. |
 | Survives clearing recents and a reboot, and comes back on its own | **recents: pass; reboot: not run** | After clearing recents the service reconnected by itself (`a11y connected` at 11:12:56) and a locked, screen-off pattern reached the server (`status=201` at 11:13:09). Every `adb install -r` also killed the app and both services came back within 6 s. No reboot was done (`/proc/uptime` 20 days at 12:17). |
 | Mic starts from the trigger: yes or no | **yes** | A foreground service of type `location\|microphone\|camera` starts from the locked trigger; 1 s of `AudioRecord` gets real audio every time (`peak=1667…16556`, `clientSilenced=false`), including locked with the panel off. The spike never uploads audio (`has_audio: false`). |
 | The pattern doesn't open the camera | **pass** | No camera or any UI opened on any trigger (tester, and the log shows no activity starts). Caveat: HyperOS's own volume-key camera shortcut is off on this phone (`volumekey_launch_camera=0`); up-down-up has a single down, so the down-down shortcut would not match anyway, but it was not tried with the shortcut on. |
@@ -61,10 +61,15 @@ Evidence: the phone's `files/spike.log`, the receiver log
    DNS and TLS; `SpikeHttp` reads and closes responses instead of
    `disconnect()` so the alert reuses that connection. On mobile data the
    warm-up finished (1.04 s) before the third press and the alert took 334 ms.
-   What does not: a weak, crowded Wi-Fi, where one request took 20 s. For
-   #16: do not rely on one HTTPS request; send the SMS channel (#58) in
-   parallel, retry on a fresh connection after ~2 s, and measure against the
-   real server URL (the tunnel adds hops).
+   What does not: a weak, crowded Wi-Fi, where one request took 20 s. So the
+   spike now also hedges: `Cellular` brings mobile data up next to the Wi-Fi
+   on the first press, and `hedged()` sends the same AlertEvent (same
+   incident_id) on it if the Wi-Fi has no 2xx after 1.5 s. In the one Wi-Fi
+   run with it, the Wi-Fi answered in 677 ms and the hedge did not fire, so
+   the hedge itself is unproven on the phone (unit-tested only). For #16: do
+   not rely on one HTTPS request; hedge or retry, send the SMS channel (#58)
+   in parallel, consider sending the first point without the 1 s fix wait,
+   and measure against the real server URL (the tunnel adds hops).
 5. **The first point is often not GPS.** `getLastKnownLocation` gives an old
    or coarse fix (up to 230 s old; one was 4062 m at 11:33:02). The spike now
    sends the last known fix at once only if it is at most 30 s old and 50 m;
