@@ -267,7 +267,8 @@ the newest call's verdict. Sample: `notifier_message.json`.
 `ed25519_public_key` and `key_id` to `devices`; `0003_emergencies.sql` adds the `emergencies` table;
 `0004_incident_reports.sql` adds `incident_reports`, `call_recordings`,
 `incident_seals` and `call_progress` for the incident report (#76, approved
-by the Tech lead on Oct 24). The server applies pending migrations on
+by the Tech lead on Oct 24); `0005_notify_deliveries.sql` adds
+`notify_deliveries` (#76). The server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
 no-op. Without `DATABASE_URL` the server boots and skips migrations.
@@ -283,6 +284,7 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 | `call_recordings` | `call_id` | a call's recording: `content_type`, `audio` (bytes), `sha256`, `stored_at` (#76) |
 | `incident_seals` | `incident_id` | the seal: `sealed_at`, `document` (exact bytes of `ficha.json`), `signature`, `public_key` (#76) |
 | `call_progress` | `call_id` | what the call engine saw polling Twilio: last `twilio_status`, `ringing_at`, `answered_at` (server clock, #76) |
+| `notify_deliveries` | identity; unique `message_id` | each family message the notifier sent: masked `recipient`, `channel`, provider `message_id` (Kapso wamid), `status` (`accepted`, `failed`, `sent`, `delivered`, `read`), `error`, `sent_at`, `delivered_at`, `read_at` (#76) |
 | `schema_migrations` | `version` | applied migration files |
 
 The verdict lives on `calls` (`verdict`, `verdict_reason`, `verdict_at`)
@@ -373,6 +375,30 @@ default; then every route below answers `404`). Code:
   them. Without `EMERGENCY_ED25519_SEED` (or the offline channel's key)
   reports stay "Sin sellar" and the server still boots. Format, timing and
   limits: [`docs/adr/0005-incident-report-seal.md`](adr/0005-incident-report-seal.md).
+- **The page.** It is mobile first, because the family opens it from
+  WhatsApp. From 1024 px wide it fits one screen with no page scroll (the
+  projector):
+  - a header with the state and the clock since the gesture;
+  - a horizontal track of the case's stages (Pidió ayuda → Llegó al servidor →
+    Mamá llamó → Sonó → Contestó → Colgó → Veredicto → Familia avisada →
+    Sellado);
+  - three panels: the route, the call (the player and the transcript, once it
+    ends) and the family (one chip per relative with what Kapso reported).
+  - `devices.user_name`, when the column exists (#104), names the person.
+- **PDF.** `GET /i/{token}/reporte.pdf` is the detailed report for the
+  authorities. Once sealed, it is built from the stored `ficha.json`; before
+  that it is marked "Borrador, sin sellar". The family messages and linked
+  offline emergencies come from the live record and are labelled as outside
+  the seal. It uses `github.com/go-pdf/fpdf` with Lexend embedded.
+- **Family messages.** With the report on, the notifier records every send in
+  `notify_deliveries`, with the number masked. Kapso's message status webhook
+  (`whatsapp.message.sent`, `.delivered`, `.read`, `.failed`) goes to
+  `POST /webhooks/kapso`:
+  - It is signed in `X-Webhook-Signature` with the hex HMAC-SHA256 of the raw
+    body and `KAPSO_WEBHOOK_SECRET`. A bad signature answers `401`; without
+    the secret the route is not mounted.
+  - Statuses only move forward, and a failure never overrides "read".
+  - Other events and unknown message ids answer `200`.
 - **Live.** `GET /i/{token}/live` is a Server-Sent Events stream. It sends
   an `update` event at once and then one each time the case changes; the
   server re-reads the case every second. The event data is JSON:
@@ -382,7 +408,13 @@ default; then every route below answers `404`). Code:
   or `{"gone":true}` when the link stops working; then the stream closes. It
   also closes after 30 min, and the browser reconnects.
   `GET /i/{token}/estado.json` is the same snapshot, for polling when the
-  stream fails. "En vivo", the clock since the gesture and the call timer run
+  stream fails. The family page streams `report.FamilySections` (`status`,
+  `header`, `track`, `call`, `route`, `family`). Other pages, such as the
+  central dashboard (#99), call `report.RenderSections` and
+  `report.Handler.Stream` with their own loader and any sections. They can
+  also use `report.BlockSections` (`timeline`, `points`, `latency`, `calls`,
+  `emergencies`, `seal`), which the family page does not show
+  (`templates/blocks.html` says where each goes). "En vivo", the clock since the gesture and the call timer run
   while the case is unsealed and something happened in the last 30 min.
 - **What the page adds beyond the seal.** These appear on the page but are
   not in `ficha.json`:

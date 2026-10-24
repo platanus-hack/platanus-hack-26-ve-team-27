@@ -262,6 +262,13 @@ func Build(rec Record, opts Options) Page {
 	if p.CallActive {
 		p.Character = "llamando"
 	}
+	if p.Live {
+		for i := range p.Calls {
+			if p.Calls[i].Audio == nil && rec.Calls[i].Status == "done" {
+				p.Calls[i].NoAudio = "Guardando la grabación de la llamada…"
+			}
+		}
+	}
 	if len(rec.Calls) == 0 {
 		p.NoCall = noCallReason(rec.Incident.Branch)
 	}

@@ -107,7 +107,7 @@ func TestPageRendersTheSealedReport(t *testing.T) {
 
 func TestPageWithoutAudioSaysSoAndKeepsTheTranscript(t *testing.T) {
 	body := html.UnescapeString(serve(t, fakeSource{testToken: openRecord()}, "/i/"+testToken).Body.String())
-	for _, want := range []string{"En vivo", "mama_escuchando.webp", "Audio no disponible", "dile a la tía Carmen que llego tarde",
+	for _, want := range []string{"En vivo", "mama_escuchando.webp", "Guardando la grabación de la llamada…", "dile a la tía Carmen que llego tarde",
 		`class="node node-current" data-stage="stage-sealed"`, "desde el gesto", "Ver toda la llamada", `class="user keep"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)

@@ -64,7 +64,12 @@ phones pin its public half from `GET /config`.
 6. **Scope.** Only `call`-branch incidents are sealed. `immediate_alert` and
    `silent_tracker` reports render but say "Sin sellar" (out of scope in #76).
    A failed call is not sealed on its own; the retry's webhook seals.
-7. **Verification.** `go run ./cmd/verify-ficha ficha.json ficha.sig <key>`
+7. **The PDF.** `GET /i/{token}/reporte.pdf` reads a sealed report back from
+   the stored `ficha.json`, never from the live rows, so it states exactly
+   what the seal covers. It adds what the seal leaves out (each family
+   message's delivery status, linked offline emergencies) under a note that
+   says so. Before the seal it is a draft, marked "Borrador, sin sellar".
+8. **Verification.** `go run ./cmd/verify-ficha ficha.json ficha.sig <key>`
    prints "firma válida" or why not. The key must come from the page or from
    `GET /config`, never from `ficha.json` itself. The document names the key,
    and the verifier rejects a valid signature whose document names another

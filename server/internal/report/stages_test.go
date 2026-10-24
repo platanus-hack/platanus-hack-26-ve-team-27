@@ -131,3 +131,14 @@ func TestTitles(t *testing.T) {
 		t.Errorf("elapsed = %q", got)
 	}
 }
+
+// While the case is live, a finished call waiting for its recording says so
+// instead of "Audio no disponible".
+func TestRecordingOnItsWay(t *testing.T) {
+	if got := Build(openRecord(), Options{Now: at("2026-10-24T13:11:40Z")}).Calls[0].NoAudio; got != "Guardando la grabación de la llamada…" {
+		t.Errorf("live = %q", got)
+	}
+	if got := Build(openRecord(), Options{Now: at("2026-10-24T15:00:00Z")}).Calls[0].NoAudio; !strings.HasPrefix(got, "Audio no disponible") {
+		t.Errorf("closed = %q", got)
+	}
+}

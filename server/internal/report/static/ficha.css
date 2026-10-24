@@ -244,7 +244,7 @@ body[data-open] .mama { animation: float 5s ease-in-out infinite; }
 .turn .msg { display: block; font-size: 14px; line-height: 20px; }
 .turn.phrase { background: var(--primary-container); color: var(--on-primary-container); border-color: var(--primary); animation: breathe 2.4s ease-in-out infinite; }
 .turn.playing { border-color: var(--primary); box-shadow: 0 0 0 3px var(--glow); }
-.phrase-tag { display: inline-block; margin-top: 4px; padding: 0 8px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-weight: 700; font-size: 11px; line-height: 18px; }
+.phrase-tag { display: inline-block; margin-top: 4px; padding: 0 8px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-weight: 700; font-size: 12px; line-height: 18px; }
 .more { align-self: center; min-height: 44px; padding: 0 var(--s-m); border-radius: 999px; border: 1px solid var(--outline-variant); background: transparent; font-weight: 500; font-size: 14px; cursor: pointer; color: var(--primary); }
 body:not([data-expanded]) .turns li:not(.keep) { display: none; }
 body[data-expanded] .more { display: none; }

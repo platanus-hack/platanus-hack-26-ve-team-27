@@ -180,7 +180,7 @@ func TestBuildCallViewTurnsAndAudio(t *testing.T) {
 	}
 
 	noAudio := Build(openRecord(), Options{Token: testToken}).Calls[0]
-	if noAudio.Audio != nil || !strings.HasPrefix(noAudio.NoAudio, "Audio no disponible") {
+	if noAudio.Audio != nil || noAudio.NoAudio != "Guardando la grabación de la llamada…" {
 		t.Errorf("no audio = %+v", noAudio)
 	}
 }
