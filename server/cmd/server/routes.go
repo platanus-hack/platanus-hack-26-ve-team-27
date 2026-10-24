@@ -7,6 +7,7 @@ import "net/http"
 func newMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleRoot)
+	registerDeployRoutes(mux)
 	return mux
 }
 
