@@ -28,7 +28,7 @@ class MamaApp : Application() {
         startRelay()
     }
 
-    /** #60. Order matters: the relay subscribes to `broadcasts` (no replay) before the controller can start the gateway. */
+    /** #60. The controller runs off the main thread (the first gateway start loads the key store). Order matters: the relay subscribes to `broadcasts` (no replay) before the controller can start the gateway. */
     private fun startRelay() {
         val relay = graph.relay ?: return
         val settings = graph.relaySettings ?: return
@@ -43,7 +43,7 @@ class MamaApp : Application() {
             stopGateway = { MeshGateway.getInstance(this).stop() },
             startService = { RelayForegroundService.start(this) },
             stopService = { RelayForegroundService.stop(this) },
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1)),
             onError = { Log.w("MamaRelay", it) },
         ).start()
     }

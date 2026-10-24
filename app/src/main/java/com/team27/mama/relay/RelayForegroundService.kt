@@ -21,22 +21,21 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.team27.mama.MainActivity
 import com.team27.mama.R
-import com.team27.mama.mesh.MeshGateway
 
 /** Keeps the process alive while the relay is on or an emergency needs the mesh. The controller owns the gateway's stop. */
 class RelayForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // startForeground comes FIRST: a service started with startForegroundService that is torn down
+        // without it kills the app. Permissions are checked after, and a give-up leaves the foreground.
+        createChannel()
+        val notification = buildNotification()
         val granted = { permission: String ->
             ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
         }
-        if (!MeshPermissions.satisfied(Build.VERSION.SDK_INT, granted)) {
-            Log.w(LOG_TAG, "service: missing mesh permission")
-            return giveUp()
-        }
-        createChannel()
-        val notification = buildNotification()
+        // satisfied() below already implies a location permission, so only the SecurityException
+        // fallback ever changes the type.
         val hasLocation = granted(Manifest.permission.ACCESS_FINE_LOCATION) ||
             granted(Manifest.permission.ACCESS_COARSE_LOCATION)
         val full = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
@@ -45,17 +44,29 @@ class RelayForegroundService : Service() {
             !startForegroundOrFalse(notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         ) {
             Log.w(LOG_TAG, "service: startForeground refused")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (!gate.onForegrounded()) {
+            Log.w(LOG_TAG, "service: stopped before it started")
             return giveUp()
         }
-        try {
-            MeshGateway.getInstance(this).start()
-        } catch (e: Exception) {
-            Log.w(LOG_TAG, "service: gateway start failed")
+        if (!MeshPermissions.satisfied(Build.VERSION.SDK_INT, granted)) {
+            Log.w(LOG_TAG, "service: missing mesh permission")
+            return giveUp()
         }
+        // No gateway.start() here: MeshController always calls startGateway right after startService,
+        // on its background thread (the first start loads the key store, which must stay off main).
         return START_STICKY
     }
 
+    override fun onDestroy() {
+        gate.onDestroyed()
+        super.onDestroy()
+    }
+
     private fun giveUp(): Int {
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
         return START_NOT_STICKY
     }
@@ -97,17 +108,35 @@ class RelayForegroundService : Service() {
         private const val CHANNEL_ID = "mama_relay"
         private const val NOTIFICATION_ID = 6001
 
-        /** False when Android refuses a background start; the controller retries on the next app open. */
-        fun start(context: Context): Boolean = try {
-            ContextCompat.startForegroundService(context, Intent(context, RelayForegroundService::class.java))
-            true
-        } catch (e: IllegalStateException) {
-            Log.w(LOG_TAG, "service: start not allowed")
-            false
+        private val gate = ForegroundGate()
+
+        /**
+         * False when the mesh permissions are missing (starting would end in a refused
+         * startForeground and a crash) or when Android refuses a background start.
+         */
+        fun start(context: Context): Boolean {
+            val granted = { permission: String ->
+                ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+            }
+            if (!MeshPermissions.satisfied(Build.VERSION.SDK_INT, granted)) {
+                Log.w(LOG_TAG, "service: start skipped, missing mesh permission")
+                return false
+            }
+            gate.onStartRequested()
+            return try {
+                ContextCompat.startForegroundService(context, Intent(context, RelayForegroundService::class.java))
+                true
+            } catch (e: IllegalStateException) {
+                Log.w(LOG_TAG, "service: start not allowed")
+                false
+            }
         }
 
+        /** Before the service reached the foreground it stops itself instead (see [ForegroundGate]). */
         fun stop(context: Context) {
-            context.stopService(Intent(context, RelayForegroundService::class.java))
+            if (gate.onStopRequested()) {
+                context.stopService(Intent(context, RelayForegroundService::class.java))
+            }
         }
     }
 }

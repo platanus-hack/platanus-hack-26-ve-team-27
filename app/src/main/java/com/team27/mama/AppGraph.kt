@@ -24,14 +24,14 @@ import com.team27.mama.mesh.MeshGateway
 import com.team27.mama.onboarding.ConnectivityNetworkStatus
 import com.team27.mama.onboarding.DeviceRegistrar
 import com.team27.mama.onboarding.OnboardingGate
-import com.team27.mama.server.HttpServerApi
-import com.team27.mama.server.ServerApi
 import com.team27.mama.relay.GatewayRelayMesh
 import com.team27.mama.relay.MeshRelay
 import com.team27.mama.relay.OwnTextMeshChannel
 import com.team27.mama.relay.RelaySettings
 import com.team27.mama.relay.ServerRelayUploader
 import com.team27.mama.relay.SharedPreferencesRelayStore
+import com.team27.mama.server.HttpServerApi
+import com.team27.mama.server.ServerApi
 import com.team27.mama.server.UrlConnectionTransport
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -96,7 +96,8 @@ class AppGraph(
 
     /**
      * #60 reads `graph.emergency?.state`; #16 calls `declare()`. Null with the flag off: the
-     * orchestrator, the mesh gateway and the trigger screen's permission request never start.
+     * orchestrator, the mesh gateway and the trigger screen's permission request never start. With the
+     * flag on it is built eagerly in `Application.onCreate`, because MamaApp reads its state.
      */
     val emergency: EmergencyOrchestrator? by lazy {
         if (!offlineEmergency) return@lazy null
