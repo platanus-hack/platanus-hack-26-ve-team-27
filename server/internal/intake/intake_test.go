@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -444,6 +445,8 @@ func TestBadInputIs400(t *testing.T) {
 		{"key not Base64", "/devices", `{"device_id":"x","phone_number":"+584141234567","family_numbers":[],"duress_phrase":"p","ed25519_public_key":"!!!"}`},
 		{"key 31 bytes", "/devices", `{"device_id":"x","phone_number":"+584141234567","family_numbers":[],"duress_phrase":"p","ed25519_public_key":"` + base64.StdEncoding.EncodeToString(make([]byte, 31)) + `"}`},
 		{"device without phone", "/devices", `{"device_id":"x","phone_number":"","family_numbers":[],"duress_phrase":"p"}`},
+		{"family number not E.164", "/devices", `{"device_id":"x","phone_number":"+584141234567","family_numbers":["not-a-number"],"duress_phrase":"p"}`},
+		{"six family numbers", "/devices", `{"device_id":"x","phone_number":"+584141234567","family_numbers":["+584241112231","+584241112232","+584241112233","+584241112234","+584241112235","+584241112236"],"duress_phrase":"p"}`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -493,4 +496,45 @@ type blockingStarter struct{ release, done chan struct{} }
 func (b blockingStarter) StartCall(context.Context, Incident) {
 	<-b.release
 	close(b.done)
+}
+
+// Every alert messages each family number, so the server caps them at the
+// app's five and refuses anything a provider would not dial, before any query.
+func TestValidateDeviceFamilyNumbers(t *testing.T) {
+	reg := contract.DeviceRegistration{DeviceID: "x", PhoneNumber: "+584141234567"}
+	for _, family := range [][]string{nil, {"+584241112233"}, {"+15550100123", "+34612345678", "+584241112231", "+584241112232", "+584241112233"}} {
+		reg.FamilyNumbers = family
+		if err := validateDevice(reg); err != nil {
+			t.Errorf("family %v: err = %v, want nil", family, err)
+		}
+	}
+	for _, family := range [][]string{{"not-a-number"}, {"04241112233"}, {"+0123456789"}, {"+584241112233", ""}, make([]string, 6)} {
+		reg.FamilyNumbers = family
+		if err := validateDevice(reg); err == nil || !strings.Contains(err.Error(), "family_numbers") {
+			t.Errorf("family %q: err = %v, want a family_numbers error", family, err)
+		}
+	}
+}
+
+// WaitHandoffs holds shutdown until a running handoff returns, and gives up
+// when its context ends, so a stuck call engine cannot block the exit.
+func TestWaitHandoffsWaitsForRunningHandoffs(t *testing.T) {
+	release := make(chan struct{})
+	done := make(chan struct{})
+	New(nil, blockingStarter{release, done}, LogHandoff{}).handoff(context.Background(), Incident{ID: incidentID, Branch: contract.BranchCall})
+
+	short, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := WaitHandoffs(short); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WaitHandoffs with a running handoff = %v, want DeadlineExceeded", err)
+	}
+	close(release)
+	if err := WaitHandoffs(context.Background()); err != nil {
+		t.Fatalf("WaitHandoffs after the handoff returned = %v", err)
+	}
+	select {
+	case <-done:
+	default:
+		t.Fatal("WaitHandoffs returned before the handoff finished")
+	}
 }

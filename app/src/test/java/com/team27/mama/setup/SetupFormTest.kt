@@ -54,6 +54,13 @@ class SetupFormTest {
     }
 
     @Test
+    fun ownNumberMustBeVenezuelanButFamilyCanBeAnywhere() {
+        assertNotNull(valid.copy(ownNumber = "+1 555 010 0123").errors().ownNumber)
+        assertNull(valid.copy(ownNumber = "+1 555 010 0123").validated())
+        assertNull(valid.copy(familyNumbers = listOf("+34 612 345 678")).errors().familyNumbers[0])
+    }
+
+    @Test
     fun phraseNeedsThreeWords() {
         assertNotNull(valid.copy(duressPhrase = "tía Carmen").errors().duressPhrase)
         assertNull(valid.copy(duressPhrase = "llego tarde hoy").errors().duressPhrase)

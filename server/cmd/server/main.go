@@ -10,7 +10,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/call"
@@ -59,11 +61,40 @@ func main() {
 		Addr:              ":" + cfg.Port,
 		Handler:           newMux(pool, notifier, calls, offline, reports),
 		ReadHeaderTimeout: 10 * time.Second,
+		// A phone on a weak signal still uploads a 1 MiB body in this time; a
+		// client trickling bytes cannot hold a connection forever.
+		ReadTimeout: 60 * time.Second,
+		IdleTimeout: 120 * time.Second,
 	}
 
-	log.Printf("mama server listening on :%s", cfg.Port)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal(err)
+	// Render sends SIGTERM on every deploy and kills the process 30 s later.
+	stop, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer cancel()
+	go func() {
+		log.Printf("mama server listening on :%s", cfg.Port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+	<-stop.Done()
+	shutdown(srv)
+}
+
+// shutdownTimeout leaves a margin inside Render's 30 s between SIGTERM and SIGKILL.
+const shutdownTimeout = 25 * time.Second
+
+// shutdown stops taking requests, lets the in-flight ones answer, then waits
+// for the handoffs they started: a call being placed or an alert being sent
+// finishes instead of being cut by a deploy.
+func shutdown(srv *http.Server) {
+	log.Print("shutting down: draining requests and handoffs")
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("shutdown: requests still open: %v", err)
+	}
+	if err := intake.WaitHandoffs(ctx); err != nil {
+		log.Printf("shutdown: handoffs still running: %v", err)
 	}
 }
 

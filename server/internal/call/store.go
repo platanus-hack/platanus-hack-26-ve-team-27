@@ -77,7 +77,7 @@ func (s DBStore) Begin(ctx context.Context, incidentID string) (int64, Callee, e
 func (s DBStore) Placed(ctx context.Context, callID int64, p Placed) error {
 	_, err := s.pool.ExecContext(ctx, `
 		UPDATE calls SET
-			conversation_id = $2,
+			conversation_id = NULLIF($2, ''),
 			call_sid        = NULLIF($3, ''),
 			status          = CASE WHEN status = 'requested' THEN 'in_progress' ELSE status END
 		WHERE id = $1`,

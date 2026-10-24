@@ -45,10 +45,10 @@ To work on the app in Android Studio, open the repo root (not `app/`). Layout an
 The demo phones run the signed release build. The keystore and its passwords live in the team vault, never in the repo (`*.jks`, `*.keystore` and `keystore.properties` are gitignored).
 
 1. Get `mama-release.jks` and its `keystore.properties` from the vault and put both in `~/.mama-keys/` (`chmod 700 ~/.mama-keys`, `chmod 600` the files). `storeFile` in `keystore.properties` must be the absolute path to the `.jks`.
-2. Build:
+2. Build, with the deployed server and Mamá's Twilio number (the build fails without them: phones block plain HTTP, and setup needs the number):
 
    ```bash
-   scripts/release.sh
+   scripts/release.sh -Pmama.serverUrl=https://<render-app>.onrender.com -Pmama.twilioNumber=+1XXXXXXXXXX
    ```
 
    It writes `app/build/outputs/apk/release/app-release.apk` and prints the signing certificate (`CN=MAMA Team 27, O=Platanus Hack 26, C=VE`).

@@ -23,13 +23,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.painterResource
@@ -95,8 +97,12 @@ fun MamaCharacter(pose: MamaPose, modifier: Modifier = Modifier, size: Dp = 160.
         pop.animateTo(1f, spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMediumLow))
     }
 
-    var breath = 1f
-    var sway = 0f
+    // Read only inside drawWithContent below: each frame is then a redraw, with no
+    // recomposition. Not a graphicsLayer: Compose reports a layer's scale or rotation
+    // as a layout change, which sends ~10 accessibility events a second to every
+    // service on, MAMÁ's own trigger service included.
+    var breath: State<Float>? = null
+    var sway: State<Float>? = null
     if (animate) {
         val transition = rememberInfiniteTransition(label = "mama-breath")
         breath = transition.animateFloat(
@@ -104,14 +110,14 @@ fun MamaCharacter(pose: MamaPose, modifier: Modifier = Modifier, size: Dp = 160.
             targetValue = 1.025f,
             animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing), RepeatMode.Reverse),
             label = "breath",
-        ).value
+        )
         // A different period than the breath, so the two never line up into a loop you notice.
         sway = transition.animateFloat(
             initialValue = -1f,
             targetValue = 1f,
             animationSpec = infiniteRepeatable(tween(2100), RepeatMode.Reverse),
             label = "sway",
-        ).value
+        )
     }
 
     var blinking by remember { mutableStateOf(false) }
@@ -132,11 +138,16 @@ fun MamaCharacter(pose: MamaPose, modifier: Modifier = Modifier, size: Dp = 160.
         animationSpec = tween(if (animate) 220 else 0),
         modifier = modifier
             .size(size)
-            .graphicsLayer {
-                transformOrigin = TransformOrigin(0.5f, 1f)
-                scaleX = breath * pop.value
-                scaleY = breath * pop.value
-                rotationZ = sway
+            .drawWithContent {
+                val scale = (breath?.value ?: 1f) * pop.value
+                // Bottom center: she breathes and sways from her shoulders.
+                val pivot = Offset(this.size.width / 2f, this.size.height)
+                withTransform({
+                    rotate(sway?.value ?: 0f, pivot)
+                    scale(scale, scale, pivot)
+                }) {
+                    this@drawWithContent.drawContent()
+                }
             },
         label = "mama-pose",
     ) { shown ->
