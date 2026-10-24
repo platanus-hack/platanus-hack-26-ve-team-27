@@ -100,7 +100,7 @@ private fun phraseError(phrase: String): String? {
         words < SetupForm.MIN_PHRASE_WORDS ->
             "Usa una frase de al menos ${SetupForm.MIN_PHRASE_WORDS} palabras que no dirías por casualidad."
         words > SetupForm.MAX_PHRASE_WORDS || phrase.trim().let { it.codePointCount(0, it.length) } > SetupForm.MAX_PHRASE_CHARS ->
-            "Usa una frase más corta: de ${SetupForm.MAX_PHRASE_WORDS} palabras o menos."
+            "Usa una frase más corta: de ${SetupForm.MAX_PHRASE_WORDS} palabras y ${SetupForm.MAX_PHRASE_CHARS} letras o menos."
         else -> null
     }
 }
