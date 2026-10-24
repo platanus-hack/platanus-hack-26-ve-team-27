@@ -12,7 +12,7 @@ En Venezuela la seguridad personal es una preocupación de todos los días. Cuan
 4. **Detector de coacción.** Si dices la frase acordada (*"dile a la tía Carmen que llego tarde"*) o te quedas en silencio, reglas + un LLM detectan que estás en peligro.
 5. **Aviso a la familia.** Tu familia recibe al instante un WhatsApp (Kapso) con tu ubicación y el veredicto.
 
-Para quien te esté mirando, es solo una llamada con tu mamá.
+Para quien te esté mirando, es solo una llamada con tu mamá. Si te mueves rápido (por ejemplo, en un carro), MAMÁ no llama: avisa a tu familia de inmediato.
 
 ## Stack
 
