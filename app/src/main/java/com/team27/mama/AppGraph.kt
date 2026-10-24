@@ -5,6 +5,7 @@ import android.util.Log
 import com.team27.mama.emergency.AndroidLocationSource
 import com.team27.mama.emergency.ChannelOverrideSetting
 import com.team27.mama.emergency.EmergencyOrchestrator
+import com.team27.mama.emergency.ForwardingSmsChannel
 import com.team27.mama.emergency.GatewayMeshChannel
 import com.team27.mama.emergency.MeshIdentitySigner
 import com.team27.mama.emergency.NoSmsChannel
@@ -60,7 +61,11 @@ class AppGraph(context: Context) {
      */
     val deviceSigner: PayloadSigner by lazy { MeshIdentitySigner.deferred(MeshGateway.getInstance(app)) }
 
-    /** #58 replaces this with the real sender before the first `declare()`. */
+    /**
+     * #58 sets the real sender here, at any time before the emergency it should serve: the
+     * orchestrator reads it on every call, so assigning it after [emergency] was built still works.
+     */
+    @Volatile
     var smsChannel: SmsEmergencyChannel = NoSmsChannel
 
     /** #60 reads `graph.emergency.state`; #16 calls `declare()`. */
@@ -74,7 +79,7 @@ class AppGraph(context: Context) {
                 UrlConnectionTransport(5_000, 5_000),
                 log = { Log.w(LOG_TAG, it) },
             ),
-            sms = smsChannel,
+            sms = ForwardingSmsChannel { smsChannel },
             mesh = GatewayMeshChannel(gateway),
             location = AndroidLocationSource(app),
             network = networkStatus,

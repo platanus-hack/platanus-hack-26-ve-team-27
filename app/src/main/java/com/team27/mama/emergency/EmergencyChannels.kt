@@ -32,6 +32,19 @@ object NoSmsChannel : SmsEmergencyChannel {
     override val incoming: Flow<String> = emptyFlow()
 }
 
+/**
+ * Forwards every call to the channel [current] returns at that moment, so a sender set after the
+ * orchestrator was built (#58 assigning `graph.smsChannel`) still serves later emergencies. The
+ * orchestrator reads [incoming] once per emergency, when it begins.
+ */
+internal class ForwardingSmsChannel(private val current: () -> SmsEmergencyChannel) : SmsEmergencyChannel {
+    override fun canSend(): Boolean = current().canSend()
+
+    override suspend fun send(number: String, text: String): Boolean = current().send(number, text)
+
+    override val incoming: Flow<String> get() = current().incoming
+}
+
 /** The bitchat mesh. `broadcast() == true` means queued, not delivered: only an ack confirms. */
 interface MeshEmergencyChannel {
     fun start(): Boolean
