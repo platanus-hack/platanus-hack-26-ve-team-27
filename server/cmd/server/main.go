@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/call"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/db"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
@@ -31,7 +32,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newMux(pool, notifier),
+		Handler:           newMux(pool, notifier, call.NewRoutes(cfg.ElevenLabs)),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
