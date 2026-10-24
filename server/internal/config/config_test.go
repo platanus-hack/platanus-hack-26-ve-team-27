@@ -17,6 +17,7 @@ var allVars = []string{
 	"TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER",
 	"KAPSO_API_KEY", "KAPSO_PHONE_NUMBER_ID",
 	"ANTHROPIC_API_KEY",
+	"EMERGENCY_SMS_NUMBER", "EMERGENCY_ED25519_SEED", "EMERGENCY_X25519_PRIVATE_KEY",
 }
 
 func TestEmptyEnvDefaultsPortAndReportsEverythingMissing(t *testing.T) {
@@ -40,18 +41,21 @@ func TestLoadReadsEveryVar(t *testing.T) {
 		t.Fatalf("Missing() = %v, want none", c.Missing())
 	}
 	checks := map[string]string{
-		"PORT":                       c.Port,
-		"DATABASE_URL":               c.DatabaseURL,
-		"ELEVENLABS_API_KEY":         c.ElevenLabs.APIKey,
-		"ELEVENLABS_AGENT_ID":        c.ElevenLabs.AgentID,
-		"ELEVENLABS_PHONE_NUMBER_ID": c.ElevenLabs.PhoneNumberID,
-		"ELEVENLABS_WEBHOOK_SECRET":  c.ElevenLabs.WebhookSecret,
-		"TWILIO_ACCOUNT_SID":         c.Twilio.AccountSID,
-		"TWILIO_AUTH_TOKEN":          c.Twilio.AuthToken,
-		"TWILIO_PHONE_NUMBER":        c.Twilio.PhoneNumber,
-		"KAPSO_API_KEY":              c.Kapso.APIKey,
-		"KAPSO_PHONE_NUMBER_ID":      c.Kapso.PhoneNumberID,
-		"ANTHROPIC_API_KEY":          c.Anthropic.APIKey,
+		"PORT":                         c.Port,
+		"DATABASE_URL":                 c.DatabaseURL,
+		"ELEVENLABS_API_KEY":           c.ElevenLabs.APIKey,
+		"ELEVENLABS_AGENT_ID":          c.ElevenLabs.AgentID,
+		"ELEVENLABS_PHONE_NUMBER_ID":   c.ElevenLabs.PhoneNumberID,
+		"ELEVENLABS_WEBHOOK_SECRET":    c.ElevenLabs.WebhookSecret,
+		"TWILIO_ACCOUNT_SID":           c.Twilio.AccountSID,
+		"TWILIO_AUTH_TOKEN":            c.Twilio.AuthToken,
+		"TWILIO_PHONE_NUMBER":          c.Twilio.PhoneNumber,
+		"KAPSO_API_KEY":                c.Kapso.APIKey,
+		"KAPSO_PHONE_NUMBER_ID":        c.Kapso.PhoneNumberID,
+		"ANTHROPIC_API_KEY":            c.Anthropic.APIKey,
+		"EMERGENCY_SMS_NUMBER":         c.Emergency.SMSNumber,
+		"EMERGENCY_ED25519_SEED":       c.Emergency.Ed25519Seed,
+		"EMERGENCY_X25519_PRIVATE_KEY": c.Emergency.X25519PrivateKey,
 	}
 	for name, got := range checks {
 		if got != env[name] {

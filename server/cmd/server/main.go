@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"log"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/db"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/remoteconfig"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/serverkeys"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/notify"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/migrations"
@@ -26,12 +29,17 @@ func main() {
 		log.Printf("config: not set: %s", strings.Join(missing, ", "))
 	}
 
+	keys := loadServerKeys(cfg)
+	if remoteconfig.CheckSMSNumber(cfg.Emergency.SMSNumber) != nil {
+		log.Fatalf("emergency: EMERGENCY_SMS_NUMBER must be E.164 (+ and 7-15 digits)")
+	}
+
 	pool := openAndMigrate(cfg.DatabaseURL)
 	notifier := newNotifier(cfg, pool)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newMux(pool, notifier),
+		Handler:           newMux(pool, notifier, keys, cfg.Emergency.SMSNumber),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -39,6 +47,20 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+// loadServerKeys builds the offline-emergency key pair. A malformed key exits
+// (naming the variable, never its value); an unset one warns and uses an
+// ephemeral key, which is fine for dev only.
+func loadServerKeys(cfg config.Config) serverkeys.Keys {
+	keys, ephemeral, err := serverkeys.FromConfig(cfg.Emergency, rand.Reader)
+	if err != nil {
+		log.Fatalf("emergency: %v", err)
+	}
+	for _, name := range ephemeral {
+		log.Printf("emergency: WARNING: %s is not set; using an ephemeral key (dev only): phones' cached server key breaks on every restart", name)
+	}
+	return keys
 }
 
 // openAndMigrate opens the pool and applies pending migrations, so every
