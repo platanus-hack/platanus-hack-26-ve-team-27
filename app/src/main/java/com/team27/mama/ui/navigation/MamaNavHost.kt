@@ -21,6 +21,7 @@ import com.team27.mama.emergency.toStatus
 import com.team27.mama.relay.MeshPermissions
 import com.team27.mama.relay.RelayControls
 import com.team27.mama.relay.relayPermissionMissing
+import com.team27.mama.ui.screens.ProfileScreen
 import com.team27.mama.ui.screens.SettingsScreen
 import com.team27.mama.ui.screens.SetupScreen
 import com.team27.mama.ui.screens.TriggerConfirmationScreen
@@ -30,6 +31,7 @@ enum class Route(val path: String) {
     Setup("setup"),
     TriggerConfirmation("trigger_confirmation"),
     Settings("settings"),
+    Profile("profile"),
 }
 
 /**
@@ -104,6 +106,15 @@ fun MamaNavHost(
                     if (navController.previousBackStackEntry != null) navController.popBackStack()
                 },
                 status = state?.toStatus(),
+                onOpenProfile = { navController.navigate(Route.Profile.path) { launchSingleTop = true } },
+            )
+        }
+        composable(Route.Profile.path) {
+            // Read-only profile (#85), opened from the trigger screen.
+            ProfileScreen(
+                onBack = {
+                    if (navController.previousBackStackEntry != null) navController.popBackStack()
+                },
             )
         }
     }

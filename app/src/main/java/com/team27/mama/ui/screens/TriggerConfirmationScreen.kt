@@ -114,10 +114,20 @@ private val placeholderSteps = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TriggerConfirmationScreen(onBack: () -> Unit, status: EmergencyStatus? = null) {
+fun TriggerConfirmationScreen(
+    onBack: () -> Unit,
+    status: EmergencyStatus? = null,
+    onOpenProfile: () -> Unit = {},
+) {
     val steps = if (status == null) placeholderSteps else listOf(status.toStep()) + placeholderSteps.drop(1)
     Scaffold(
-        topBar = { CenterAlignedTopAppBar(title = { MamaWordmark(compact = true) }) },
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { MamaWordmark(compact = true) },
+                // Discreet way into the read-only profile (#85).
+                actions = { TextButton(onClick = onOpenProfile) { Text("Perfil") } },
+            )
+        },
     ) { padding ->
         Column(
             modifier = Modifier

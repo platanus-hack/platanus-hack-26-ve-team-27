@@ -55,6 +55,14 @@ class SetupStore(private val kv: KeyValueStore, private val newId: () -> String 
         get() = kv.getString(KEY_DURESS_PHRASE)
         set(value) = kv.putString(KEY_DURESS_PHRASE, value)
 
+    /** How Mamá greets the person (contract `user_name`). Read-only until #108 asks for it in setup. */
+    val userName: String?
+        get() = kv.getString(KEY_USER_NAME)
+
+    /** The "todo bien" phrase (contract `safe_phrase`). Read-only until #108 asks for it in setup. */
+    val safePhrase: String?
+        get() = kv.getString(KEY_SAFE_PHRASE)
+
     var mamaRawContactId: Long?
         get() = kv.getString(KEY_MAMA_CONTACT)?.toLongOrNull()
         set(value) = kv.putString(KEY_MAMA_CONTACT, value?.toString())
@@ -92,6 +100,8 @@ class SetupStore(private val kv: KeyValueStore, private val newId: () -> String 
         const val KEY_OWN_NUMBER = "own_number"
         const val KEY_FAMILY_NUMBERS = "family_numbers"
         const val KEY_DURESS_PHRASE = "duress_phrase"
+        const val KEY_USER_NAME = "user_name"
+        const val KEY_SAFE_PHRASE = "safe_phrase"
         const val KEY_MAMA_CONTACT = "mama_raw_contact_id"
         const val KEY_COMPLETED = "setup_completed"
         const val KEY_SETTLED_STEPS = "settled_steps"
