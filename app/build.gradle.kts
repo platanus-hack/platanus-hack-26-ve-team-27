@@ -81,6 +81,8 @@ android {
         buildConfigField("String", "TWILIO_NUMBER", mamaTwilioNumber.asBuildConfigString())
         buildConfigField("String", "DEFAULT_SMS_NUMBER", mamaDefaultSmsNumber.asBuildConfigString())
         buildConfigField("boolean", "OFFLINE_EMERGENCY_ENABLED", mamaOfflineEmergency.toString())
+        // Same flag for the manifest: enables the ack SMS receiver (#58).
+        resValue("bool", "offline_emergency_enabled", mamaOfflineEmergency.toString())
     }
 
     signingConfigs {
@@ -108,6 +110,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
 }
 
