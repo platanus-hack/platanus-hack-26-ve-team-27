@@ -32,9 +32,13 @@ Read this before touching any screen in `app/`. These rules keep the look in one
 
 1. Create `ui/screens/<Name>Screen.kt` following the rules above, with a `@Preview` wrapped in `MamaTheme`.
 2. Add a value to the `Route` enum in `MamaNavHost.kt`, for example `History("history")`.
-3. Add a `composable(Route.History.path) { HistoryScreen(onBack = { navController.popBackStack() }) }` entry inside the `NavHost`.
-4. Navigate to it from another screen's callback with `navController.navigate(Route.History.path)`.
+3. Add a `composable(Route.History.path) { ... }` entry inside the `NavHost`. For a back callback copy the guarded form already there: `if (navController.previousBackStackEntry != null) navController.popBackStack()`.
+4. Navigate to it from another screen's callback with `navController.navigate(Route.History.path) { launchSingleTop = true }` (a double tap must not push it twice).
 
 ## Self-check before a PR
 
-`grep -rn "Color(0x" app/src/main` must only list `Theme.kt`. Same for `FontFamily(` and `.sp`.
+This must print only `Theme.kt` lines (or nothing):
+
+```bash
+grep -rnE 'Color\(0x|Color\.[A-Z]|FontFamily\(|[0-9]\.sp\b|fontSize|FontWeight' app/src/main
+```

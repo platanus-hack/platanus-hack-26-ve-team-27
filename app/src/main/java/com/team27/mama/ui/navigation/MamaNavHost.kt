@@ -23,12 +23,18 @@ fun MamaNavHost(
     NavHost(navController = navController, startDestination = startRoute.path) {
         composable(Route.Setup.path) {
             SetupScreen(
-                onContinue = { navController.navigate(Route.TriggerConfirmation.path) },
+                // launchSingleTop: a double tap must not push the screen twice.
+                onContinue = {
+                    navController.navigate(Route.TriggerConfirmation.path) { launchSingleTop = true }
+                },
             )
         }
         composable(Route.TriggerConfirmation.path) {
             TriggerConfirmationScreen(
-                onBack = { navController.popBackStack() },
+                // Guard: a double tap must not pop the start screen and leave a blank host.
+                onBack = {
+                    if (navController.previousBackStackEntry != null) navController.popBackStack()
+                },
             )
         }
     }
