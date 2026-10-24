@@ -29,7 +29,7 @@ object KeyedRegistration {
                 RegisterResult.Registered -> RegistrationResult.Registered
                 RegisterResult.KeyConflict -> RegistrationClient.resultFor(409)
                 is RegisterResult.Failed -> (result.cause as? ServerHttpException)
-                    ?.let { RegistrationClient.resultFor(it.code) }
+                    ?.let { RegistrationClient.resultFor(it.code, it.body) }
                     ?: RegistrationResult.Failed(RegistrationClient.NETWORK_ERROR)
             }
         } catch (_: MeshUnavailableException) {

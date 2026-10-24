@@ -2,6 +2,9 @@ package com.team27.mama.setup
 
 import com.team27.mama.contract.ContractJson
 import com.team27.mama.contract.DeviceRegistration
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -11,9 +14,15 @@ import kotlinx.coroutines.withContext
 sealed interface RegistrationResult {
     data object Registered : RegistrationResult
 
-    /** [message] is Spanish and shown as is. */
-    data class Failed(val message: String) : RegistrationResult
+    /**
+     * [message] is Spanish and shown as is. [field] is set when the server
+     * rejected one form field (a 422), so setup shows [message] on that field.
+     */
+    data class Failed(val message: String, val field: FormField? = null) : RegistrationResult
 }
+
+/** The form fields the server can reject with a 422 (docs/contract.md, DeviceRegistration). */
+enum class FormField { USER_NAME, DURESS_PHRASE, SAFE_PHRASE }
 
 /** `POST /devices` (docs/contract.md, DeviceRegistration). The server answers 204 and upserts the row. */
 class RegistrationClient(baseUrl: String) {
@@ -31,7 +40,9 @@ class RegistrationClient(baseUrl: String) {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setFixedLengthStreamingMode(body.size)
                 connection.outputStream.use { it.write(body) }
-                resultFor(connection.responseCode)
+                val status = connection.responseCode
+                val answer = if (status in 200..299) "" else connection.errorStream?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+                resultFor(status, answer)
             } finally {
                 connection.disconnect()
             }
@@ -51,9 +62,35 @@ class RegistrationClient(baseUrl: String) {
         fun registrationBody(registration: DeviceRegistration): String =
             ContractJson.encodeToString(DeviceRegistration.serializer(), registration)
 
-        fun resultFor(status: Int): RegistrationResult = when (status) {
+        /** [body] is the server's answer; on a 422 its `error` names the field (it never quotes a phrase). */
+        fun resultFor(status: Int, body: String = ""): RegistrationResult = when (status) {
             in 200..299 -> RegistrationResult.Registered
+            422 -> rejectedField(serverError(body))
+                ?: RegistrationResult.Failed("El servidor no pudo guardar tu registro (error $status). Inténtalo de nuevo.")
             else -> RegistrationResult.Failed("El servidor no pudo guardar tu registro (error $status). Inténtalo de nuevo.")
+        }
+
+        private fun rejectedField(error: String): RegistrationResult.Failed? = when {
+            error.startsWith("user_name") ->
+                RegistrationResult.Failed("Usa un nombre de 1 a ${SetupForm.MAX_NAME_CHARS} letras.", FormField.USER_NAME)
+            error.startsWith("safe_phrase is too close") ->
+                RegistrationResult.Failed(TOO_CLOSE_TO_DURESS, FormField.SAFE_PHRASE)
+            error.startsWith("safe_phrase") ->
+                RegistrationResult.Failed(PHRASE_LENGTH, FormField.SAFE_PHRASE)
+            error.startsWith("duress_phrase") ->
+                RegistrationResult.Failed(PHRASE_LENGTH, FormField.DURESS_PHRASE)
+            else -> null
+        }
+
+        private const val PHRASE_LENGTH =
+            "Usa una frase de ${SetupForm.MIN_PHRASE_WORDS} a ${SetupForm.MAX_PHRASE_WORDS} palabras."
+
+        /** The `error` of a `{"error": "..."}` body, or "" when the body is anything else. */
+        private fun serverError(body: String): String = try {
+            ((ContractJson.parseToJsonElement(body) as? JsonObject)?.get("error") as? JsonPrimitive)
+                ?.takeIf { it.isString }?.content.orEmpty()
+        } catch (_: SerializationException) {
+            ""
         }
     }
 }

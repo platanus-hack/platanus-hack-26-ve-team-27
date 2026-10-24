@@ -53,6 +53,13 @@ class KeyedRegistrationTest {
     }
 
     @Test
+    fun a422KeepsTheServersBodySoSetupShowsItOnTheField() {
+        val body = "{\"error\": \"safe_phrase is too close to duress_phrase: pick one that does not share most of its key words\"}"
+        val result = run(FakeApi(ServerHttpException(422, "POST /devices: HTTP 422", body)))
+        assertEquals(FormField.SAFE_PHRASE, (result as RegistrationResult.Failed).field)
+    }
+
+    @Test
     fun networkErrorUsesRegistrationClientsMessage() {
         assertEquals(RegistrationResult.Failed(RegistrationClient.NETWORK_ERROR), run(FakeApi(IOException("timeout"))))
     }
