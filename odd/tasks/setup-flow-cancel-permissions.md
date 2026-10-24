@@ -15,7 +15,7 @@ Fix three bugs found while testing on two phones (Samsung A55, Realme RMX3081) a
 
 ## Tasks
 - [x] T1 Setup done screen: add a primary "Continuar" action that leaves setup into the app's main screen.
-- [ ] T2 False-alarm cancel: "Me equivoqué" cancels the active alert (server + local service/call) and dismisses the alert UI.
+- [x] T2 False-alarm cancel: "Me equivoqué" cancels the active alert (server + local service/call) and dismisses the alert UI.
 - [ ] T3 Permission steps: any permission/system-screen step can be re-opened after it was shown, skipped or denied (re-request, or deep-link to settings when the system won't show the dialog again).
 
 ## Acceptance criteria

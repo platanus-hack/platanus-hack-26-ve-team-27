@@ -287,6 +287,16 @@ class TriggerService : Service() {
                 .apply { if (detectedAtElapsed != null) putExtra(EXTRA_DETECTED_AT, detectedAtElapsed) }
 
         /**
+         * Stops the running incident ("false alarm" on the confirmation screen): the service dies, which
+         * cancels the coroutine scope, so the follow-up location posts stop and the foreground
+         * notification goes away. A no-op when no service runs.
+         */
+        fun cancel(context: Context) {
+            val stopped = context.stopService(Intent(context, TriggerService::class.java))
+            TriggerLog.log(context, "incident cancelled by the person; service stopped=$stopped")
+        }
+
+        /**
          * Starts an alert. [detectedAtElapsed] is when the trigger was
          * detected (elapsedRealtime). An in-app button calls
          * `start(context, Trigger.IN_APP)`.
