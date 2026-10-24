@@ -48,6 +48,7 @@ object PayloadFormat {
     const val ACK_SIZE = 76
     const val NO_LOCATION = 0xFFFF
     const val MAX_LOC_AGE_S = 65534
+    const val PUBLIC_KEY_SIZE = 32
     const val LAT_E5_MAX = 9_000_000
     const val LON_E5_MAX = 18_000_000
     const val SIGNATURE_CONTEXT = "MAMA-offline-emergency-v1"

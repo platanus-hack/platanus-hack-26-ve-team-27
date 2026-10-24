@@ -6,8 +6,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.team27.mama.ui.navigation.MamaNavHost
 import com.team27.mama.ui.theme.MamaTheme
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -15,12 +13,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MamaTheme {
-                MamaNavHost(
-                    finishOnboarding = {
-                        withContext(Dispatchers.IO) { (application as MamaApp).graph.onboardingGate.finish() }
-                    },
-                    emergency = (application as MamaApp).graph.emergency,
-                )
+                MamaNavHost(emergency = (application as MamaApp).graph.emergency)
             }
         }
     }

@@ -12,10 +12,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/call"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/db"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/remoteconfig"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/serverkeys"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/sms"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/notify"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/migrations"
@@ -31,17 +33,14 @@ func main() {
 		log.Printf("config: not set: %s", strings.Join(missing, ", "))
 	}
 
-	keys := loadServerKeys(cfg, os.Getenv("RENDER") != "")
-	if remoteconfig.CheckSMSNumber(cfg.Emergency.SMSNumber) != nil {
-		log.Fatalf("emergency: EMERGENCY_SMS_NUMBER must be E.164 (+ and 7-15 digits)")
-	}
+	offline := loadOfflineEmergency(cfg, os.Getenv("RENDER") != "")
 
 	pool := openAndMigrate(cfg.DatabaseURL)
 	notifier := newNotifier(cfg, pool)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newMux(pool, notifier, keys, cfg.Emergency.SMSNumber),
+		Handler:           newMux(pool, notifier, newCallRoutes(cfg, pool), offline),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -49,6 +48,54 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+// loadOfflineEmergency returns the offline emergency channel, or nil when
+// EMERGENCY_OFFLINE_ENABLED is off: then no key is read or required and the
+// SMS number is not checked. Enabled, a bad SMS number or webhook base URL
+// exits, the keys load through loadServerKeys and the SMS providers through
+// smsProviders.
+func loadOfflineEmergency(cfg config.Config, onRender bool) *offlineEmergency {
+	if !cfg.Emergency.Enabled {
+		log.Print("emergency: offline channel is off (EMERGENCY_OFFLINE_ENABLED is not true)")
+		return nil
+	}
+	keys := loadServerKeys(cfg, onRender)
+	if remoteconfig.CheckSMSNumber(cfg.Emergency.SMSNumber) != nil {
+		log.Fatalf("emergency: EMERGENCY_SMS_NUMBER must be E.164 (+ and 7-15 digits)")
+	}
+	providers, err := smsProviders(cfg.Twilio)
+	if err != nil {
+		log.Fatalf("emergency: %v", err)
+	}
+	return &offlineEmergency{keys: keys, smsNumber: cfg.Emergency.SMSNumber, smsProviders: providers}
+}
+
+// smsProviders returns the inbound SMS adapters, keyed by the {provider}
+// segment of POST /sms/inbound/{provider}. Twilio needs TWILIO_AUTH_TOKEN and
+// TWILIO_WEBHOOK_BASE_URL, since an unsigned webhook is never accepted:
+// without either it is left out (its webhook answers 404) and the log names
+// what is missing. A malformed base URL is an error naming the variable,
+// never its value.
+func smsProviders(tw config.Twilio) (map[string]sms.InboundSMSProvider, error) {
+	providers := map[string]sms.InboundSMSProvider{}
+	var missing []string
+	if tw.AuthToken == "" {
+		missing = append(missing, "TWILIO_AUTH_TOKEN")
+	}
+	if tw.WebhookBaseURL == "" {
+		missing = append(missing, "TWILIO_WEBHOOK_BASE_URL")
+	}
+	if len(missing) > 0 {
+		log.Printf("emergency: SMS webhook POST /sms/inbound/twilio is off: %s not set", strings.Join(missing, " and "))
+		return providers, nil
+	}
+	twilio, err := sms.NewTwilio(tw.AuthToken, tw.WebhookBaseURL)
+	if err != nil {
+		return nil, err
+	}
+	providers["twilio"] = twilio
+	return providers, nil
 }
 
 // loadServerKeys builds the offline-emergency key pair. A malformed key exits
@@ -123,6 +170,15 @@ func newNotifier(cfg config.Config, pool *sql.DB) intake.Notifier {
 		log.Printf("notifier: WARNING: %s credentials are not set; every family alert will fail", cfg.Notifier)
 	}
 	return notify.New(notify.NewDBStore(pool), sender)
+}
+
+// newCallRoutes builds the call engine on the database. Without one the
+// webhook only logs and intake never hands off a call.
+func newCallRoutes(cfg config.Config, pool *sql.DB) *call.Routes {
+	if pool == nil {
+		return call.NewRoutes(cfg, nil)
+	}
+	return call.NewRoutes(cfg, call.NewDBStore(pool))
 }
 
 // channelConfigured reports whether the NOTIFIER channel has its credentials,

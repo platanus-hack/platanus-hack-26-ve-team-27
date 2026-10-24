@@ -145,3 +145,59 @@ func TestDuressModelIsOptional(t *testing.T) {
 		}
 	}
 }
+
+func TestCallSpikeVarsAreOptional(t *testing.T) {
+	c := LoadFrom(envFrom(map[string]string{
+		"ELEVENLABS_VOICE_ID": " voice123 ",
+		"CALL_SPIKE_TOKEN":    " tok ",
+	}))
+	if c.ElevenLabs.VoiceID != "voice123" || c.ElevenLabs.CallSpikeToken != "tok" {
+		t.Errorf("VoiceID, CallSpikeToken = %q, %q; want voice123, tok", c.ElevenLabs.VoiceID, c.ElevenLabs.CallSpikeToken)
+	}
+	for _, name := range LoadFrom(envFrom(nil)).Missing() {
+		if name == "ELEVENLABS_VOICE_ID" || name == "CALL_SPIKE_TOKEN" {
+			t.Errorf("Missing() lists the optional %s", name)
+		}
+	}
+	if s := c.String(); strings.Contains(s, "tok") || strings.Contains(s, "voice123") {
+		t.Errorf("String() leaks a value: %s", s)
+	}
+}
+
+func TestEmergencyOfflineFlagIsOffUnlessTrueOr1(t *testing.T) {
+	for v, want := range map[string]bool{"": false, "true": true, "TRUE": true, "1": true, " true ": true, "yes": false, "0": false, "false": false, "tru": false} {
+		got := LoadFrom(envFrom(map[string]string{"EMERGENCY_OFFLINE_ENABLED": v})).Emergency.Enabled
+		if got != want {
+			t.Errorf("EMERGENCY_OFFLINE_ENABLED=%q: Enabled = %v, want %v", v, got, want)
+		}
+	}
+}
+
+func TestTwilioWebhookBaseURLIsOptional(t *testing.T) {
+	c := LoadFrom(envFrom(map[string]string{"TWILIO_WEBHOOK_BASE_URL": " https://mama.example.com "}))
+	if c.Twilio.WebhookBaseURL != "https://mama.example.com" {
+		t.Errorf("WebhookBaseURL = %q, want https://mama.example.com", c.Twilio.WebhookBaseURL)
+	}
+	for _, name := range LoadFrom(envFrom(nil)).Missing() {
+		if name == "TWILIO_WEBHOOK_BASE_URL" {
+			t.Error("Missing() lists the optional TWILIO_WEBHOOK_BASE_URL")
+		}
+	}
+}
+
+func TestPublicURLPrefersPublicURLOverRender(t *testing.T) {
+	if got := LoadFrom(envFrom(map[string]string{"RENDER_EXTERNAL_URL": "https://r.example"})).PublicURL; got != "https://r.example" {
+		t.Errorf("PublicURL = %q, want the Render URL", got)
+	}
+	if got := LoadFrom(envFrom(map[string]string{"PUBLIC_URL": "https://p.example", "RENDER_EXTERNAL_URL": "https://r.example"})).PublicURL; got != "https://p.example" {
+		t.Errorf("PublicURL = %q, want PUBLIC_URL", got)
+	}
+}
+
+func TestCallForceFailureIsOffUnlessTrueOr1(t *testing.T) {
+	for v, want := range map[string]bool{"": false, "yes": false, "true": true, "TRUE": true, "1": true} {
+		if got := LoadFrom(envFrom(map[string]string{"CALL_FORCE_FAILURE": v})).ElevenLabs.ForceCallFailure; got != want {
+			t.Errorf("CALL_FORCE_FAILURE=%q: ForceCallFailure = %v, want %v", v, got, want)
+		}
+	}
+}

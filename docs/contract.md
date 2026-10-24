@@ -84,9 +84,12 @@ upserts the `devices` row. `app_version`, `ed25519_public_key` and
 `ed25519_public_key` is the device's Ed25519 identity public key (bitchat's,
 #56): standard Base64 with padding of exactly 32 bytes. The server derives
 `key_id` from it to verify offline payloads (#57). It is optional: a
-registration without it keeps the stored key; a different key for the same
-`device_id` replaces it; a key already registered to another `device_id` is
-answered `409`; a malformed key is `400`.
+device with no key bound yet may register without one (and bind one later).
+Once a key is bound to a `device_id`, every later registration for it must
+carry that same key with a valid proof; a registration with no key or a
+different key is answered `409` and changes nothing. A key already registered
+to another `device_id` is also `409`; a malformed key is `400`. A phone that
+loses its key (reinstall, cleared data) therefore needs a new `device_id`.
 
 `ed25519_signature` proves the phone holds the key's private half: standard
 Base64 with padding of the 64-byte Ed25519 signature, by that key, over the
@@ -98,7 +101,12 @@ database access:
 - `ed25519_public_key` present: `ed25519_signature` is required and must
   verify, else `400`.
 - `ed25519_signature` without `ed25519_public_key`: `400`.
-- neither: the registration behaves as without a key (the stored key stays).
+- neither: allowed only while the device has no bound key, else `409`.
+
+The proof covers only `device_id`: it shows the sender holds the key, not that
+the other fields (`phone_number`, `family_numbers`, `duress_phrase`,
+`app_version`) are the owner's. It gates who may update a bound device; it does
+not authenticate the content.
 
 Why: bitchat broadcasts every device's Ed25519 public key on the mesh, so
 without the proof anyone in range could register a victim's key to their own
@@ -248,7 +256,7 @@ the newest call's verdict. Sample: `notifier_message.json`.
 ## Postgres schema
 
 `server/migrations/0001_init.sql`; `0002_device_keys.sql` adds
-`ed25519_public_key` and `key_id` to `devices`. The server applies pending migrations on
+`ed25519_public_key` and `key_id` to `devices`; `0003_emergencies.sql` adds the `emergencies` table. The server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
 no-op. Without `DATABASE_URL` the server boots and skips migrations.
@@ -259,6 +267,7 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 | `incidents` | `id` = `incident_id` | device, trigger, branch, speed used, `notified_at` |
 | `gps_points` | identity; unique `(incident_id, recorded_at)` | every fix of an incident |
 | `calls` | identity; unique `conversation_id` | call status, transcript (JSONB), duration, **verdict** |
+| `emergencies` | `emergency_id` (16 hex) | offline emergency: device, status, highest seq, last fix, channels, min hops (#57) |
 | `schema_migrations` | `version` | applied migration files |
 
 The verdict lives on `calls` (`verdict`, `verdict_reason`, `verdict_at`)
@@ -283,3 +292,23 @@ public key) is not the UUID `device_id` used above. `devices.key_id` stores
 those 8 bytes for every device that registered its key, and
 `devicekeys.Lookup` maps a payload's `device_id` to the device row and its
 public key.
+
+The offline emergency routes (`GET /config`, `POST /emergencies`,
+`POST /emergencies/relay`) exist only when the server runs with
+`EMERGENCY_OFFLINE_ENABLED=true`; otherwise they answer `404`. It is off by
+default, so the skeleton and the demo path do not depend on them.
+
+Endpoints (#57, `server/internal/emergency/ingest/http.go`). Both answer `200`
+`text/plain` with the signed ack text `MAMA1:ACK:<std Base64>` (also for a
+duplicate), to be rebroadcast verbatim by a relay.
+
+- `POST /emergencies`: body is the SMS text `MAMA1 <Base64url>` of the signed
+  payload, any `Content-Type`. Channel `http`.
+- `POST /emergencies/relay`: JSON `{"text":"MAMA1:SEAL:<Base64>","hops":2}`;
+  `hops` is optional (`0..255`, omitted = unknown). Unknown JSON fields are
+  rejected. Channel `mesh`.
+
+Errors are JSON `{"error":"..."}`: `400` malformed payload, text, JSON or
+hops; `403` bad signature; `409` the `emergency_id` belongs to another device;
+`413` body over 1 KiB; `422` device not registered; `503` no database; `500`
+anything else. 4xx is permanent: retry only 5xx.

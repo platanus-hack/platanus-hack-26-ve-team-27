@@ -5,15 +5,18 @@ import android.util.Log
 import com.team27.mama.emergency.AndroidLocationSource
 import com.team27.mama.emergency.ChannelOverrideSetting
 import com.team27.mama.emergency.EmergencyOrchestrator
-import com.team27.mama.emergency.ForwardingSmsChannel
 import com.team27.mama.emergency.GatewayMeshChannel
 import com.team27.mama.emergency.MeshIdentitySigner
 import com.team27.mama.emergency.NoSmsChannel
 import com.team27.mama.emergency.ServerEmergencyChannel
-import com.team27.mama.emergency.SmsEmergencyChannel
 import com.team27.mama.emergency.config.RemoteConfigRepository
 import com.team27.mama.emergency.config.SharedPreferencesConfigStore
 import com.team27.mama.emergency.payload.PayloadSigner
+import com.team27.mama.emergency.sms.AndroidSmsSender
+import com.team27.mama.emergency.sms.ExecutorSmsScheduler
+import com.team27.mama.emergency.sms.SmsAckBus
+import com.team27.mama.emergency.sms.SmsAckFilter
+import com.team27.mama.emergency.sms.SmsChannel
 import com.team27.mama.mesh.MeshGateway
 import com.team27.mama.onboarding.ConnectivityNetworkStatus
 import com.team27.mama.onboarding.DeviceRegistrar
@@ -31,13 +34,22 @@ import kotlinx.coroutines.SupervisorJob
 /**
  * Composition root. #60 extends it with the relay.
  *
- * Handoff: nothing calls [deviceRegistrar] yet. #15 owns that call: it passes [deviceSigner]
+ * Handoff: nothing calls [deviceRegistrar] yet. #59 owns that call: it passes [deviceSigner]
  * and calls `deviceRegistrar(deviceSigner).register(...)` after [OnboardingGate.finish] returns
  * Done, with the real DeviceRegistration (phone, family numbers, duress phrase)
- * that its setup collects. #58 reads `remoteConfig.current()`.
+ * that #15's setup collects. #58/#59 read `remoteConfig.current()`.
+ *
+ * #59's orchestrator calls [smsChannel] when HTTP fails and there is cellular
+ * signal. It and the ack plumbing are null with the flag off.
+ *
+ * [offlineEmergency] is the build flag OFFLINE_EMERGENCY_ENABLED (default off):
+ * off, setup skips the config gate and the app never refreshes the config.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-class AppGraph(context: Context) {
+class AppGraph(
+    context: Context,
+    val offlineEmergency: Boolean = BuildConfig.OFFLINE_EMERGENCY_ENABLED,
+) {
     private val app = context.applicationContext
 
     /** One background thread for config refreshes (network edges and onboarding). */
@@ -61,12 +73,17 @@ class AppGraph(context: Context) {
      */
     val deviceSigner: PayloadSigner by lazy { MeshIdentitySigner.deferred(MeshGateway.getInstance(app)) }
 
-    /**
-     * #58 sets the real sender here, at any time before the emergency it should serve: the
-     * orchestrator reads it on every call, so assigning it after [emergency] was built still works.
-     */
-    @Volatile
-    var smsChannel: SmsEmergencyChannel = NoSmsChannel
+    /** Verified server acks from [com.team27.mama.emergency.sms.SmsAckReceiver]. */
+    val smsAcks: SmsAckBus? = if (offlineEmergency) SmsAckBus() else null
+
+    val smsAckFilter: SmsAckFilter? = if (offlineEmergency) SmsAckFilter(remoteConfig::current) else null
+
+    /** Built on first use so the flag-off app never starts its scheduler thread. */
+    val smsChannel: SmsChannel? by lazy {
+        val acks = smsAcks ?: return@lazy null
+        val scheduler = ExecutorSmsScheduler(Executors.newSingleThreadScheduledExecutor())
+        SmsChannel(AndroidSmsSender(app, scheduler), { remoteConfig.current().smsNumber }, scheduler, acks)
+    }
 
     /** #60 reads `graph.emergency.state`; #16 calls `declare()`. */
     val emergency: EmergencyOrchestrator by lazy {
@@ -79,7 +96,8 @@ class AppGraph(context: Context) {
                 UrlConnectionTransport(5_000, 5_000),
                 log = { Log.w(LOG_TAG, it) },
             ),
-            sms = ForwardingSmsChannel { smsChannel },
+            // Merge of main: #58's SmsChannel replaces the old `smsChannel` seam; adapted in the next commit.
+            sms = NoSmsChannel,
             mesh = GatewayMeshChannel(gateway),
             location = AndroidLocationSource(app),
             network = networkStatus,
