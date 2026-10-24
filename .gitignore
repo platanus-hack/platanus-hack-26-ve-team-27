@@ -1,2 +1,32 @@
 # Ticket worktrees
 .worktrees/
+
+# OS / editors
+.DS_Store
+.idea/
+*.iml
+.vscode/
+
+# Gradle / Android
+.gradle/
+.kotlin/
+build/
+/captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+*.apk
+*.aab
+
+# Signing material
+*.keystore
+*.jks
+keystore.properties
+
+# Secrets
+.env
+.env.*
+
+# Go server
+/server/server
+/server/bin/
