@@ -9,23 +9,30 @@ import com.team27.mama.onboarding.DeviceRegistrar
 import com.team27.mama.onboarding.OnboardingGate
 import com.team27.mama.server.HttpServerApi
 import com.team27.mama.server.ServerApi
+import java.util.concurrent.Executor
+import java.util.concurrent.Executors
 
 /**
  * Composition root. #59/#60 extend it with the mesh gateway, orchestrator and relay.
  *
- * Handoff: #15 builds the real DeviceRegistration and, after [OnboardingGate.finish]
- * returns Done, calls `deviceRegistrar(signer).register(...)`. #59 supplies the
- * [PayloadSigner] adapted from :mesh's MeshIdentity. #58/#59 read `remoteConfig.current()`.
+ * Handoff: nothing calls [deviceRegistrar] in #55. #59 owns that call: it adapts
+ * :mesh's MeshIdentity into the [PayloadSigner] and calls
+ * `deviceRegistrar(signer).register(...)` after [OnboardingGate.finish] returns
+ * Done, with the real DeviceRegistration (phone, family numbers, duress phrase)
+ * that #15's setup collects. #58/#59 read `remoteConfig.current()`.
  */
 class AppGraph(context: Context) {
     private val app = context.applicationContext
+
+    /** One background thread for config refreshes (network edges and onboarding). */
+    val background: Executor = Executors.newSingleThreadExecutor()
 
     val serverApi: ServerApi = HttpServerApi(BuildConfig.SERVER_URL)
 
     val remoteConfig: RemoteConfigRepository =
         RemoteConfigRepository(serverApi, SharedPreferencesConfigStore(app), BuildConfig.DEFAULT_SMS_NUMBER)
 
-    val onboardingGate: OnboardingGate = OnboardingGate(ConnectivityNetworkStatus(app), remoteConfig)
+    val onboardingGate: OnboardingGate = OnboardingGate(ConnectivityNetworkStatus(app), remoteConfig, background)
 
     fun deviceRegistrar(signer: PayloadSigner): DeviceRegistrar = DeviceRegistrar(serverApi, signer)
 }
