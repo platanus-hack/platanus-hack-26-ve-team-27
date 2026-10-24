@@ -15,7 +15,7 @@ import (
 // /health must answer 503, not panic on a nil *sql.DB.
 func TestDeployRoutesWithoutDatabase(t *testing.T) {
 	t.Setenv("RENDER_GIT_COMMIT", "abc123")
-	mux := newMux(openAndMigrate(""), intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}))
+	mux := newMux(openAndMigrate(""), intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testKeys(t), "")
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))

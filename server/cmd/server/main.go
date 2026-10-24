@@ -3,15 +3,20 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/call"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/db"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/remoteconfig"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/serverkeys"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/notify"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/migrations"
@@ -27,12 +32,17 @@ func main() {
 		log.Printf("config: not set: %s", strings.Join(missing, ", "))
 	}
 
+	keys := loadServerKeys(cfg, os.Getenv("RENDER") != "")
+	if remoteconfig.CheckSMSNumber(cfg.Emergency.SMSNumber) != nil {
+		log.Fatalf("emergency: EMERGENCY_SMS_NUMBER must be E.164 (+ and 7-15 digits)")
+	}
+
 	pool := openAndMigrate(cfg.DatabaseURL)
 	notifier := newNotifier(cfg, pool)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newMux(pool, notifier, call.NewRoutes(cfg.ElevenLabs)),
+		Handler:           newMux(pool, notifier, call.NewRoutes(cfg.ElevenLabs), keys, cfg.Emergency.SMSNumber),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -40,6 +50,34 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+// loadServerKeys builds the offline-emergency key pair. A malformed key exits
+// (naming the variable, never its value). An unset one exits on Render, where
+// an ephemeral key would silently break every phone's pinned key on each
+// deploy; locally it warns and uses an ephemeral key.
+func loadServerKeys(cfg config.Config, onRender bool) serverkeys.Keys {
+	keys, ephemeral, err := serverkeys.FromConfig(cfg.Emergency, rand.Reader)
+	if err != nil {
+		log.Fatalf("emergency: %v", err)
+	}
+	if err := checkEphemeralKeys(ephemeral, onRender); err != nil {
+		log.Fatalf("emergency: %v", err)
+	}
+	for _, name := range ephemeral {
+		log.Printf("emergency: WARNING: %s is not set; using an ephemeral key (dev only): phones' cached server key breaks on every restart", name)
+	}
+	return keys
+}
+
+// checkEphemeralKeys refuses ephemeral server keys in production. onRender is
+// whether the RENDER env var is set (Render sets it on every service);
+// ephemeral lists the unset key variables. The error names them, never values.
+func checkEphemeralKeys(ephemeral []string, onRender bool) error {
+	if !onRender || len(ephemeral) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s not set: production needs both server keys (README \"Secrets\")", strings.Join(ephemeral, " and "))
 }
 
 // openAndMigrate opens the pool and applies pending migrations, so every
