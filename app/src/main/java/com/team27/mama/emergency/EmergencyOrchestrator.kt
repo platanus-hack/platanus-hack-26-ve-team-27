@@ -40,6 +40,10 @@ object EmergencyTiming {
 
     /** A cancel frame is emitted until its ack or this long, then the state is CANCELLED anyway. */
     const val CANCEL_WINDOW_MS = 120_000L
+
+    /** The gaps between fallback ticks: 5, 10, 20, 40, 60, 60 … s. Infinite. */
+    fun reemitGaps(): Sequence<Long> =
+        generateSequence(REEMIT_INITIAL_MS) { (it * 2).coerceAtMost(REEMIT_MAX_MS) }
 }
 
 /**
@@ -136,10 +140,8 @@ class EmergencyOrchestrator(
             }
             update { it.copy(phase = EmergencyPhase.NO_CHANNEL, meshIssue = MeshIssue.UNAVAILABLE) }
             jobs.launch {
-                var gap = EmergencyTiming.REEMIT_INITIAL_MS
-                while (true) {
+                for (gap in EmergencyTiming.reemitGaps()) {
                     delay(gap)
-                    gap = (gap * 2).coerceAtMost(EmergencyTiming.REEMIT_MAX_MS)
                     val built = buildAlert() ?: continue
                     update { it.copy(meshIssue = null) }
                     emit(built)
@@ -184,15 +186,16 @@ class EmergencyOrchestrator(
 
             suspend fun run() = coroutineScope {
                 val httpFirst = override.allowsHttp && online()
-                if (httpFirst && attemptHttp()) return@coroutineScope
-                var gap = EmergencyTiming.REEMIT_INITIAL_MS
+                if (httpFirst) {
+                    update { if (it.phase in FALLBACK_PHASES) it.copy(phase = EmergencyPhase.SENDING) else it }
+                    if (attemptHttp()) return@coroutineScope
+                }
                 // The first tick right after a failed attempt would only repeat it.
                 var retryHttp = !httpFirst
-                while (true) {
+                for (gap in EmergencyTiming.reemitGaps()) {
                     tick(this, retryHttp)
                     retryHttp = true
                     delay(gap)
-                    gap = (gap * 2).coerceAtMost(EmergencyTiming.REEMIT_MAX_MS)
                 }
             }
 
@@ -200,6 +203,7 @@ class EmergencyOrchestrator(
             private suspend fun attemptHttp(): Boolean {
                 use(Channel.HTTP)
                 val reply = withTimeoutOrNull(EmergencyTiming.HTTP_TIMEOUT_MS) {
+                    // Rethrow cancellation, no runCatching: a swallowed cancel (ack elsewhere) must never reach the fallback.
                     try {
                         http.post(frame.smsText)
                     } catch (e: CancellationException) {

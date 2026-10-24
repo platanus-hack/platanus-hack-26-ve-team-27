@@ -8,6 +8,7 @@ import com.team27.mama.emergency.payload.EmergencyPayload
 import com.team27.mama.emergency.payload.MamaText
 import com.team27.mama.emergency.payload.MeshFrame
 import com.team27.mama.emergency.payload.PayloadCodec
+import com.team27.mama.emergency.payload.PayloadSigner
 import com.team27.mama.emergency.payload.SealedBox
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
@@ -41,6 +42,7 @@ class FakeSms : SmsEmergencyChannel {
 
 class FakeMesh : MeshEmergencyChannel {
     var startResult = true
+    var broadcastResult = true
     var startCalls = 0
     val broadcasts = mutableListOf<String>()
     override val incoming = MutableSharedFlow<String>()
@@ -52,7 +54,7 @@ class FakeMesh : MeshEmergencyChannel {
 
     override fun broadcast(text: String): Boolean {
         broadcasts += text
-        return true
+        return broadcastResult
     }
 }
 
@@ -75,8 +77,11 @@ class EmergencyTestKit {
     var config = EmergencyConfig(SMS_NUMBER, SERVER.publicKey, SERVER_X)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun TestScope.orchestrator(override: ChannelOverride = ChannelOverride.AUTO) = EmergencyOrchestrator(
-        signer = DEVICE,
+    fun TestScope.orchestrator(
+        override: ChannelOverride = ChannelOverride.AUTO,
+        signer: PayloadSigner = DEVICE,
+    ) = EmergencyOrchestrator(
+        signer = signer,
         config = { config },
         http = http,
         sms = sms,

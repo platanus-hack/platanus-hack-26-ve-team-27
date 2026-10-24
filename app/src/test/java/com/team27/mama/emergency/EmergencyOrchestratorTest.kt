@@ -387,41 +387,111 @@ class EmergencyOrchestratorTest {
         }
     }
 
+    /** The device key until [broken] is cleared; reading it throws like an unusable mesh keystore. */
+    private class FlakySigner : PayloadSigner {
+        var broken = true
+        override val publicKey: ByteArray
+            get() = if (broken) throw MeshUnavailableException(IllegalStateException("keystore")) else DEVICE.publicKey
+
+        override fun sign(message: ByteArray) = DEVICE.sign(message)
+    }
+
     @Test
     fun signingFailureIsNoChannelAndRetried() = runTest {
         with(EmergencyTestKit()) {
-            var broken = true
-            val flaky = object : PayloadSigner {
-                override val publicKey: ByteArray
-                    get() = if (broken) throw MeshUnavailableException(IllegalStateException("keystore")) else DEVICE.publicKey
-
-                override fun sign(message: ByteArray) = DEVICE.sign(message)
-            }
-            val o = EmergencyOrchestrator(
-                signer = flaky,
-                config = { config },
-                http = http,
-                sms = sms,
-                mesh = mesh,
-                location = location,
-                network = { online },
-                channelOverride = { ChannelOverride.AUTO },
-                scope = backgroundScope,
-                nowMs = { NOW + testScheduler.currentTime },
-                newEmergencyId = { 42L },
-            )
+            val signer = FlakySigner()
+            val o = orchestrator(signer = signer)
             assertTrue(o.declare())
             runCurrent()
             assertEquals(EmergencyPhase.NO_CHANNEL, o.state.value.phase)
             assertEquals(MeshIssue.UNAVAILABLE, o.state.value.meshIssue)
             assertTrue(sms.sent.isEmpty())
             assertTrue(mesh.broadcasts.isEmpty())
-            broken = false
+            signer.broken = false
             at(5_000)
             assertEquals(1, sms.sent.size)
             assertEquals(1, mesh.broadcasts.size)
             assertEquals(EmergencyPhase.SEARCHING_NEARBY, o.state.value.phase)
             assertNull(o.state.value.meshIssue)
+        }
+    }
+
+    @Test
+    fun signingRecoveryShowsSendingDuringHttpAttempt() = runTest {
+        with(EmergencyTestKit()) {
+            online = true
+            http.behaviour = { awaitCancellation() }
+            val signer = FlakySigner()
+            val o = orchestrator(signer = signer)
+            o.declare()
+            runCurrent()
+            assertEquals(EmergencyPhase.NO_CHANNEL, o.state.value.phase)
+            signer.broken = false
+            at(5_000)
+            assertEquals(1, http.posted.size)
+            assertEquals(EmergencyPhase.SENDING, o.state.value.phase)
+            at(10_000)
+            assertEquals(EmergencyPhase.SEARCHING_NEARBY, o.state.value.phase)
+        }
+    }
+
+    @Test
+    fun ackDuringHttpAttemptSuppressesFallback() = runTest {
+        with(EmergencyTestKit()) {
+            online = true
+            http.behaviour = { awaitCancellation() }
+            val o = orchestrator()
+            o.declare()
+            at(2_000)
+            assertEquals(EmergencyPhase.SENDING, o.state.value.phase)
+            sms.incoming.emit(smsAck(42, 0))
+            runCurrent()
+            assertEquals(EmergencyPhase.NOTIFIED, o.state.value.phase)
+            advanceTimeBy(600_000)
+            assertEquals(0, mesh.startCalls)
+            assertTrue(mesh.broadcasts.isEmpty())
+            assertTrue(sms.sent.isEmpty())
+            assertEquals(1, http.posted.size)
+        }
+    }
+
+    @Test
+    fun http5xxIsRetriedOnLaterTicks() = runTest {
+        with(EmergencyTestKit()) {
+            online = true
+            http.behaviour = { throw ServerHttpException(503, "unavailable") }
+            val o = orchestrator()
+            o.declare()
+            runCurrent()
+            assertEquals(1, http.posted.size)
+            at(5_000)
+            assertEquals(2, http.posted.size)
+            at(15_000)
+            assertEquals(3, http.posted.size)
+            assertEquals(EmergencyPhase.SEARCHING_NEARBY, o.state.value.phase)
+        }
+    }
+
+    @Test
+    fun refusedBroadcastRetriesStartOnNextTick() = runTest {
+        with(EmergencyTestKit()) {
+            sms.canSend = false
+            mesh.broadcastResult = false
+            val o = orchestrator()
+            o.declare()
+            runCurrent()
+            assertEquals(1, mesh.startCalls)
+            assertEquals(1, mesh.broadcasts.size)
+            assertEquals(MeshIssue.UNAVAILABLE, o.state.value.meshIssue)
+            assertEquals(EmergencyPhase.NO_CHANNEL, o.state.value.phase)
+            mesh.broadcastResult = true
+            at(5_000)
+            assertEquals(2, mesh.startCalls)
+            assertEquals(2, mesh.broadcasts.size)
+            assertNull(o.state.value.meshIssue)
+            assertEquals(EmergencyPhase.SEARCHING_NEARBY, o.state.value.phase)
+            at(15_000)
+            assertEquals(2, mesh.startCalls)
         }
     }
 
