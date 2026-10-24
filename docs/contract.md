@@ -171,7 +171,8 @@ SMS number.
 
 ### AlertEvent (phone → server, `POST /incidents`)
 
-The trigger. `points` has at least one fix, oldest first. `trigger` is one of
+The trigger. `points` has 1 to 20 fixes, oldest first (the server answers
+`400` to more, and to a body over 16 KiB). `trigger` is one of
 `volume_pattern`, `widget`, `tile`, `in_app`. The device must be registered
 first (`incidents.device_id` references `devices`): for an unknown
 `device_id` the server answers `422`, and the phone re-sends its
@@ -203,8 +204,9 @@ Sample: `alert_response.json`.
 
 ### LocationUpdate (phone → server, `POST /incidents/{incident_id}/points`)
 
-More fixes for an open incident, mainly in `silent_tracker` mode. A resent
-fix (same `recorded_at`) is ignored. Sample: `location_update.json`.
+More fixes for an open incident, mainly in `silent_tracker` mode, 1 to 20
+per request like the alert's. A resent fix (same `recorded_at`) is ignored.
+Sample: `location_update.json`.
 
 ```json
 {

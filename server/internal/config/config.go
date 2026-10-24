@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // DefaultPort is used when PORT is unset.
@@ -17,6 +18,25 @@ const DefaultPort = "8080"
 // DefaultReportTTLDays is how long an incident report link lives when
 // INCIDENT_REPORT_TTL_DAYS is unset or not a positive number.
 const DefaultReportTTLDays = 30
+
+// LimitWindow is the sliding window every Limits cap counts over.
+const LimitWindow = 10 * time.Minute
+
+// Defaults of the Limits caps, per LimitWindow, when their env var is unset
+// or not a positive number. They leave room for a rehearsal loop: several
+// alerts to the same phone within minutes.
+const (
+	// DefaultCallsPerNumber is 3 incidents whose first call fails and is
+	// retried, or 6 that connect at once.
+	DefaultCallsPerNumber = 6
+	DefaultCallsTotal     = 40
+	// An incident sends one message to each family number (the notifier
+	// claims it once), so DefaultMessagesPerNumber is 10 alerts reaching the
+	// same relative, from one phone or from several that list them.
+	DefaultMessagesPerNumber = 10
+	// DefaultMessagesTotal is 12 alerts to 5 family numbers each.
+	DefaultMessagesTotal = 60
+)
 
 // NOTIFIER values: the channel the family alert goes out on.
 const (
@@ -44,6 +64,7 @@ type Config struct {
 	Anthropic  Anthropic
 	Emergency  Emergency
 	Report     Report
+	Limits     Limits
 }
 
 // ElevenLabs is the voice agent that places the "Mamá" call through its
@@ -127,6 +148,19 @@ type Report struct {
 	DemoKey string
 }
 
+// Limits caps the calls the server places and the family messages it sends,
+// per number and in total, over LimitWindow (package ratelimit). There is no
+// auth on /devices or /incidents, so without them a loop of fresh incidents
+// places a paid call, and messages every family number, each time. The
+// counts live in memory: a restart, such as a deploy or a change of these
+// vars on Render, resets them.
+type Limits struct {
+	CallsPerNumber    int // CALL_LIMIT_PER_NUMBER, calls placed to one number, retries included; DefaultCallsPerNumber when unset or invalid
+	CallsTotal        int // CALL_LIMIT_TOTAL, calls placed to every number together; DefaultCallsTotal when unset or invalid
+	MessagesPerNumber int // NOTIFY_LIMIT_PER_NUMBER, family messages sent to one number; DefaultMessagesPerNumber when unset or invalid
+	MessagesTotal     int // NOTIFY_LIMIT_TOTAL, family messages sent to every number together; DefaultMessagesTotal when unset or invalid
+}
+
 // Load reads the config from the process environment.
 func Load() Config { return LoadFrom(os.Getenv) }
 
@@ -177,6 +211,12 @@ func LoadFrom(getenv func(string) string) Config {
 			Enabled: isOn(get("INCIDENT_REPORT_ENABLED")),
 			TTLDays: positiveInt(get("INCIDENT_REPORT_TTL_DAYS"), DefaultReportTTLDays),
 			DemoKey: get("DEMO_KEY"),
+		},
+		Limits: Limits{
+			CallsPerNumber:    positiveInt(get("CALL_LIMIT_PER_NUMBER"), DefaultCallsPerNumber),
+			CallsTotal:        positiveInt(get("CALL_LIMIT_TOTAL"), DefaultCallsTotal),
+			MessagesPerNumber: positiveInt(get("NOTIFY_LIMIT_PER_NUMBER"), DefaultMessagesPerNumber),
+			MessagesTotal:     positiveInt(get("NOTIFY_LIMIT_TOTAL"), DefaultMessagesTotal),
 		},
 	}
 	if c.Port == "" {

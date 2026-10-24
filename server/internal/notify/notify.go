@@ -18,6 +18,7 @@ import (
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/ratelimit"
 )
 
 // Sender delivers one text message to one E.164 number.
@@ -75,8 +76,9 @@ func ChannelOf(s Sender) string {
 type Notifier struct {
 	store      Store
 	sender     Sender
-	links      ReportLinks // nil: no report line
-	deliveries DeliveryLog // nil: sends are only logged
+	links      ReportLinks        // nil: no report line
+	deliveries DeliveryLog        // nil: sends are only logged
+	limit      *ratelimit.Limiter // nil: no cap
 }
 
 var _ intake.Notifier = (*Notifier)(nil)
@@ -108,6 +110,14 @@ func (n *Notifier) send(ctx context.Context, incidentID, to, body string) error 
 	return err
 }
 
+// WithLimit caps the messages sent per family number and in total. There is
+// no auth on /devices or /incidents: without it a loop of fresh incidents
+// messages every family number, any number at all, each time.
+func (n *Notifier) WithLimit(l *ratelimit.Limiter) *Notifier {
+	n.limit = l
+	return n
+}
+
 // WithReportLinks adds the "Ficha: <url>" line to every message, from links.
 func (n *Notifier) WithReportLinks(links ReportLinks) *Notifier {
 	n.links = links
@@ -115,7 +125,8 @@ func (n *Notifier) WithReportLinks(links ReportLinks) *Notifier {
 }
 
 // Notify sends the incident's message to every family number, once. It only
-// logs failures: the handoff has no caller to report to.
+// logs failures: the handoff has no caller to report to. A number over the
+// limit (WithLimit) is only logged: no send and no delivery row.
 //
 // If no family number got the message, the claim is released so a retry can
 // send. Once any number got it, the claim stays, so a retry never sends a
@@ -144,8 +155,12 @@ func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 	body := FormatWithReport(msg, n.reportURL(ctx, inc.ID))
 	sent := 0
 	for _, to := range msg.To {
+		if err := n.limit.Allow(to); err != nil {
+			log.Printf("notify: incident %s: message to %s %v; not sent", inc.ID, Mask(to), err)
+			continue
+		}
 		if err := n.send(ctx, inc.ID, to, body); err != nil {
-			log.Printf("notify: incident %s: send to %s: %v", inc.ID, mask(to), err)
+			log.Printf("notify: incident %s: send to %s: %v", inc.ID, Mask(to), err)
 			continue
 		}
 		sent++
@@ -228,8 +243,9 @@ func verdictLabel(msg contract.NotifierMessage) string {
 	return "sin veredicto"
 }
 
-// mask keeps the last 4 digits of a phone number for the logs.
-func mask(phone string) string {
+// Mask keeps the last 4 digits of a phone number for the logs. The call
+// engine's log lines use it too.
+func Mask(phone string) string {
 	if len(phone) <= 4 {
 		return "****"
 	}
