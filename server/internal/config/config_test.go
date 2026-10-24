@@ -272,3 +272,14 @@ func TestLimitsReadEachVar(t *testing.T) {
 		t.Errorf("Limits = %+v, want %+v", c.Limits, want)
 	}
 }
+
+func TestNotifySelfIsOffUnlessTrueOr1(t *testing.T) {
+	for v, want := range map[string]bool{"": false, "yes": false, "0": false, "true": true, "TRUE": true, "1": true} {
+		if got := LoadFrom(envFrom(map[string]string{"NOTIFY_SELF": v})).NotifySelf; got != want {
+			t.Errorf("NOTIFY_SELF=%q: NotifySelf = %v, want %v", v, got, want)
+		}
+	}
+	if s := LoadFrom(envFrom(map[string]string{"NOTIFY_SELF": "true"})).String(); !strings.Contains(s, "NOTIFY_SELF=true") {
+		t.Errorf("String() = %s, want NOTIFY_SELF=true", s)
+	}
+}

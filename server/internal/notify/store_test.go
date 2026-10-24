@@ -61,6 +61,9 @@ func TestDBStoreMessageWithoutCall(t *testing.T) {
 	if len(msg.To) != 2 || msg.To[0] != "+584241112233" || msg.To[1] != "+584125556677" {
 		t.Errorf("To = %v", msg.To)
 	}
+	if msg.Reporter != "+584141234567" {
+		t.Errorf("Reporter = %q, want the device's phone_number", msg.Reporter)
+	}
 	if msg.Location.Lat != 1 || msg.Verdict != "" || msg.Reason != "" || msg.Branch != contract.BranchImmediateAlert {
 		t.Errorf("msg = %+v, want inc location and no verdict", msg)
 	}

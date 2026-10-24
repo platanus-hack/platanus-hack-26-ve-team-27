@@ -304,6 +304,14 @@ and sends only if that changed a row (at most once). When an incident has
 several calls, the verdict is `duress` if any call says `duress`, otherwise
 the newest call's verdict. Sample: `notifier_message.json`.
 
+`reporter` is the reporting device's own `phone_number` (left out when
+unknown). With `NOTIFY_SELF=true` (#102, off by default) the notifier adds it
+to the recipients on the `NOTIFIER` channel (WhatsApp), once even when it is
+also a family number. It is for the demo only: in production the aggressor may
+be looking at that phone. Without it the notifier sends one message per family
+number, as before. The claim covers every recipient: it is released only when
+none got the alert.
+
 ```json
 {
   "incident_id": "9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f",

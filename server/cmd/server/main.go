@@ -241,6 +241,10 @@ func newNotifier(cfg config.Config, pool *sql.DB, links notify.ReportLinks, deli
 	if deliveries != nil {
 		n.WithDeliveries(deliveries)
 	}
+	if cfg.NotifySelf {
+		log.Print("notifier: NOTIFY_SELF is on; the reporting phone also gets the alert (demo only)")
+		n.WithSelf()
+	}
 	return n
 }
 
