@@ -10,8 +10,8 @@ En Venezuela la seguridad personal es una preocupación de todos los días. Cuan
 2. **Disparo discreto.** Presionas volumen **arriba-abajo-arriba**, aunque el teléfono esté bloqueado. La app envía tu ubicación GPS al servidor.
 3. **Te llama "Mamá".** En menos de 15 segundos te entra una llamada normal de "Mamá", un agente de voz con IA (ElevenLabs + Twilio) que te saluda por tu nombre y te pregunta cómo vas.
 4. **Detector de coacción.** Reglas + un LLM revisan la llamada. Si dices la frase de alerta o te quedas callado, estás en peligro. Si dices la frase de todo bien, no se avisa a nadie. Si no dices ninguna de las dos, se avisa igual: no confirmaste que estás bien.
-5. **Aviso a la familia.** Tu familia recibe un WhatsApp (Kapso) con tu ubicación, el veredicto, lo que se entendió de la llamada (dónde estás, con quién, qué parece estar pasando) y el enlace a la ficha del caso, con la grabación.
-6. **Central.** Un panel web privado muestra cada alerta en vivo y su ficha, que se va llenando mientras hablas con "Mamá".
+5. **Aviso a la familia.** Tu familia recibe un WhatsApp (Kapso) con tu ubicación, el veredicto, lo que se entendió de la llamada (dónde estás, con quién, qué parece estar pasando) y el enlace a la ficha del caso, con la grabación de la llamada cuando ya está lista.
+6. **Central.** Una central web privada muestra cada alerta en vivo, con su estado y tu recorrido, y su ficha completa cuando termina la llamada.
 
 Para quien te esté mirando, es solo una llamada con tu mamá. Si usas el widget de la pantalla de inicio, MAMÁ no llama: avisa a tu familia de inmediato.
 
