@@ -4,12 +4,17 @@ import com.team27.mama.contract.DeviceRegistration
 import com.team27.mama.contract.RemoteConfig
 import com.team27.mama.emergency.config.InMemoryConfigStore
 import com.team27.mama.emergency.config.RemoteConfigRepository
+import com.team27.mama.emergency.payload.AckInfo
 import com.team27.mama.emergency.payload.Vectors
 import com.team27.mama.emergency.payload.unhex
 import com.team27.mama.server.ServerApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -42,7 +47,7 @@ class SmsChannelTest {
     private val sleeper: suspend (Long, Deferred<Unit>) -> Unit = { ms, _ -> slept += ms }
 
     private fun channel(sender: SmsSender, default: String = number) =
-        SmsChannel(repo(default), sender, sleeper)
+        SmsChannel(repo(default), sender, sleeper = sleeper)
 
     @Test fun successFirstTry() = runBlocking {
         val sender = FakeSender(listOf(true))
@@ -111,6 +116,84 @@ class SmsChannelTest {
         val t0 = System.nanoTime()
         assertEquals(SmsSendResult.Stopped(1), channel.send(signed))
         assertTrue("stop must not wait for the 2s backoff", System.nanoTime() - t0 < 1_000_000_000L)
+    }
+
+    /** Never answers, like a sent-status broadcast that gets lost; records that it was cancelled. */
+    private class HangingSender(private val hangs: Int) : SmsSender {
+        var calls = 0
+        var cancelled = false
+        override fun canSend() = true
+        override suspend fun sendText(to: String, text: String): Boolean {
+            calls++
+            if (calls > hangs) return true
+            try {
+                awaitCancellation()
+            } finally {
+                cancelled = true
+            }
+        }
+    }
+
+    @Test fun attemptWithoutSentStatusTimesOutAndIsRetried() = runBlocking {
+        val sender = HangingSender(hangs = 1)
+        val channel = SmsChannel(repo(number), sender, attemptTimeoutMillis = 50, sleeper = sleeper)
+        assertEquals(SmsSendResult.Sent(2), channel.send(signed))
+        assertEquals(2, sender.calls)
+        assertTrue(sender.cancelled)
+        assertEquals(listOf(2_000L), slept)
+    }
+
+    @Test fun attemptsThatAlwaysTimeOutFail() = runBlocking {
+        val sender = HangingSender(hangs = Int.MAX_VALUE)
+        val channel = SmsChannel(repo(number), sender, attemptTimeoutMillis = 20, sleeper = sleeper)
+        assertEquals(SmsSendResult.Failed(4), channel.send(signed))
+    }
+
+    @Test fun attemptTimeoutIsThirtySeconds() {
+        assertEquals(30_000L, SmsChannel.ATTEMPT_TIMEOUT_MILLIS)
+    }
+
+    @Test fun stopCutsAnAttemptInFlight() = runBlocking {
+        val sender = HangingSender(hangs = Int.MAX_VALUE)
+        val channel = SmsChannel(repo(number), sender, sleeper = sleeper)
+        val result = async { channel.send(signed) }
+        while (sender.calls == 0) yield()
+        channel.stop()
+        assertEquals(SmsSendResult.Stopped(1), withTimeout(5_000) { result.await() })
+        assertTrue(sender.cancelled)
+        assertEquals(1, sender.calls)
+        assertTrue(slept.isEmpty())
+    }
+
+    private fun ackFor(emergencyId: Long) = AckInfo(emergencyId, 0)
+    private val sendingId = java.lang.Long.parseUnsignedLong(Vectors.file.payloads.first().emergencyId, 16)
+
+    @Test fun matchingAckStopsAnAttemptInFlight() = runBlocking {
+        val sender = HangingSender(hangs = Int.MAX_VALUE)
+        val channel = SmsChannel(repo(number), sender, sleeper = sleeper)
+        val result = async { channel.send(signed) }
+        while (sender.calls == 0) yield()
+        channel.onAck(ackFor(sendingId))
+        assertEquals(SmsSendResult.Stopped(1), withTimeout(5_000) { result.await() })
+    }
+
+    @Test fun ackForAnotherEmergencyDoesNotStop() = runBlocking {
+        val sender = HangingSender(hangs = Int.MAX_VALUE)
+        val channel = SmsChannel(repo(number), sender, attemptTimeoutMillis = 100, sleeper = sleeper)
+        val result = async { channel.send(signed) }
+        while (sender.calls == 0) yield()
+        channel.onAck(ackFor(sendingId + 1))
+        // Still sending: it runs through every attempt instead of stopping.
+        assertEquals(SmsSendResult.Failed(4), withTimeout(5_000) { result.await() })
+    }
+
+    @Test fun ackWithNothingInFlightIsIgnored() = runBlocking {
+        val sender = FakeSender(listOf(true))
+        val channel = channel(sender)
+        channel.onAck(ackFor(sendingId))
+        assertEquals(SmsSendResult.Sent(1), channel.send(signed))
+        // Idle again after the send: a late ack must not stop the next one.
+        channel.onAck(ackFor(sendingId))
     }
 
     @Test fun cancellationHaltsRetries() = runBlocking {

@@ -129,7 +129,7 @@ private fun copyFor(step: SetupStep): StepCopy = when (step) {
     )
     SetupStep.SMS -> StepCopy(
         title = "SMS",
-        why = "Respaldo cuando no hay datos.",
+        why = "Respaldo cuando no hay datos, y aviso de que llegó.",
         action = "Permitir SMS",
         denied = "Sin SMS no hay respaldo cuando te quedas sin datos.",
     )

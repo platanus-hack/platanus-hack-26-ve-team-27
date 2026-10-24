@@ -4,6 +4,8 @@ import android.content.Context
 import com.team27.mama.emergency.config.RemoteConfigRepository
 import com.team27.mama.emergency.config.SharedPreferencesConfigStore
 import com.team27.mama.emergency.payload.PayloadSigner
+import com.team27.mama.emergency.sms.OfflineAcks
+import com.team27.mama.emergency.sms.SmsAckHandler
 import com.team27.mama.emergency.sms.SmsChannel
 import com.team27.mama.emergency.sms.SmsManagerSender
 import com.team27.mama.onboarding.ConnectivityNetworkStatus
@@ -47,6 +49,22 @@ class AppGraph(
      * [offlineEmergency] is on); with the flag off nothing touches it.
      */
     val smsChannel: SmsChannel by lazy { SmsChannel(remoteConfig, SmsManagerSender(app)) }
+
+    /**
+     * Verified server acks (#58). #59 subscribes to stop the mesh and HTTP for the emergency;
+     * the SMS channel is already subscribed (see [smsAckHandler]).
+     */
+    val acks: OfflineAcks = OfflineAcks()
+
+    /**
+     * Turns the ack SMS into an [AckInfo] on [acks], using the cached server key (null until the
+     * first config fetch, so no ack is accepted before then). Used by SmsAckReceiver; the first
+     * use also wires the SMS channel to stop on a matching ack.
+     */
+    val smsAckHandler: SmsAckHandler by lazy {
+        acks.subscribe(smsChannel::onAck)
+        SmsAckHandler({ remoteConfig.current().serverEd25519PublicKey }, acks)
+    }
 
     fun deviceRegistrar(signer: PayloadSigner): DeviceRegistrar = DeviceRegistrar(serverApi, signer)
 }
