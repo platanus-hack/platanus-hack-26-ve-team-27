@@ -46,17 +46,27 @@ var (
 	errBadSignature = errors.New("missing, expired or invalid " + HeaderSignature)
 )
 
-// verify checks the request's signature headers against the device's key.
-func verify(key []byte, signedAtHeader, sigHeader string, msg func(signedAt int64) []byte, now time.Time) error {
+// precheck is what can be checked before the body is read: the device has
+// a bound key and X-Mama-Signed-At is in the window. It returns signed_at.
+func precheck(key []byte, signedAtHeader string, now time.Time) (int64, error) {
 	if len(key) != ed25519.PublicKeySize {
-		return errNoKey
+		return 0, errNoKey
 	}
 	signedAt, err := strconv.ParseInt(signedAtHeader, 10, 64)
 	if err != nil {
-		return errBadSignature
+		return 0, errBadSignature
 	}
 	if d := now.Sub(time.Unix(signedAt, 0)); d > MaxClockSkew || d < -MaxClockSkew {
-		return errBadSignature
+		return 0, errBadSignature
+	}
+	return signedAt, nil
+}
+
+// verify checks the request's signature headers against the device's key.
+func verify(key []byte, signedAtHeader, sigHeader string, msg func(signedAt int64) []byte, now time.Time) error {
+	signedAt, err := precheck(key, signedAtHeader, now)
+	if err != nil {
+		return err
 	}
 	sig, err := base64.StdEncoding.DecodeString(sigHeader)
 	if err != nil || len(sig) != ed25519.SignatureSize || !ed25519.Verify(key, msg(signedAt), sig) {

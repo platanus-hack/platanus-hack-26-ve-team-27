@@ -31,14 +31,27 @@ type Handler struct {
 	svc   *Service // nil: every route answers 503
 	now   func() time.Time
 
+	uploads chan struct{} // one token per upload holding its audio in memory
+
 	mu         sync.Mutex
 	lastUpload map[string]time.Time
+	// usedSignatures holds each accepted signature until it has surely
+	// expired, so a captured request cannot be replayed inside the
+	// MaxClockSkew window (on this instance).
+	usedSignatures map[string]time.Time
 }
+
+// maxConcurrentUploads bounds how many uploads hold their audio (up to
+// 10 MB each) at once; past it the server answers 503.
+const maxConcurrentUploads = 4
 
 // NewHandler returns the voice routes on store and el. A nil store or el
 // makes every route answer 503.
 func NewHandler(store Store, el ElevenLabs) *Handler {
-	h := &Handler{store: store, now: time.Now, lastUpload: map[string]time.Time{}}
+	h := &Handler{
+		store: store, now: time.Now, uploads: make(chan struct{}, maxConcurrentUploads),
+		lastUpload: map[string]time.Time{}, usedSignatures: map[string]time.Time{},
+	}
 	if store != nil && el != nil {
 		h.svc = NewService(store, el)
 	}
@@ -87,11 +100,21 @@ func (h *Handler) device(w http.ResponseWriter, r *http.Request) (id string, d D
 	return id, d, true
 }
 
-// authorize checks the signature: 409 without a bound key, 401 otherwise.
-func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, id string, d Device, audioSHA256 []byte) bool {
-	err := verify(d.PublicKey, r.Header.Get(HeaderSignedAt), r.Header.Get(HeaderSignature), func(at int64) []byte {
-		return SignedMessage(r.Method, id, at, audioSHA256)
-	}, h.now())
+// authorize checks the signature: 409 without a bound key, 401 otherwise,
+// also for a signature already used. With full false it checks only what
+// precheck can, before the body is read.
+func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, id string, d Device, audioSHA256 []byte, full bool) bool {
+	var err error
+	if full {
+		err = verify(d.PublicKey, r.Header.Get(HeaderSignedAt), r.Header.Get(HeaderSignature), func(at int64) []byte {
+			return SignedMessage(r.Method, id, at, audioSHA256)
+		}, h.now())
+		if err == nil && !h.useSignature(r.Header.Get(HeaderSignature)) {
+			err = errBadSignature
+		}
+	} else {
+		_, err = precheck(d.PublicKey, r.Header.Get(HeaderSignedAt), h.now())
+	}
 	switch {
 	case errors.Is(err, errNoKey):
 		writeError(w, http.StatusConflict, err.Error())
@@ -109,17 +132,28 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 		h.device(w, r)
 		return
 	}
+	// What needs no body goes first, so a stranger cannot make the server
+	// buffer 10 MB for an unknown device, a device with no key or a stale
+	// signature.
+	id, d, ok := h.device(w, r)
+	if !ok || !h.authorize(w, r, id, d, nil, false) {
+		return
+	}
+	select {
+	case h.uploads <- struct{}{}:
+		defer func() { <-h.uploads }()
+	default:
+		w.Header().Set("Retry-After", "5")
+		writeError(w, http.StatusServiceUnavailable, "too many voice uploads at once; try again")
+		return
+	}
 	form, status, msg := readForm(w, r)
 	if status != 0 {
 		writeError(w, status, msg)
 		return
 	}
-	id, d, ok := h.device(w, r)
-	if !ok {
-		return
-	}
 	sum := sha256.Sum256(form.audio)
-	if !h.authorize(w, r, id, d, sum[:]) {
+	if !h.authorize(w, r, id, d, sum[:], true) {
 		return
 	}
 	if wait := h.claimUpload(id); wait > 0 {
@@ -129,6 +163,9 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	voiceID, err := h.svc.Set(r.Context(), id, NewVoice{RemoveBackgroundNoise: true}, Sample{Audio: form.audio, Format: form.format})
 	if err != nil {
+		if errors.Is(err, ErrElevenLabs) {
+			h.releaseUpload(id) // nothing changed: the phone may retry at once
+		}
 		h.upstreamOr500(w, "set voice", id, err)
 		return
 	}
@@ -138,7 +175,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
 	id, d, ok := h.device(w, r)
-	if !ok || !h.authorize(w, r, id, d, nil) {
+	if !ok || !h.authorize(w, r, id, d, nil, true) {
 		return
 	}
 	if err := h.svc.Remove(r.Context(), id); err != nil {
@@ -203,6 +240,31 @@ func (h *Handler) claimUpload(id string) time.Duration {
 	}
 	h.lastUpload[id] = now
 	return 0
+}
+
+// releaseUpload gives the device its upload slot back.
+func (h *Handler) releaseUpload(id string) {
+	h.mu.Lock()
+	delete(h.lastUpload, id)
+	h.mu.Unlock()
+}
+
+// useSignature records sig as used and reports whether it was new. An entry
+// is dropped once its signed_at window has surely passed.
+func (h *Handler) useSignature(sig string) bool {
+	now := h.now()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for k, until := range h.usedSignatures {
+		if now.After(until) {
+			delete(h.usedSignatures, k)
+		}
+	}
+	if _, used := h.usedSignatures[sig]; used {
+		return false
+	}
+	h.usedSignatures[sig] = now.Add(2 * MaxClockSkew)
+	return true
 }
 
 type uploadForm struct {

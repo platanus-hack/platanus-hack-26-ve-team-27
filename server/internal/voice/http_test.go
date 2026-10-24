@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -160,6 +161,7 @@ func TestUploadRejectsOtherFormats(t *testing.T) {
 	hs := newHarness(t)
 	wantStatus(t, hs.upload([]byte("%PDF-1.7 not audio")), http.StatusBadRequest)
 	r := uploadRequest(t, devID, nil, "true")
+	r.Header.Set(HeaderSignedAt, fmt.Sprint(testNow.Unix())) // passes the pre-body check
 	wantStatus(t, hs.serve(r), http.StatusBadRequest)
 }
 
@@ -256,8 +258,85 @@ func TestDeleteGoesBackToGlobalVoice(t *testing.T) {
 	if _, deleted, live := hs.el.snapshot(); len(deleted) != 1 || deleted[0] != "voice-1" || len(live) != 0 {
 		t.Fatalf("deleted %v, live %v", deleted, live)
 	}
-	// No voice left: DELETE again is a no-op.
-	wantStatus(t, hs.remove(), http.StatusNoContent)
+	// No voice left: DELETE again (newly signed) is a no-op.
+	r := httptest.NewRequest(http.MethodDelete, "/devices/"+devID+"/voice", nil)
+	hs.dev.sign(r, testNow.Add(time.Second), nil)
+	wantStatus(t, hs.serve(r), http.StatusNoContent)
+}
+
+// A captured signed request does not work twice, even inside the window.
+func TestSignatureIsSingleUse(t *testing.T) {
+	hs := newHarness(t)
+	hs.el.addVoice("v")
+	hs.store.put(devID, hs.dev.pub, "v")
+	r := httptest.NewRequest(http.MethodDelete, "/devices/"+devID+"/voice", nil)
+	hs.dev.sign(r, testNow, nil)
+	replay := r.Clone(r.Context())
+	wantStatus(t, hs.serve(r), http.StatusNoContent)
+	hs.store.put(devID, hs.dev.pub, "v2")
+	wantStatus(t, hs.serve(replay), http.StatusUnauthorized)
+	if got := hs.store.get(devID).VoiceID; got != "v2" {
+		t.Fatalf("a replayed DELETE removed the voice: %q", got)
+	}
+}
+
+// An unknown device, a device with no key or a stale signature are refused
+// before the body is read.
+func TestUploadRefusedBeforeReadingBody(t *testing.T) {
+	hs := newHarness(t)
+	for _, c := range []struct {
+		name string
+		id   string
+		key  bool
+		at   time.Time
+		want int
+	}{
+		{"unknown device", "9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f", true, testNow, http.StatusNotFound},
+		{"no key", devID, false, testNow, http.StatusConflict},
+		{"stale", devID, true, testNow.Add(-time.Hour), http.StatusUnauthorized},
+	} {
+		if c.key {
+			hs.store.put(devID, hs.dev.pub, "")
+		} else {
+			hs.store.put(devID, nil, "")
+		}
+		body := &countingReader{}
+		r := httptest.NewRequest(http.MethodPost, "/devices/"+c.id+"/voice", body)
+		r.Header.Set("Content-Type", "multipart/form-data; boundary=x")
+		r.Header.Set(HeaderSignedAt, fmt.Sprint(c.at.Unix()))
+		wantStatus(t, hs.serve(r), c.want)
+		if body.n != 0 {
+			t.Errorf("%s: read %d bytes of the body", c.name, body.n)
+		}
+	}
+}
+
+func TestUploadConcurrencyCap(t *testing.T) {
+	hs := newHarness(t)
+	for range maxConcurrentUploads {
+		hs.h.uploads <- struct{}{}
+	}
+	rec := hs.upload(fakeMP3("busy"))
+	wantStatus(t, rec, http.StatusServiceUnavailable)
+	if rec.Header().Get("Retry-After") == "" {
+		t.Fatal("no Retry-After")
+	}
+}
+
+func TestUploadRetryAfterElevenLabsFailure(t *testing.T) {
+	hs := newHarness(t)
+	hs.el.failAdd = http.StatusInternalServerError
+	wantStatus(t, hs.upload(fakeMP3("a")), http.StatusBadGateway)
+	hs.el.failAdd = 0
+	wantStatus(t, hs.upload(fakeMP3("b")), http.StatusCreated)
+}
+
+// countingReader is an endless body that counts what was read from it.
+type countingReader struct{ n int }
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	c.n += len(p)
+	return len(p), nil
 }
 
 func TestDeleteAlreadyGoneInElevenLabs(t *testing.T) {

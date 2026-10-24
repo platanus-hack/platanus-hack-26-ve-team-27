@@ -71,16 +71,20 @@ func (s *Service) Set(ctx context.Context, deviceID string, v NewVoice, sample S
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", ErrElevenLabs, err)
 	}
+	// The cleanup deletes below run even if the caller went away, but not
+	// forever.
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
 	old, err := s.store.SetVoice(ctx, deviceID, voiceID, s.now().UTC(), sum[:])
 	if err != nil {
 		// Not stored: delete the clone so it does not hold a voice slot.
-		if derr := s.el.Delete(context.WithoutCancel(ctx), voiceID); derr != nil {
+		if derr := s.el.Delete(cleanup, voiceID); derr != nil {
 			log.Printf("voice: orphaned voice %s after a failed store: %v", voiceID, derr)
 		}
 		return "", err
 	}
 	if old != "" && old != voiceID {
-		if err := s.el.Delete(context.WithoutCancel(ctx), old); err != nil && !errors.Is(err, ErrVoiceNotFound) {
+		if err := s.el.Delete(cleanup, old); err != nil && !errors.Is(err, ErrVoiceNotFound) {
 			log.Printf("voice: could not delete replaced voice %s: %v", old, err)
 		}
 		s.forget(old)

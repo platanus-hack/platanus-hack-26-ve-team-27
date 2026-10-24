@@ -9,7 +9,8 @@
 //	                                     mp3/wav/m4a/ogg/webm; 401 missing or bad signature;
 //	                                     404 unknown device; 409 device has no bound key;
 //	                                     413 audio over 10 MB; 429 one upload per minute;
-//	                                     502 ElevenLabs failed (the old voice stays)
+//	                                     502 ElevenLabs failed (the old voice stays); 503 with
+//	                                     Retry-After when 4 uploads are already in progress
 //	DELETE /devices/{id}/voice           204 removed (or there was none); 401, 404, 409 as above;
 //	                                     502 ElevenLabs failed (nothing changed)
 //	GET    /devices/{id}/voice/preview   200 audio/mpeg; 404 unknown device or no voice; 502
@@ -35,6 +36,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // BaseURL is the ElevenLabs API.
@@ -48,8 +50,8 @@ var ErrAuth = errors.New("elevenlabs: the API key was refused (401/403): check i
 var ErrVoiceNotFound = errors.New("elevenlabs: voice not found")
 
 // Client talks to the ElevenLabs voices and text-to-speech APIs. Create it
-// with a struct literal; BaseURL and HTTP default to BaseURL and
-// http.DefaultClient.
+// with a struct literal; BaseURL and HTTP default to BaseURL and a
+// client with a 90 s timeout.
 type Client struct {
 	BaseURL string // tests point it at an httptest.Server
 	APIKey  string // sent as xi-api-key
@@ -147,6 +149,10 @@ func (c *Client) Speak(ctx context.Context, s Speech) ([]byte, error) {
 	return c.do(ctx, http.MethodPost, "/v1/text-to-speech/"+url.PathEscape(s.VoiceID)+"?output_format=mp3_44100_128", "application/json", bytes.NewReader(payload))
 }
 
+// defaultHTTP bounds every ElevenLabs call, so a hung one does not hold a
+// request, and its audio, forever.
+var defaultHTTP = &http.Client{Timeout: 90 * time.Second}
+
 // maxResponseBytes bounds a response; a preview MP3 is well under it.
 const maxResponseBytes = 16 << 20
 
@@ -168,7 +174,7 @@ func (c *Client) do(ctx context.Context, method, path, contentType string, body 
 	req.Header.Set("xi-api-key", c.APIKey)
 	client := c.HTTP
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultHTTP
 	}
 	resp, err := client.Do(req)
 	if err != nil {

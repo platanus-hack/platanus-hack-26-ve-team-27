@@ -165,7 +165,10 @@ or without `ELEVENLABS_API_KEY`, and `404` for an unknown or malformed
   `201 {"voice_id":"..."}` on success. `400` bad form, no consent or another
   format; `413` over 10 MB; `429` with `Retry-After` when the device
   uploaded less than a minute ago; `502` when ElevenLabs fails, and then the
-  device keeps its previous voice. The new voice is stored first and the
+  device keeps its previous voice and may retry at once; `503` with
+  `Retry-After` when 4 uploads are already in progress. An unknown device,
+  a device with no key or a stale `X-Mama-Signed-At` are refused before the
+  body is read. The new voice is stored first and the
   old one is deleted from ElevenLabs after. The server stores
   `voice_consent_at` and `voice_consent_sha256` (SHA-256 of the audio); the
   audio itself is read in memory and never written to disk or to the
@@ -199,7 +202,9 @@ request). Two headers:
 
 A device with no bound key gets `409` (register a key first); a missing,
 expired or bad signature gets `401`. The hash binds the signature to the
-file, and `signed_at` limits a replay to 5 minutes. `SignedMessage` in
+file, `signed_at` limits a replay to 5 minutes, and inside that window the
+server accepts each signature once (in memory, per server process), so a
+new request needs a new `signed_at`. `SignedMessage` in
 `server/internal/voice` builds the message.
 
 Fallback for the demo: `go run ./cmd/setvoice --device <id> --file mama.mp3`
