@@ -589,3 +589,14 @@ func MaskRecipient(phone string) string {
 	}
 	return "···" + last
 }
+
+// DeliveryIncident is the incident of the family message with messageID,
+// for the trace of a Kapso status; "" when no row has it.
+func (s DBStore) DeliveryIncident(ctx context.Context, messageID string) (string, error) {
+	var id string
+	err := s.pool.QueryRowContext(ctx, `SELECT incident_id FROM notify_deliveries WHERE message_id = $1`, messageID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}

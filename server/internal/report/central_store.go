@@ -3,7 +3,9 @@ package report
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
@@ -44,6 +46,10 @@ type CaseItem struct {
 // ficha, #106, is in the Record: Call.Context.)
 type CaseExtras struct {
 	Cancelled bool
+	// For the trace page: the device's safe phrase (#104, devices.safe_phrase)
+	// and each call's Twilio CallSid by calls.id.
+	SafePhrase string
+	CallSIDs   map[int64]string
 }
 
 // casesQuery is the central list: the newest incidents with their newest
@@ -129,12 +135,29 @@ func (s DBStore) Extras(ctx context.Context, incidentID string) (CaseExtras, err
 		return CaseExtras{}, ErrUnknownIncident
 	}
 	var x CaseExtras
-	err := s.pool.QueryRowContext(ctx,
-		`SELECT (to_jsonb(i) ->> 'cancelled_at') IS NOT NULL FROM incidents i WHERE i.id = $1`, incidentID).Scan(&x.Cancelled)
+	var sids []byte
+	err := s.pool.QueryRowContext(ctx, `
+		SELECT (to_jsonb(i) ->> 'cancelled_at') IS NOT NULL, COALESCE(to_jsonb(d) ->> 'safe_phrase', ''),
+		       (SELECT json_object_agg(c.id, c.call_sid) FROM calls c WHERE c.incident_id = i.id AND c.call_sid IS NOT NULL)
+		FROM incidents i JOIN devices d ON d.id = i.device_id WHERE i.id = $1`, incidentID).Scan(&x.Cancelled, &x.SafePhrase, &sids)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaseExtras{}, ErrUnknownIncident
 	}
-	return x, err
+	if err != nil {
+		return CaseExtras{}, err
+	}
+	if len(sids) > 0 {
+		byID := map[string]string{}
+		if json.Unmarshal(sids, &byID) == nil {
+			x.CallSIDs = map[int64]string{}
+			for k, v := range byID {
+				if id, err := strconv.ParseInt(k, 10, 64); err == nil {
+					x.CallSIDs[id] = v
+				}
+			}
+		}
+	}
+	return x, nil
 }
 
 // caseItemOf sums up a full record the way DBStore.Cases does.

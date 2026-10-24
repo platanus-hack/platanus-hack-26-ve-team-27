@@ -1,0 +1,109 @@
+{{/*
+  The trace page of one case (/central/r/{incident_id}/traza): every step
+  read back from the database, to check a real call end to end. Protected by
+  CENTRAL_KEY like the rest of /central, so it shows the device's phrases;
+  never a full phone number. One live section, "t-trace", streamed by the
+  same loop as the detail; its blocks have no data-key, so ficha.js keeps the
+  ones that did not change and replaces the rest.
+*/}}
+
+{{define "central-trace"}}<!doctype html>
+<html lang="es-VE" data-theme="{{.Theme}}">
+<head>
+{{template "central-meta"}}
+<title>Traza {{.Case.Number}} · Central · MAMÁ</title>
+</head>
+<body class="central c-trace-page" data-state="{{.Case.State}}" data-live-url="/central/r/{{.ID}}/traza/live" data-json-url="/central/r/{{.ID}}/traza/estado.json" data-open>
+<div class="c-app">
+<header class="c-top">
+  <div class="c-brand">
+    <a class="c-back" href="/central/r/{{.ID}}" aria-label="Volver al caso"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14.7 5.3a1 1 0 0 1 0 1.4L9.4 12l5.3 5.3a1 1 0 0 1-1.4 1.4l-6-6a1 1 0 0 1 0-1.4l6-6a1 1 0 0 1 1.4 0Z"/></svg><span>Caso</span></a>
+    {{template "wordmark"}}<span class="c-kicker">Traza del caso</span>
+  </div>
+  <div class="c-top-right">
+    <span class="chip chip-live" data-live-badge><span class="live-dot" aria-hidden="true"></span><span data-live-text>En vivo</span></span>
+    <span class="c-now" data-now aria-label="Hora de Caracas">—</span>
+    {{template "central-theme"}}
+  </div>
+</header>
+<main class="tr" data-live="t-trace">{{template "sec-t-trace" .}}</main>
+</div>
+</body>
+</html>{{end}}
+
+{{define "sec-t-trace" -}}
+<section class="tr-block tr-summary">
+  <h2>Resumen</h2>
+  <ul class="tr-checks">{{range .Summary}}<li class="tr-check {{.State}}"><span class="tr-mark" aria-hidden="true">{{if eq .State "ok"}}✓{{else if eq .State "bad"}}✗{{else}}…{{end}}</span><span class="tr-label">{{.Label}}</span><span class="tr-value">{{.Value}}</span></li>{{end}}</ul>
+</section>
+<section class="tr-block">
+  <h2>Incidente</h2>
+  <dl class="tr-facts">{{range .Incident}}<dt>{{index . 0}}</dt><dd>{{index . 1}}</dd>{{end}}</dl>
+</section>
+<section class="tr-block">
+  <h2>Llamadas</h2>
+  {{- range .Calls}}
+  <article class="tr-call">
+    <h3>{{.Title}}</h3>
+    <dl class="tr-facts">{{range .Facts}}<dt>{{index . 0}}</dt><dd>{{index . 1}}</dd>{{end}}</dl>
+    <p class="tr-webhook tr-{{.WebhookState}}">{{.Webhook}}</p>
+    {{- if .Recording}}<p class="tr-line">Grabación: {{.Recording}}</p>{{end}}
+  </article>
+  {{- else}}
+  <p class="tr-line">Sin llamadas: esta rama no llama.</p>
+  {{- end}}
+</section>
+<section class="tr-block tr-detector">
+  <h2>Detector de la frase</h2>
+  <dl class="tr-facts">
+    <dt>Frase de alerta</dt><dd class="tr-phrase">{{if .Phrase}}«{{.Phrase}}»{{else}}— (el teléfono no registró una){{end}}</dd>
+    <dt>Palabras clave</dt><dd>{{range .Keys}}<code>{{.}}</code> {{end}}</dd>
+    {{- if .Safe}}<dt>Frase de todo bien</dt><dd class="tr-phrase">«{{.Safe}}»</dd>{{end}}
+  </dl>
+  <p class="tr-note">Resaltado: un turno de la persona con todas las palabras clave, sin importar mayúsculas, acentos ni puntuación. Es un diagnóstico de esta página; el veredicto lo decide el detector.</p>
+  {{- range .Calls}}
+  <h3>{{.Title}}</h3>
+  {{- if .Turns}}
+  <ol class="tr-turns">
+  {{- range .Turns}}
+    <li class="{{if .Agent}}agent{{else}}user{{end}}{{if .Match}} match{{end}}"><span class="tr-at">{{.Offset}}</span><span class="tr-who">{{.Who}}</span><span class="tr-text">{{.Text}}</span>{{if .Match}}<span class="tr-tag">frase encontrada</span>{{end}}</li>
+  {{- end}}
+  </ol>
+  <p class="tr-diag {{if .Matched}}found{{else}}absent{{end}}">{{if .Matched}}✓ La frase aparece en un turno de la persona.{{else}}✗ La frase no aparece en ningún turno de la persona.{{end}}</p>
+  {{- else}}
+  <p class="tr-line">Sin transcripción todavía.</p>
+  {{- end}}
+  <dl class="tr-facts">
+    <dt>Reglas, recalculadas ahora</dt><dd>{{if .Rules}}{{.Rules}}{{else}}—{{end}}</dd>
+    <dt>Veredicto guardado</dt><dd>{{if .Stored}}{{.Stored}}{{else}}— todavía no hay veredicto{{end}}</dd>
+  </dl>
+  {{- end}}
+</section>
+<section class="tr-block">
+  <h2>Avisos</h2>
+  {{- if .Notified}}
+  <div class="tr-scroll"><table class="tr-table">
+    <thead><tr><th>Número</th><th>Canal</th><th>Estado</th><th>Enviado</th><th>Entregado</th><th>Leído</th><th>message_id</th><th>Error</th></tr></thead>
+    <tbody>{{range .Notified}}<tr{{if .Failed}} class="failed"{{end}}><td>{{.Recipient}}</td><td>{{.Channel}}</td><td>{{.Status}}</td><td>{{.Sent}}</td><td>{{.Delivered}}</td><td>{{.Read}}</td><td class="tr-id">{{.MessageID}}</td><td>{{.Error}}</td></tr>{{end}}</tbody>
+  </table></div>
+  {{- else}}
+  <p class="tr-line">{{.Note}}</p>
+  {{- end}}
+</section>
+<section class="tr-block">
+  <h2>Sello</h2>
+  {{- if .Seal}}
+  <dl class="tr-facts">{{range .Seal}}<dt>{{index . 0}}</dt><dd>{{index . 1}}</dd>{{end}}</dl>
+  {{- else}}
+  <p class="tr-line">Sin sellar todavía.</p>
+  {{- end}}
+</section>
+<section class="tr-block">
+  <h2>Línea de tiempo</h2>
+  <ol class="tr-events">
+  {{- range .Events}}
+    <li{{if .Error}} class="err"{{end}}><time datetime="{{.ISO}}">{{.Time}}</time><span class="clock clock-{{.Clock}}">{{.Clock.Label}}</span><span><b>{{.Title}}</b>{{if .Detail}} · {{.Detail}}{{end}}</span></li>
+  {{- end}}
+  </ol>
+</section>
+{{- end}}

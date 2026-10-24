@@ -40,6 +40,7 @@ import (
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/duress"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/trace"
 )
 
 // maxBodyBytes bounds a request body. The app's alert, with its one fix, is
@@ -163,6 +164,8 @@ func (h *Handler) handleAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	trace.Log(ev.IncidentID, "alert_received", "trigger", string(ev.Trigger), "branch", string(branch), "speed_mps", speed,
+		"points", len(ev.Points), "has_audio", ev.HasAudio, "new", created)
 	status := http.StatusOK
 	if created {
 		status = http.StatusCreated
