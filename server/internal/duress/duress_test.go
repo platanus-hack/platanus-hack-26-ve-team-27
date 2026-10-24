@@ -1,7 +1,6 @@
 package duress
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"os"
@@ -150,58 +149,11 @@ func TestEditDistanceAtMostOne(t *testing.T) {
 	}
 }
 
-// evalDialog is one line of server/evals/duress_dialogs.jsonl.
-type evalDialog struct {
-	ID           string `json:"id"`
-	Duress       bool   `json:"duress"`
-	NearMiss     bool   `json:"near_miss"`
-	Kind         string `json:"kind"`
-	DuressPhrase string `json:"duress_phrase"`
-	Turns        []struct {
-		Speaker string `json:"speaker"`
-		Text    string `json:"text"`
-	} `json:"turns"`
-}
-
-// transcript maps the eval speakers onto the two ElevenLabs roles: a third
-// party ("other") is heard on the user's channel.
-func (d evalDialog) transcript() []contract.TranscriptTurn {
-	out := make([]contract.TranscriptTurn, 0, len(d.Turns))
-	for _, turn := range d.Turns {
-		role := RoleUser
-		if turn.Speaker == "mama" {
-			role = RoleAgent
-		}
-		out = append(out, contract.TranscriptTurn{Role: role, Message: turn.Text})
-	}
-	return out
-}
-
-func loadEvals(t *testing.T) []evalDialog {
+func loadEvals(t *testing.T) []EvalDialog {
 	t.Helper()
-	f, err := os.Open("../../evals/duress_dialogs.jsonl")
+	dialogs, err := LoadEvalDialogs("../../evals/duress_dialogs.jsonl")
 	if err != nil {
 		t.Fatal(err)
-	}
-	defer f.Close()
-	var dialogs []evalDialog
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		if strings.TrimSpace(sc.Text()) == "" {
-			continue
-		}
-		var d evalDialog
-		if err := json.Unmarshal(sc.Bytes(), &d); err != nil {
-			t.Fatalf("bad eval line %q: %v", sc.Text(), err)
-		}
-		dialogs = append(dialogs, d)
-	}
-	if err := sc.Err(); err != nil {
-		t.Fatal(err)
-	}
-	if len(dialogs) == 0 {
-		t.Fatal("no eval dialogs")
 	}
 	return dialogs
 }
@@ -212,7 +164,7 @@ func loadEvals(t *testing.T) []evalDialog {
 func TestRulesEvalCorpus(t *testing.T) {
 	var tp, fp, fn, tn, unclear int
 	for _, d := range loadEvals(t) {
-		got, err := Rules{}.Detect(context.Background(), d.transcript(), d.DuressPhrase)
+		got, err := Rules{}.Detect(context.Background(), d.Transcript(), d.DuressPhrase)
 		if err != nil {
 			t.Fatalf("%s: %v", d.ID, err)
 		}

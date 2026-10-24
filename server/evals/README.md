@@ -2,11 +2,24 @@
 
 Labeled Spanish (Venezuelan) transcripts of the fake "Mamá" call, used to
 measure the duress detector (#19 rules, #22 LLM step + eval runner).
-Data only: no code lives here.
+Data and committed results only: no code lives here.
 
-## File
+## Running the eval
 
-`duress_dialogs.jsonl`: one dialog per line, UTF-8 JSON.
+```bash
+cd server && go run ./cmd/evals
+```
+
+The runner lives in `server/cmd/evals/`. It scores Rules, the LLM alone and
+Chain (rules, then the LLM on unclear calls) and rewrites `results.md`, the
+committed precision and recall. The LLM runs need `ANTHROPIC_API_KEY`
+(optional `DURESS_LLM_MODEL`); without a key the report says the LLM was not
+measured. To verify, run it and compare with the committed `results.md`.
+
+## Files
+
+- `duress_dialogs.jsonl`: one dialog per line, UTF-8 JSON.
+- `results.md`: the last eval report, written by the runner.
 
 ## Schema
 
