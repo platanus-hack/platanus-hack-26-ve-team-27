@@ -147,7 +147,10 @@ func TestRestoreBody(t *testing.T) {
 	if err := os.WriteFile(path, []byte(current), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := restoreBody(path)
+	if _, err := restoreBody(path, "agent_other"); err == nil {
+		t.Error("restoreBody accepted a backup of another agent")
+	}
+	got, err := restoreBody(path, "agent_x")
 	if err != nil {
 		t.Fatal(err)
 	}

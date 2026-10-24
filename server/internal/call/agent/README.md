@@ -88,8 +88,12 @@ back, send that backup's agent and tts sections again (add `--dry-run` to
 see them first):
 
 ```bash
-go run ./cmd/pushagent --restore cmd/pushagent/backup/<file>.json
+go run ./cmd/pushagent --agent <agent id> --restore cmd/pushagent/backup/<file>.json
 ```
+
+It refuses a backup taken from another agent. Tried on the test agent: a
+restore of its pre-push backup brought back the original first message,
+prompt, variable defaults, tools and TTS settings.
 
 The PATCH only touches `conversation_config.agent` (first message, language,
 variable defaults, prompt and `built_in_tools.end_call`) and `conversation_config.tts` (model,

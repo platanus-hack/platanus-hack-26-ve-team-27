@@ -22,6 +22,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,7 +52,7 @@ func main() {
 	var body []byte
 	var err error
 	if *restore != "" {
-		body, err = restoreBody(*restore)
+		body, err = restoreBody(*restore, *agentID)
 	} else {
 		var u agent.Update
 		if u, err = agent.NewUpdate(); err == nil {
@@ -119,8 +120,8 @@ func (p *pusher) Push(ctx context.Context, body []byte) (string, error) {
 }
 
 func (p *pusher) do(ctx context.Context, method string, body []byte) ([]byte, error) {
-	url := strings.TrimSuffix(p.BaseURL, "/") + "/v1/convai/agents/" + p.AgentID
-	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
+	target := strings.TrimSuffix(p.BaseURL, "/") + "/v1/convai/agents/" + url.PathEscape(p.AgentID)
+	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -150,13 +151,15 @@ func (p *pusher) do(ctx context.Context, method string, body []byte) ([]byte, er
 
 // restoreBody reads a backup written by Push and returns a PATCH body with
 // its conversation_config.agent and conversation_config.tts, the sections
-// pushagent changes.
-func restoreBody(path string) ([]byte, error) {
+// pushagent changes. It refuses a backup of another agent than agentID.
+// The PATCH merges: a field the backup lacks keeps its pushed value.
+func restoreBody(path, agentID string) ([]byte, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 	var backup struct {
+		AgentID            string `json:"agent_id"`
 		ConversationConfig struct {
 			Agent json.RawMessage `json:"agent"`
 			TTS   json.RawMessage `json:"tts"`
@@ -164,6 +167,9 @@ func restoreBody(path string) ([]byte, error) {
 	}
 	if err := json.Unmarshal(raw, &backup); err != nil {
 		return nil, fmt.Errorf("pushagent: read backup %s: %w", path, err)
+	}
+	if backup.AgentID != agentID {
+		return nil, fmt.Errorf("pushagent: backup %s is of agent %q, not %q", path, backup.AgentID, agentID)
 	}
 	cc := backup.ConversationConfig
 	if len(cc.Agent) == 0 {
