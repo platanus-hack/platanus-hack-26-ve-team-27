@@ -48,6 +48,8 @@ fun SetupForm.errors(): SetupFormErrors {
         ownNumber = when {
             ownNumber.isBlank() -> "Escribe tu número para que Mamá te pueda llamar."
             own == null -> INVALID_NUMBER
+            // The server only dials +58 (server/internal/call/engine.go), so any other number would never ring.
+            !own.startsWith(PhoneNumbers.VENEZUELA_PREFIX) -> "Por ahora Mamá solo llama a números de Venezuela (+58)."
             else -> null
         },
         familyNumbers = familyErrors,

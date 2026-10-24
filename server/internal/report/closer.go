@@ -92,10 +92,12 @@ func (c *Closer) CallFinished(ctx context.Context, incidentID, conversationID, s
 // Wait blocks until every close started by CallFinished is done. Tests use it.
 func (c *Closer) Wait() { c.wg.Wait() }
 
-// Close stores the call's recording, then seals the report. It only logs
-// failures: there is no caller to report to, and a report without audio
-// or without a seal still renders. A recording that never arrives does not
-// stop the seal: the sealed document then has no recording hash.
+// Close stores the call's recording, then seals the report, unless a call
+// of the incident is still under way or a newer one finished (see seal).
+// It only logs failures: there is no caller to report to, and a report
+// without audio or without a seal still renders. A recording that never
+// arrives does not stop the seal: the sealed document then has no
+// recording hash.
 func (c *Closer) Close(ctx context.Context, incidentID, conversationID string) {
 	if err := c.record(ctx, conversationID); err != nil {
 		log.Printf("report: incident %s conversation %s: recording not stored: %v", incidentID, conversationID, err)
@@ -104,7 +106,7 @@ func (c *Closer) Close(ctx context.Context, incidentID, conversationID string) {
 		return
 	}
 	c.awaitVerdict(ctx, incidentID, conversationID)
-	if _, err := c.Seal(ctx, incidentID); err != nil {
+	if _, err := c.seal(ctx, incidentID, conversationID); err != nil {
 		log.Printf("report: incident %s: not sealed: %v", incidentID, err)
 	}
 }
@@ -154,9 +156,23 @@ func verdictAndNotice(rec Record, conversationID string) bool {
 }
 
 // Seal signs and stores the incident's report as it is now, once. It
-// reports whether this call sealed it; a report already sealed, or of an
-// incident without a call, is left as it is.
+// reports whether this call sealed it; a report already sealed, of an
+// incident without a call, or with a call still ringing or in progress, is
+// left as it is.
 func (c *Closer) Seal(ctx context.Context, incidentID string) (bool, error) {
+	return c.seal(ctx, incidentID, "")
+}
+
+// seal is Seal on behalf of the call with conversationID, "" for none: it
+// also leaves the report alone unless that call is the incident's newest
+// finished one. ElevenLabs can send a "done" webhook for a phone that rang
+// out, and that call stays done while the engine places the retry
+// (call.Engine.await). Sealing for it would leave the retry's transcript
+// and recording out of the seal for good, since nothing reseals: the
+// retry's own close seals instead, or Recover with the newest finished call
+// once the retry failed too. Every check reads the snapshot the document is
+// built from.
+func (c *Closer) seal(ctx context.Context, incidentID, conversationID string) (bool, error) {
 	if c.Signer == nil {
 		return false, errors.New("no signing key")
 	}
@@ -165,6 +181,14 @@ func (c *Closer) Seal(ctx context.Context, incidentID string) (bool, error) {
 		return false, err
 	}
 	if rec.Seal != nil || rec.Incident.Branch != contract.BranchCall {
+		return false, nil
+	}
+	if c.ongoing(rec) {
+		log.Printf("report: incident %s: not sealed yet: a call is still ringing or in progress", incidentID)
+		return false, nil
+	}
+	if newest, ok := newestDone(rec); conversationID != "" && (!ok || newest.ConversationID != conversationID) {
+		log.Printf("report: incident %s: not sealed for conversation %s: it is not the newest finished call", incidentID, conversationID)
 		return false, nil
 	}
 	// Postgres keeps microseconds: the stored sealed_at equals the document's.
@@ -184,37 +208,72 @@ func (c *Closer) Seal(ctx context.Context, incidentID string) (bool, error) {
 	return stored, nil
 }
 
-// Recover restarts the close of a report a restart left unfinished: on a
-// view of a call report that is not sealed (or whose newest finished call
-// has no recording), once that call ended RecoverAfter ago. It runs at
-// most once per call per process, in the background.
+// Recover restarts the close of a report that a restart left unfinished,
+// or whose retry failed after the first call's close declined to seal: on
+// a view of a call report with no call under way that is not sealed (or
+// whose newest finished call has no recording), once that call ended
+// RecoverAfter ago. It runs at most once per call per process, in the
+// background.
 func (c *Closer) Recover(rec Record) {
 	if c == nil || rec.Incident.Branch != contract.BranchCall {
 		return
 	}
-	for i := len(rec.Calls) - 1; i >= 0; i-- {
-		cl := rec.Calls[i]
-		if cl.Status != "done" || cl.ConversationID == "" {
-			continue
-		}
-		// Never add a recording after the seal: the sealed document would
-		// not cover it.
-		needsSeal := c.Signer != nil && rec.Seal == nil
-		needsAudio := c.Audio != nil && cl.Recording == nil && rec.Seal == nil
-		ended := cl.RequestedAt
-		if cl.EndedAt != nil {
-			ended = *cl.EndedAt
-		}
-		after := c.RecoverAfter
-		if after <= 0 {
-			after = defaultRecoverAfter
-		}
-		if (needsSeal || needsAudio) && c.now().Sub(ended) >= after && c.firstRecovery(cl.ConversationID) {
-			log.Printf("report: incident %s conversation %s: restarting its close", rec.Incident.ID, cl.ConversationID)
-			c.CallFinished(context.Background(), rec.Incident.ID, cl.ConversationID, cl.Status)
-		}
+	// Nothing seals while a retry rings or runs, and restarting now would
+	// spend the finished call's one recovery: a retry that connects seals
+	// on its own webhook, and one that fails leaves it to a later view.
+	if c.ongoing(rec) {
 		return
 	}
+	cl, ok := newestDone(rec)
+	if !ok {
+		return
+	}
+	// Never add a recording after the seal: the sealed document would not
+	// cover it.
+	needsSeal := c.Signer != nil && rec.Seal == nil
+	needsAudio := c.Audio != nil && cl.Recording == nil && rec.Seal == nil
+	ended := cl.RequestedAt
+	if cl.EndedAt != nil {
+		ended = *cl.EndedAt
+	}
+	after := c.RecoverAfter
+	if after <= 0 {
+		after = defaultRecoverAfter
+	}
+	if (needsSeal || needsAudio) && c.now().Sub(ended) >= after && c.firstRecovery(cl.ConversationID) {
+		log.Printf("report: incident %s conversation %s: restarting its close", rec.Incident.ID, cl.ConversationID)
+		c.CallFinished(context.Background(), rec.Incident.ID, cl.ConversationID, cl.Status)
+	}
+}
+
+// stuckAfter is how long a call may stay requested or in progress before
+// the seal stops waiting for it. A real "Mamá" call ends well within it; a
+// row past it was lost (the server died between placing the call and its
+// webhook, or no webhook ever came), and must not keep the report unsealed
+// for good.
+const stuckAfter = 15 * time.Minute
+
+// ongoing reports whether a call of the incident is still requested,
+// ringing or in progress, requested less than stuckAfter ago: neither its
+// webhook nor its failure came yet.
+func (c *Closer) ongoing(rec Record) bool {
+	for _, cl := range rec.Calls {
+		if (cl.Status == "requested" || cl.Status == "in_progress") && c.now().Sub(cl.RequestedAt) < stuckAfter {
+			return true
+		}
+	}
+	return false
+}
+
+// newestDone is the incident's newest call that connected (status done)
+// with a conversation id: the one whose close seals the report.
+func newestDone(rec Record) (Call, bool) {
+	for i := len(rec.Calls) - 1; i >= 0; i-- {
+		if cl := rec.Calls[i]; cl.Status == "done" && cl.ConversationID != "" {
+			return cl, true
+		}
+	}
+	return Call{}, false
 }
 
 func (c *Closer) firstRecovery(conversationID string) bool {

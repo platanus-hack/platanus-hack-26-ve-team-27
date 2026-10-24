@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -106,10 +104,4 @@ func TestMeshRelayUploadOpensAnIncident(t *testing.T) {
 		t.Fatalf("notified twice: %+v", again)
 	case <-time.After(300 * time.Millisecond):
 	}
-}
-
-func serve(mux *http.ServeMux, path string, body []byte) *httptest.ResponseRecorder {
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body)))
-	return rec
 }

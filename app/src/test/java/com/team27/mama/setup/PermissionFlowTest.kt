@@ -99,6 +99,32 @@ class PermissionFlowTest {
     }
 
     @Test
+    fun aFirstNoWithoutRationaleIsOnlyADenialTheSecondBlocks() {
+        // A dismissed dialog on Android 11+ (or MIUI) answers "cannot ask again" the first time.
+        var flow = PermissionFlow.start(listOf(MICROPHONE))
+            .afterRequest(MICROPHONE, granted = false, canAskAgain = false)
+        assertEquals(StepStatus.DENIED, flow.statusOf(MICROPHONE))
+        flow = flow.afterRequest(MICROPHONE, granted = false, canAskAgain = false)
+        assertEquals(StepStatus.BLOCKED, flow.statusOf(MICROPHONE))
+    }
+
+    @Test
+    fun skippedAndVisitedStepsSurviveARestartButDenialsDoNot() {
+        val before = PermissionFlow.start(listOf(LOCATION, SMS, AUTOSTART, BATTERY))
+            .afterRequest(LOCATION, granted = false, canAskAgain = true)
+            .skip(SMS)
+            .afterVisit(AUTOSTART)
+        assertEquals(mapOf(SMS to StepStatus.SKIPPED, AUTOSTART to StepStatus.VISITED), before.settled)
+
+        // AUTOSTART only exists on Xiaomi: a saved status for a step this phone lacks is dropped.
+        val after = PermissionFlow.start(listOf(LOCATION, SMS, BATTERY)).restored(before.settled)
+        assertEquals(StepStatus.PENDING, after.statusOf(LOCATION))
+        assertEquals(StepStatus.SKIPPED, after.statusOf(SMS))
+        assertEquals(setOf(LOCATION, SMS, BATTERY), after.statuses.keys)
+        assertEquals(LOCATION, after.current)
+    }
+
+    @Test
     fun retryAfterADenialCanStillGrant() {
         val flow = PermissionFlow.start(listOf(CONTACTS))
             .afterRequest(CONTACTS, granted = false, canAskAgain = true)

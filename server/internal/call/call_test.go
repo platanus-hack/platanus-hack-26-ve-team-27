@@ -40,7 +40,7 @@ func TestPlaceSendsTheOutboundCallRequest(t *testing.T) {
 		`{"success":true,"message":"ok","conversation_id":"conv_1","callSid":"CA1"}`)
 	c := &Client{BaseURL: srv.URL, APIKey: "key", AgentID: "agent_1", PhoneNumberID: "phnum_1", VoiceID: "voice_1"}
 
-	placed, err := c.Place(context.Background(), "+584141234567", "inc-1")
+	placed, err := c.Place(context.Background(), Call{To: "+584141234567", Variables: map[string]string{"incident_id": "inc-1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestPlaceWithoutVoiceOrIncidentSendsNoClientData(t *testing.T) {
 	srv, _, gotBody := fakeElevenLabs(t, http.StatusOK, `{"success":true,"message":"ok","conversation_id":"c","callSid":"s"}`)
 	c := &Client{BaseURL: srv.URL, APIKey: "key", AgentID: "a", PhoneNumberID: "p"}
 
-	if _, err := c.Place(context.Background(), "+584141234567", ""); err != nil {
+	if _, err := c.Place(context.Background(), Call{To: "+584141234567"}); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(*gotBody), "conversation_initiation_client_data") {
@@ -86,7 +86,7 @@ func TestPlaceErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, _, _ := fakeElevenLabs(t, tc.status, tc.body)
 			c := &Client{BaseURL: srv.URL, APIKey: "key", AgentID: "a", PhoneNumberID: "p"}
-			_, err := c.Place(context.Background(), "+584141234567", "")
+			_, err := c.Place(context.Background(), Call{To: "+584141234567"})
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Errorf("err = %v, want it to contain %q", err, tc.wantErr)
 			}
@@ -95,7 +95,7 @@ func TestPlaceErrors(t *testing.T) {
 }
 
 func TestPlaceWithoutConfigFailsBeforeAnyRequest(t *testing.T) {
-	_, err := (&Client{BaseURL: "http://127.0.0.1:0"}).Place(context.Background(), "+584141234567", "")
+	_, err := (&Client{BaseURL: "http://127.0.0.1:0"}).Place(context.Background(), Call{To: "+584141234567"})
 	if !errors.Is(err, ErrMissingConfig) {
 		t.Errorf("err = %v, want ErrMissingConfig", err)
 	}

@@ -45,10 +45,10 @@ To work on the app in Android Studio, open the repo root (not `app/`). Layout an
 The demo phones run the signed release build. The keystore and its passwords live in the team vault, never in the repo (`*.jks`, `*.keystore` and `keystore.properties` are gitignored).
 
 1. Get `mama-release.jks` and its `keystore.properties` from the vault and put both in `~/.mama-keys/` (`chmod 700 ~/.mama-keys`, `chmod 600` the files). `storeFile` in `keystore.properties` must be the absolute path to the `.jks`.
-2. Build:
+2. Build, with the deployed server and Mamá's Twilio number (the build fails without them: phones block plain HTTP, and setup needs the number):
 
    ```bash
-   scripts/release.sh
+   scripts/release.sh -Pmama.serverUrl=https://<render-app>.onrender.com -Pmama.twilioNumber=+1XXXXXXXXXX
    ```
 
    It writes `app/build/outputs/apk/release/app-release.apk` and prints the signing certificate (`CN=MAMA Team 27, O=Platanus Hack 26, C=VE`).
@@ -177,12 +177,17 @@ the ones that are unset, never the values.
 | `ELEVENLABS_WEBHOOK_SECRET` | HMAC secret that signs the post-call webhook | ElevenLabs > Agents > Settings > Post-call webhook (shown when the webhook is created) |
 | `ELEVENLABS_VOICE_ID` | Optional. Voice that overrides the agent's on each call; the agent must allow the voice override. Set it to Mariana's cloned voice, `SnLK0h3jnPTd3J6pYcO3` (#35), a voice ID, not a secret | ElevenLabs > Voices > the voice > ID |
 | `CALL_SPIKE_TOKEN` | Optional, spike #11 only. Bearer token that turns on `POST /spike/call`; unset keeps the route off | Any random string, e.g. `openssl rand -hex 16` |
+| `FALLBACK_TOKEN` | Optional but set it in production. Secret that opens the WebRTC fallback page: open `/call/fallback?token=<value>`; any other request gets `401`. The page's browser call then carries the duress and safe phrases. Unset: the page is open to anyone but sends the phrases empty, so "Mamá" can't use them (the server warns at boot) | Any random string, e.g. `openssl rand -hex 16`; keep it in the vault |
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID (`AC...`) | console.twilio.com > Account Info |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token | console.twilio.com > Account Info |
 | `TWILIO_PHONE_NUMBER` | Our Twilio number, E.164 (`+1...`); also saved as the "Mamá" contact | console.twilio.com > Phone Numbers > Active numbers |
 | `KAPSO_API_KEY` | Kapso API key (`X-API-Key` header) | Kapso dashboard > Integrations > API keys |
 | `KAPSO_PHONE_NUMBER_ID` | WhatsApp `phone_number_id` of our Kapso number | app.kapso.ai > WhatsApp > Phone numbers |
 | `CALL_WHEN_STILL` | Optional. `true` or `1` makes a still phone (under 3.6 km/h) get the `call` branch instead of the immediate alert, so a person standing still (as on stage) still gets "Mamá". Anything else or unset keeps the three branches of `docs/contract.md` | Tech lead decision for the demo; set it in Render > Environment |
+| `CALL_LIMIT_PER_NUMBER` | Optional. Most "Mamá" calls placed to one number in any 10 minutes, retries included (default `6`: 3 alerts whose call is retried, or 6 that connect). A call over it is not placed and opens no fallback page; the log says `outcome=rate_limited`. There is no auth on `/devices` or `/incidents`, so this is what stops a loop of fake alerts from placing paid calls. Counted in memory: a restart (a deploy, or saving a var on Render) resets it. Unset or not a positive number uses the default | Raise it in Render > Environment if a rehearsal hits it |
+| `CALL_LIMIT_TOTAL` | Optional. Most calls placed to all numbers together in any 10 minutes (default `40`). Same rules as `CALL_LIMIT_PER_NUMBER` | Same |
+| `NOTIFY_LIMIT_PER_NUMBER` | Optional. Most family messages sent to one number in any 10 minutes (default `10`; an alert sends each family number one). A number over it is skipped and logged, not recorded as a delivery. Same rules as `CALL_LIMIT_PER_NUMBER` | Same |
+| `NOTIFY_LIMIT_TOTAL` | Optional. Most family messages sent to all numbers together in any 10 minutes (default `60`: 12 alerts to 5 relatives). Same rules as `CALL_LIMIT_PER_NUMBER` | Same |
 | `EMERGENCY_OFFLINE_ENABLED` | Optional. Turns on the offline emergency channel (#55, #57): `true` or `1`; anything else or unset is off (default). Off: `GET /config` and `POST /emergencies*` answer 404 and the three `EMERGENCY_*` vars below are neither read nor required, so a Render deploy boots without them. On: they apply as described below | Set it in Render > Environment only when the channel is wanted |
 | `EMERGENCY_SMS_NUMBER` | Central SMS number the phones text when offline, E.164; served in `GET /config`; the Twilio inbound number for #58 | Twilio console > Phone Numbers (optional: unset omits it from `GET /config`) |
 | `EMERGENCY_ED25519_SEED` | Signs offline acks; standard Base64 of 32 bytes. Only read with `EMERGENCY_OFFLINE_ENABLED`. Required then in production: on Render (`RENDER` set) the server refuses to boot without it and `EMERGENCY_X25519_PRIVATE_KEY`; locally it warns and uses an ephemeral key. Changing it breaks phones until they refresh config | Generate with `openssl rand -base64 32` |
@@ -236,6 +241,11 @@ change; re-check the source before relying on one in the demo. Cells marked
   send our Kapso number a message before the demo, or send an approved
   template.
 - **SMS fallback to +58 rewrites the sender** and is one-way.
+- **Call and message caps:** a rehearsal loop that places more than 6 calls
+  to one phone in 10 minutes (3 failed alerts with their retries) gets
+  `outcome=rate_limited` and no call. Raise `CALL_LIMIT_PER_NUMBER` (and the
+  other `*_LIMIT_*` vars) in Render; saving restarts the server, which also
+  resets the counts.
 
 ### ElevenLabs Agents
 

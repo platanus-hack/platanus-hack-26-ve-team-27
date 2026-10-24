@@ -7,7 +7,10 @@
 //
 //	POST /devices                          204 stored; 400 bad body, malformed ed25519_public_key,
 //	                                       or missing/invalid ed25519_signature; 409
-//	                                       ed25519_public_key registered to another device
+//	                                       ed25519_public_key registered to another device; 422
+//	                                       user_name not 1 to 30 characters, duress_phrase or
+//	                                       safe_phrase over 150 characters or 20 words, or
+//	                                       safe_phrase without a word or too close to duress_phrase
 //	POST /incidents                        201 new incident, 200 retried incident_id (stored decision);
 //	                                       400 bad body; 409 incident_id taken by another device;
 //	                                       422 device not registered
@@ -30,12 +33,26 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
+	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/duress"
 )
 
-// maxBodyBytes bounds a request body; an alert carries a handful of fixes.
-const maxBodyBytes = 1 << 20
+// maxBodyBytes bounds a request body. The app's alert, with its one fix, is
+// under 400 bytes and a registration under 2 KiB; 16 KiB still holds
+// maxPoints fixes indented. At 1 MiB one body held some 17,000 short fixes.
+const maxBodyBytes = 16 << 10
+
+// maxPoints bounds the fixes of one request. The app sends one per request:
+// the first fix with the alert, then one LocationUpdate at most every 10 s
+// for 2 minutes. 20 is ten times the contract's two-fix sample and more than
+// all 13 fixes of an incident at once. Each fix is a gps_points row, and
+// there is no auth: without the cap a few hundred requests filled the disk.
+const maxPoints = 20
 
 // Handler serves the intake routes. Create it with New.
 type Handler struct {
@@ -46,10 +63,38 @@ type Handler struct {
 	spawn func(func())
 }
 
+// handoffs counts the handoffs still running, across handlers, so main can
+// let them finish when Render stops the instance (WaitHandoffs).
+var handoffs sync.WaitGroup
+
 // New returns the intake handler. pool may be nil (no DATABASE_URL): every
 // route then answers 503.
 func New(pool *sql.DB, calls CallStarter, notifier Notifier) *Handler {
-	return &Handler{pool: pool, calls: calls, notifier: notifier, spawn: func(f func()) { go f() }}
+	return &Handler{pool: pool, calls: calls, notifier: notifier, spawn: func(f func()) {
+		handoffs.Add(1)
+		go func() {
+			defer handoffs.Done()
+			f()
+		}()
+	}}
+}
+
+// WaitHandoffs blocks until every running handoff has returned, or ctx ends.
+// On a deploy, a call being placed or an alert being sent then completes
+// instead of dying with the old instance: the phone's retry of that alert gets
+// 200 from the new one and would not hand it off again.
+func WaitHandoffs(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		handoffs.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Register mounts the intake routes on mux.
@@ -69,6 +114,11 @@ func (h *Handler) handleDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := validateDevice(reg); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	reg.UserName, reg.SafePhrase = strings.TrimSpace(reg.UserName), strings.TrimSpace(reg.SafePhrase)
+	if err := validateSetup(reg); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	switch err := upsertDevice(r.Context(), h.pool, reg); {
@@ -215,14 +265,29 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 
 var uuidRE = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
+// e164 is a phone number in E.164: + and 7 to 15 digits, as remoteconfig checks it.
+var e164 = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
+
+// maxFamilyNumbers is the app's limit (SetupForm.MAX_FAMILY_NUMBERS). Every
+// alert messages each of them, so an unbounded list would let one request
+// fan out to any number of strangers.
+const maxFamilyNumbers = 5
+
 func validateDevice(reg contract.DeviceRegistration) error {
 	switch {
 	case reg.DeviceID == "":
 		return errors.New("device_id is required")
 	case reg.PhoneNumber == "":
 		return errors.New("phone_number is required")
+	case len(reg.FamilyNumbers) > maxFamilyNumbers:
+		return fmt.Errorf("family_numbers has at most %d numbers", maxFamilyNumbers)
 	case len(reg.Ed25519PublicKey) != 0 && len(reg.Ed25519PublicKey) != ed25519.PublicKeySize:
 		return errors.New("ed25519_public_key must be 32 bytes of standard Base64")
+	}
+	for _, n := range reg.FamilyNumbers {
+		if !e164.MatchString(n) {
+			return errors.New("family_numbers must be E.164 (+ and 7 to 15 digits)")
+		}
 	}
 	return validateKeyProof(reg)
 }
@@ -245,6 +310,90 @@ func validateKeyProof(reg contract.DeviceRegistration) error {
 		return errors.New("ed25519_signature does not verify for this device_id")
 	}
 	return nil
+}
+
+// maxUserNameRunes bounds user_name: "Mamá" says it, so it is a name, not a
+// paragraph.
+const maxUserNameRunes = 30
+
+// maxPhraseRunes and maxPhraseWords bound duress_phrase and safe_phrase. The
+// person says them as the answer to "¿cómo vas?" in a call that has to sound
+// ordinary: the app's default and the longest eval phrase are 8 words and
+// under 40 characters, so the caps leave more than twice that. They also
+// bound the duress detector, whose cost grows with the cube of the words when
+// it compares the two phrases (two 1,000-word phrases took over 10 s of CPU)
+// and with the square of the duress phrase's words when it judges a call.
+// POST /devices has no auth, so both caps are checked before the detector
+// ever sees a phrase.
+const (
+	maxPhraseRunes = 150
+	maxPhraseWords = 20
+)
+
+// validateSetup checks the optional setup fields of a registration whose
+// user_name and safe_phrase are already trimmed, and caps both phrases.
+// Absent ("") is fine: the stored value is kept. The errors never quote a
+// phrase.
+func validateSetup(reg contract.DeviceRegistration) error {
+	if n := utf8.RuneCountInString(reg.UserName); n > maxUserNameRunes {
+		return fmt.Errorf("user_name must be 1 to %d characters", maxUserNameRunes)
+	}
+	if err := checkPhraseLength("duress_phrase", reg.DuressPhrase); err != nil {
+		return err
+	}
+	if err := checkPhraseLength("safe_phrase", reg.SafePhrase); err != nil {
+		return err
+	}
+	switch {
+	case reg.SafePhrase == "":
+		return nil
+	case !hasWord(reg.SafePhrase):
+		return errors.New("safe_phrase needs at least one word")
+	case tooCloseToDuress(reg.SafePhrase, reg.DuressPhrase):
+		return errors.New("safe_phrase is too close to duress_phrase: pick one that does not share most of its key words")
+	}
+	return nil
+}
+
+// tooCloseToDuress reports whether the duress detector would hear the safe
+// phrase as the duress phrase: said alone, it is the phrase, a close variant,
+// or half or more of its key words (an unclear call). It uses duress.Rules
+// itself, so both share one normalization (accents, case, stopwords, typos).
+func tooCloseToDuress(safe, duressPhrase string) bool {
+	if !hasWord(duressPhrase) {
+		return false // nothing to compare with
+	}
+	said := []contract.TranscriptTurn{{Role: duress.RoleUser, Message: safe}}
+	res, err := duress.Rules{}.Detect(context.Background(), said, duressPhrase)
+	return err != nil || res.Verdict != contract.VerdictNoDuress
+}
+
+// checkPhraseLength rejects a phrase over maxPhraseRunes or maxPhraseWords.
+// The error names field and the caps, never the phrase.
+func checkPhraseLength(field, phrase string) error {
+	if utf8.RuneCountInString(phrase) > maxPhraseRunes || countWords(phrase) > maxPhraseWords {
+		return fmt.Errorf("%s must be at most %d characters and %d words", field, maxPhraseRunes, maxPhraseWords)
+	}
+	return nil
+}
+
+// countWords counts the runs of letters and digits in s. The duress detector
+// splits a phrase on everything else, so this is the most words it can see.
+func countWords(s string) int {
+	n, inWord := 0, false
+	for _, r := range s {
+		word := unicode.IsLetter(r) || unicode.IsDigit(r)
+		if word && !inWord {
+			n++
+		}
+		inWord = word
+	}
+	return n
+}
+
+// hasWord reports whether s has a letter or a digit.
+func hasWord(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) >= 0
 }
 
 func validateAlert(ev contract.AlertEvent) error {
@@ -274,6 +423,9 @@ func validateUpdate(up contract.LocationUpdate) error {
 func validatePoints(points []contract.Point) error {
 	if len(points) == 0 {
 		return errors.New("points needs at least one fix")
+	}
+	if len(points) > maxPoints {
+		return fmt.Errorf("points has %d fixes; send at most %d per request", len(points), maxPoints)
 	}
 	for i, p := range points {
 		switch {

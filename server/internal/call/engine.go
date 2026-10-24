@@ -10,6 +10,8 @@ import (
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/notify"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/ratelimit"
 )
 
 // placeTimeout bounds the outbound-call request. The phone must ring within
@@ -18,7 +20,35 @@ const placeTimeout = 15 * time.Second
 
 // Placer places one outbound call. *Client is the real one.
 type Placer interface {
-	Place(ctx context.Context, to, incidentID string) (Placed, error)
+	Place(ctx context.Context, call Call) (Placed, error)
+}
+
+// Callee is the device a call goes to, as its setup stored it.
+type Callee struct {
+	Phone        string // E.164
+	UserName     string // "" when unset
+	DuressPhrase string
+	SafePhrase   string // "" when unset
+	VoiceID      string // the device's cloned voice; "" uses the global one
+}
+
+// DefaultUserName is what "Mamá" calls a person who set no name.
+const DefaultUserName = "mi amor"
+
+// CallVariables returns the dynamic variables of a call about the incident.
+// It always holds every one, with "" for a phrase that is not set, because
+// ElevenLabs refuses a conversation whose prompt names a missing variable.
+func CallVariables(incidentID string, c Callee) map[string]string {
+	name := c.UserName
+	if name == "" {
+		name = DefaultUserName
+	}
+	return map[string]string{
+		contract.DynamicVarIncidentID:   incidentID,
+		contract.DynamicVarName:         name,
+		contract.DynamicVarDuressPhrase: c.DuressPhrase,
+		contract.DynamicVarSafePhrase:   c.SafePhrase,
+	}
 }
 
 // Defaults for the Engine fields left zero.
@@ -46,8 +76,9 @@ type Finished struct {
 // Engine places the "Mamá" call of a BranchCall incident and stores what
 // the webhook reports about it. A call that is not placed, or that Twilio
 // or ElevenLabs reports busy, unanswered or failed, is retried once; when
-// the retry fails too, Fallback opens the WebRTC page. Every incident logs
-// one "call timing:" line. Create it with a struct literal.
+// the retry fails too, Fallback opens the WebRTC page. A call over Limit is
+// neither placed nor retried. Every incident logs one "call timing:" line.
+// Create it with a struct literal.
 type Engine struct {
 	Store  Store
 	Placer Placer
@@ -69,6 +100,11 @@ type Engine struct {
 	// report shows when the phone rang and was answered (#76). It runs in
 	// the engine's goroutine, so it must be quick.
 	Progress func(ctx context.Context, callID int64, twilioStatus string, at time.Time)
+	// Limit, when set, caps the calls placed per number and in total,
+	// retries included. A call over it is not placed and opens no fallback:
+	// there is no auth on /incidents, and the fallback page is public too.
+	// nil places every call.
+	Limit *ratelimit.Limiter
 
 	RetryDelay     time.Duration    // pause before the retry; zero retries at once
 	OutcomeTimeout time.Duration    // defaultOutcomeTimeout when zero
@@ -95,6 +131,7 @@ const (
 	attemptConnected                      // rang/answered, or no failure seen: stop
 	attemptHopeless                       // not worth a retry (not a +58 number)
 	attemptNoCall                         // the incident is not stored: nothing to do
+	attemptLimited                        // over Limit: not placed, and no fallback either
 )
 
 // timing is what the "call timing:" line reports for one incident. Times
@@ -117,9 +154,14 @@ type timing struct {
 func (e *Engine) StartCall(ctx context.Context, inc intake.Incident) {
 	t := timing{start: e.now(), trigger: inc.TriggeredAt}
 	outcome := "connected"
+	// The fallback's variables: the device's once an attempt read it.
+	vars := CallVariables(inc.ID, Callee{})
 	for {
 		t.attempts++
-		res := e.attempt(ctx, inc, &t)
+		res, read := e.attempt(ctx, inc, &t)
+		if read != nil {
+			vars = read
+		}
 		if res == attemptConnected {
 			if t.unconfirmed {
 				outcome = "unconfirmed" // nothing said it failed; not called again
@@ -128,6 +170,10 @@ func (e *Engine) StartCall(ctx context.Context, inc intake.Incident) {
 		}
 		if res == attemptNoCall {
 			outcome = "not_called"
+			break
+		}
+		if res == attemptLimited {
+			outcome = "rate_limited"
 			break
 		}
 		if res == attemptFailed && t.attempts < maxAttempts {
@@ -140,7 +186,7 @@ func (e *Engine) StartCall(ctx context.Context, inc intake.Incident) {
 		}
 		outcome = "fallback"
 		if e.Fallback != nil {
-			e.Fallback.Open(inc.ID, t.attempts)
+			e.Fallback.Open(inc.ID, vars, t.attempts)
 		} else {
 			log.Printf("call fallback: incident %s: the call failed; no fallback page configured", inc.ID)
 		}
@@ -149,26 +195,36 @@ func (e *Engine) StartCall(ctx context.Context, inc intake.Incident) {
 	e.logTiming(inc.ID, outcome, t)
 }
 
-// attempt stores a requested call, places it with incident_id as a dynamic
-// variable, stores the conversation_id and waits for the outcome. Inserting
-// first lets a webhook that beats the response find the row.
-func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) attemptResult {
+// attempt stores a requested call, places it with the device's dynamic
+// variables and voice, stores the conversation_id and waits for the outcome.
+// Inserting first lets a webhook that beats the response find the row. It
+// also returns the call's variables, nil when the device was not read.
+func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) (attemptResult, map[string]string) {
 	start := e.now()
-	callID, to, err := e.Store.Begin(ctx, inc.ID)
+	callID, callee, err := e.Store.Begin(ctx, inc.ID)
 	if errors.Is(err, ErrUnknownIncident) {
 		log.Printf("call: incident %s: not stored; not calling", inc.ID)
-		return attemptNoCall
+		return attemptNoCall, nil
 	}
 	if err != nil {
 		log.Printf("call: incident %s: store call: %v", inc.ID, err)
-		return attemptFailed
+		return attemptFailed, nil
 	}
-	if !venezuela.MatchString(to) {
+	vars := CallVariables(inc.ID, callee)
+	if !venezuela.MatchString(callee.Phone) {
 		// No auth on /devices: refusing other numbers keeps a stranger from
 		// running up international calls on the Twilio account.
 		log.Printf("call: incident %s call %d: the device number is not a +58 number; not calling", inc.ID, callID)
 		e.fail(ctx, inc.ID, callID)
-		return attemptHopeless
+		return attemptHopeless, vars
+	}
+	if err := e.Limit.Allow(callee.Phone); err != nil {
+		// No auth on /incidents either: without the cap, a loop of fresh
+		// incident_ids places a paid call each and fills the agent's
+		// concurrency, so the real call gets 429.
+		log.Printf("call: incident %s call %d: call to %s %v; not calling", inc.ID, callID, notify.Mask(callee.Phone), err)
+		e.fail(ctx, inc.ID, callID)
+		return attemptLimited, vars
 	}
 
 	// Listen before placing: the failure webhook can beat the response.
@@ -176,12 +232,12 @@ func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) at
 	defer e.unlisten(inc.ID, outcomes)
 
 	pctx, cancel := context.WithTimeout(ctx, placeTimeout)
-	placed, err := e.Placer.Place(pctx, to, inc.ID)
+	placed, err := e.Placer.Place(pctx, Call{To: callee.Phone, Variables: vars, VoiceID: callee.VoiceID})
 	cancel()
 	if err != nil {
 		log.Printf("call: incident %s call %d: place: %v", inc.ID, callID, err)
 		e.fail(ctx, inc.ID, callID)
-		return attemptFailed
+		return attemptFailed, vars
 	}
 	if t.placed.IsZero() {
 		t.placed = e.now()
@@ -192,10 +248,10 @@ func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) at
 	}
 
 	if e.await(ctx, inc.ID, callID, placed, outcomes, t) {
-		return attemptConnected
+		return attemptConnected, vars
 	}
 	e.fail(ctx, inc.ID, callID)
-	return attemptFailed
+	return attemptFailed, vars
 }
 
 // await waits for the outcome of a placed call: Twilio's status when Status

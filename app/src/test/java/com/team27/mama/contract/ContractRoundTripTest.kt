@@ -113,6 +113,32 @@ class ContractRoundTripTest {
         assertTrue("sample signature does not verify", verifier.verifySignature(signature))
     }
 
+    /** user_name and safe_phrase are optional: null leaves them out, so the server keeps the stored ones. */
+    @Test
+    fun deviceRegistrationSetupFieldsAreOptional() {
+        val reg = ContractJson.decodeFromString(
+            DeviceRegistration.serializer(),
+            File(testdataDir, "device_registration.json").readText(),
+        )
+        assertEquals("Mariana", reg.userName)
+        assertTrue("sample has a safe phrase", !reg.safePhrase.isNullOrEmpty())
+        val older = ContractJson.encodeToString(
+            DeviceRegistration.serializer(),
+            reg.copy(userName = null, safePhrase = null),
+        )
+        val keys = (Json.parseToJsonElement(older) as JsonObject).keys
+        assertTrue("user_name or safe_phrase sent as null: $older", "user_name" !in keys && "safe_phrase" !in keys)
+    }
+
+    /** Mirrors Go's contract.DynamicVar* names, which the prompt uses. */
+    @Test
+    fun dynamicVariableNames() {
+        assertEquals(
+            listOf("incident_id", "nombre", "frase_alerta", "frase_segura"),
+            listOf(DYNAMIC_VAR_INCIDENT_ID, DYNAMIC_VAR_NAME, DYNAMIC_VAR_DURESS_PHRASE, DYNAMIC_VAR_SAFE_PHRASE),
+        )
+    }
+
     @Test
     fun chooseBranchCases() {
         val cases = listOf(

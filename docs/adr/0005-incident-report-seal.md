@@ -24,9 +24,13 @@ phones pin its public half from `GET /config`.
    every call (status, times, duration, transcript, verdict and reason, and
    the recording's SHA-256, size, type and storage time), `sealed_at`, the
    server public key and a `clocks` note saying which clock each time comes
-   from. It leaves out every phone number and the duress phrase (the phrase
-   appears only where the person said it in the transcript). The audio is
-   covered by its SHA-256, not embedded.
+   from. It leaves out every phone number, the device id and the duress
+   phrase (the phrase appears only where the person said it in the
+   transcript). The device id is the device's only credential on the
+   unauthenticated `POST /devices` and `POST /incidents/{incident_id}/points`,
+   and anyone holding the link downloads the file: with it they could
+   re-register the device to their own numbers or add points to its
+   incidents. The audio is covered by its SHA-256, not embedded.
 2. **Exact bytes.** The document is stored as it was signed
    (`incident_seals.document`, `BYTEA`) and served byte for byte as
    `GET /i/{token}/ficha.json`. There is no canonicalization step to agree on:
@@ -55,15 +59,24 @@ phones pin its public half from `GET /config`.
       `notified_at`, polling for at most 60 s. #21 adds the detector and the
       notifier earlier in the same hook list, so the seal normally includes
       both. Until #21 lands it waits the full 60 s and seals without them.
-   3. It seals once. `INSERT ... ON CONFLICT DO NOTHING` keeps the first seal,
-      and a repeated webhook changes nothing.
+   3. It seals once, and only when no call of the incident is still
+      requested or in progress and this call is its newest finished one
+      (see 6). `INSERT ... ON CONFLICT DO NOTHING` keeps the first seal, and
+      a repeated webhook changes nothing.
 
-   If a restart kills that goroutine, the first view of the page more than
-   5 minutes after the call ended starts it again (`Closer.Recover`), once
-   per call per process.
+   If a restart kills that goroutine, or the retry failed after it declined
+   to seal, the first view of the page more than 5 minutes after the newest
+   finished call ended, with no call still in progress, starts it again
+   (`Closer.Recover`), once per call per process.
 6. **Scope.** Only `call`-branch incidents are sealed. `immediate_alert` and
    `silent_tracker` reports render but say "Sin sellar" (out of scope in #76).
-   A failed call is not sealed on its own; the retry's webhook seals.
+   A failed call is not sealed on its own, and neither is a call ElevenLabs
+   reports done while the retry rings or runs (a phone that rang out can
+   still get a post-call webhook): the retry's webhook seals, and when the
+   retry fails too, `Closer.Recover` seals with the newest finished call.
+   A call still requested or in progress 15 minutes after it was requested
+   no longer counts: the server lost it (it died between placing the call
+   and its outcome), and it must not keep the report unsealed for good.
 7. **The PDF.** `GET /i/{token}/reporte.pdf` reads a sealed report back from
    the stored `ficha.json`, never from the live rows, so it states exactly
    what the seal covers. It adds what the seal leaves out (each family

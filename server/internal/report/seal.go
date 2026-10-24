@@ -41,9 +41,13 @@ type document struct {
 	Clocks    docClockNotes `json:"clocks"`
 }
 
+// docIncident has no device_id on purpose: it is the device's only
+// credential on POST /devices and POST /incidents/{incident_id}/points, and
+// anyone holding the link downloads this file. With it they could
+// re-register the device to their own numbers or add points to its
+// incidents.
 type docIncident struct {
 	IncidentID    string   `json:"incident_id"`
-	DeviceID      string   `json:"device_id"`
 	Trigger       string   `json:"trigger"`
 	Branch        string   `json:"branch"`
 	SpeedMPS      *float64 `json:"speed_mps,omitempty"`
@@ -98,15 +102,15 @@ var clockNotes = docClockNotes{
 
 // Document is ficha.json for rec, sealed at sealedAt by pub: the incident,
 // its points, its calls with transcript, verdict and recording hash, and the
-// time the family message was claimed. It leaves out the phone numbers and
-// the duress phrase. Callers store and serve the returned bytes as they are.
+// time the family message was claimed. It leaves out the phone numbers, the
+// device id (see docIncident) and the duress phrase. Callers store and serve
+// the returned bytes as they are.
 func Document(rec Record, sealedAt time.Time, pub ed25519.PublicKey) ([]byte, error) {
 	inc := rec.Incident
 	d := document{
 		Format: SignatureContext,
 		Incident: docIncident{
 			IncidentID:    inc.ID,
-			DeviceID:      inc.DeviceID,
 			Trigger:       string(inc.Trigger),
 			Branch:        string(inc.Branch),
 			SpeedMPS:      inc.SpeedMPS,

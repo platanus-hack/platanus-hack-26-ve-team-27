@@ -115,6 +115,17 @@ data class DeviceRegistration(
     @SerialName("duress_phrase") val duressPhrase: String,
     @SerialName("app_version") val appVersion: String? = null,
     /**
+     * How "Mamá" greets the person, 1 to 30 characters. Optional: null keeps
+     * the name the server has stored.
+     */
+    @SerialName("user_name") val userName: String? = null,
+    /**
+     * The "todo bien" phrase the person says when they are safe. It must
+     * differ from [duressPhrase] and not share most of its key words (the
+     * server answers 422 otherwise). Optional: null keeps the stored phrase.
+     */
+    @SerialName("safe_phrase") val safePhrase: String? = null,
+    /**
      * The device's Ed25519 identity public key (bitchat's, #56), std Base64
      * of 32 bytes; the server derives key_id from it to verify offline
      * payloads (#57).
@@ -262,6 +273,15 @@ data class ConversationInitiationClientData(
  * it; the webhook handler reads it back.
  */
 const val DYNAMIC_VAR_INCIDENT_ID = "incident_id"
+
+/** Dynamic variable: the person's [DeviceRegistration.userName], or "mi amor" when unset. */
+const val DYNAMIC_VAR_NAME = "nombre"
+
+/** Dynamic variable: the device's [DeviceRegistration.duressPhrase]. */
+const val DYNAMIC_VAR_DURESS_PHRASE = "frase_alerta"
+
+/** Dynamic variable: the device's [DeviceRegistration.safePhrase], or "" when unset. */
+const val DYNAMIC_VAR_SAFE_PHRASE = "frase_segura"
 
 /**
  * Server -> notifier: the one message the family gets for an incident. It
