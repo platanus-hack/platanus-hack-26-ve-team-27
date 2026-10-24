@@ -104,6 +104,17 @@ android {
     }
 }
 
+// Gradle does not track files a unit test reads at runtime. Declare the shared vector and
+// sample directories as inputs so editing them re-runs the tests instead of hitting the cache.
+tasks.withType<Test>().configureEach {
+    inputs.dir(rootProject.file("server/internal/emergency/payload/testdata"))
+        .withPropertyName("payloadVectors")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(rootProject.file("server/internal/contract/testdata"))
+        .withPropertyName("contractSamples")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -117,6 +128,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.bouncycastle.bcprov)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)

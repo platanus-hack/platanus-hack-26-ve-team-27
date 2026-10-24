@@ -214,3 +214,15 @@ an incident can have more than one call when a call is retried. The
 with the same values as the Go and Kotlin enums.
 
 Rules for migrations: add a new `NNNN_name.sql` file, never edit a merged one.
+
+## Offline emergency payload
+
+When the phone has no data, it sends a compact signed binary payload by SMS or
+over the bitchat mesh. This is not JSON and does not use the endpoints above.
+The format, the signature context, the sealed box and the transport texts are
+in [`docs/adr/0001-offline-emergency-payload.md`](adr/0001-offline-emergency-payload.md);
+the shared test vectors are in
+`server/internal/emergency/payload/testdata/vectors.json`.
+
+Its 8-byte `device_id` (the first 8 bytes of SHA-256 of the device Ed25519
+public key) is not the UUID `device_id` used above. #55 maps one to the other.
