@@ -60,6 +60,8 @@ val mamaTwilioNumber = buildSetting("mama.twilioNumber", "MAMA_TWILIO_NUMBER", "
 // Fallback SMS number for the offline path until GET /config has been cached (#55).
 // Obviously fake placeholder (NANP 555-01xx); real deployments override it.
 val mamaDefaultSmsNumber = buildSetting("mama.defaultSmsNumber", "MAMA_DEFAULT_SMS_NUMBER", default = "+15555550100")
+// The offline emergency channel (#55) is an extra, off unless asked for: "true" or "1" turns it on.
+val mamaOfflineEmergency = buildSetting("mama.offlineEmergency", "MAMA_OFFLINE_EMERGENCY").let { it == "1" || it.equals("true", ignoreCase = true) }
 fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
@@ -78,6 +80,7 @@ android {
         buildConfigField("String", "SERVER_URL", mamaServerUrl.asBuildConfigString())
         buildConfigField("String", "TWILIO_NUMBER", mamaTwilioNumber.asBuildConfigString())
         buildConfigField("String", "DEFAULT_SMS_NUMBER", mamaDefaultSmsNumber.asBuildConfigString())
+        buildConfigField("boolean", "OFFLINE_EMERGENCY_ENABLED", mamaOfflineEmergency.toString())
     }
 
     signingConfigs {
