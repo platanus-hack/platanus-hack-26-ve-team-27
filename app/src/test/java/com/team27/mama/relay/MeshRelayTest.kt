@@ -441,8 +441,17 @@ class MeshRelayTest {
             val pending = saved()!!.pending.map { it.text }
             assertEquals(seal(1), pending.first())
             assertEquals(seal(RelayLimits.MAX_PENDING), pending.last())
+            // The dropped text left the seen-set too, so hearing it again queues it as the newest.
+            assertTrue(saved()!!.seen.none { it.hash == relayHash(seal(0)) })
             hear(heard(seal(0)))
             assertEquals(RelayLimits.MAX_PENDING, r.pendingCount.value)
+            assertEquals(seal(0), saved()!!.pending.last().text)
+            assertTrue(saved()!!.seen.none { it.hash == relayHash(seal(1)) })
+            network.online = true
+            r.onNetworkAvailable()
+            runCurrent()
+            assertEquals(seal(0), uploader.calls.last().first)
+            assertEquals(RelayLimits.MAX_PENDING, r.relayedCount.value)
         }
     }
 

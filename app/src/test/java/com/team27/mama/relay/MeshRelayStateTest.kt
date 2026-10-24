@@ -192,8 +192,55 @@ class MeshRelayStateTest {
     }
 
     @Test
+    fun restoreTruncationForgetsTheDroppedTexts() = runTest {
+        with(RelayTestKit()) {
+            val texts = (0..RelayLimits.MAX_PENDING).map(::seal)
+            stored(
+                RelaySnapshot(
+                    pending = texts.mapIndexed { i, t -> PendingUpload(t, 0, T0 - 1_000 + i, nextAttemptAtMs = T0 - 1_000 + i) },
+                    seen = texts.mapIndexed { i, t -> SeenText(relayHash(t), T0 - 1_000 + i) },
+                ),
+            )
+            val r = relay()
+            assertEquals(RelayLimits.MAX_PENDING, r.pendingCount.value)
+            val s = saved()!!
+            assertEquals(seal(1), s.pending.first().text)
+            assertEquals(texts.drop(1).map(::relayHash), s.seen.map { it.hash })
+            // The text the restore dropped is not blocked for 12 h: hearing it again queues and uploads it.
+            hear(heard(seal(0)))
+            assertEquals(seal(0), saved()!!.pending.last().text)
+            network.online = true
+            r.onNetworkAvailable()
+            runCurrent()
+            assertEquals(seal(0), uploader.calls.last().first)
+            assertEquals(RelayLimits.MAX_PENDING, r.relayedCount.value)
+        }
+    }
+
+    @Test
+    fun restoreTruncationKeepsAStoredAck() = runTest {
+        with(RelayTestKit()) {
+            val texts = (0..RelayLimits.MAX_PENDING).map(::seal)
+            stored(
+                RelaySnapshot(
+                    pending = texts.mapIndexed { i, t -> PendingUpload(t, 0, T0 - 1_000 + i, nextAttemptAtMs = T0 - 1_000 + i) },
+                    seen = listOf(SeenText(relayHash(seal(0)), T0 - 1_000, ACK)),
+                ),
+            )
+            relay()
+            // A delivered text's seen entry never goes with a dropped pending item: its ack is still repeated.
+            assertEquals(ACK, saved()!!.seen.single().ackText)
+            hear(heard(seal(0)))
+            assertEquals(listOf(ACK), mesh.sent)
+            assertTrue(saved()!!.pending.none { it.text == seal(0) })
+        }
+    }
+
+    @Test
     fun seenSetBoundedTo500() = runTest {
         with(RelayTestKit()) {
+            // Online: only deliveries fill the seen-set past the queue (a dropped pending text leaves it).
+            network.online = true
             relay()
             for (n in 0..500) {
                 at(n.toLong())
@@ -284,17 +331,23 @@ class MeshRelayStateTest {
             val r = MeshRelay(mesh, uploader, network, store, backgroundScope, { clock })
             r.start()
             runCurrent()
-            // Offline: the queue fills to 100 and the seen-set to 500.
-            for (n in 0..499) hear(heard(distinct(n)))
-            // The clock steps back: the next text is stamped earlier than everything kept.
+            // Online, 401 deliveries; then offline, the queue fills to 99 and the seen-set to 500.
+            network.online = true
+            for (n in 0..400) hear(heard(distinct(n)))
+            network.online = false
+            for (n in 401..499) hear(heard(distinct(n)))
+            // The clock steps back: the next texts are stamped earlier than everything kept.
             clock = T0
             hear(heard(distinct(500)))
+            hear(heard(distinct(501)))
             val s = saved()!!
             assertEquals(100, s.pending.size)
-            assertEquals(distinct(500), s.pending.last().text)
-            assertFalse(s.pending.any { it.text == distinct(400) })
+            assertEquals(listOf(distinct(500), distinct(501)), s.pending.takeLast(2).map { it.text })
+            assertFalse(s.pending.any { it.text == distinct(401) })
             val seen = s.seen.map { it.hash }
             assertEquals(500, seen.size)
+            assertTrue(relayHash(distinct(501)) in seen)
+            assertFalse(relayHash(distinct(401)) in seen)
             assertTrue(relayHash(distinct(500)) in seen)
             assertFalse(relayHash(distinct(0)) in seen)
         }

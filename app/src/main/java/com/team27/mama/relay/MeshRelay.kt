@@ -112,7 +112,9 @@ class MeshRelay(
         val loaded = guard(null) { store.load()?.let { RelayJson.decodeFromString(RelaySnapshot.serializer(), it) } }
             ?.takeIf { it.v == RelaySnapshot().v }
             ?: RelaySnapshot()
-        val restored = pruned(loaded.copy(pending = loadedPending(loaded.pending), seen = loadedSeen(loaded.seen)), nowMs())
+        val pending = loadedPending(loaded.pending)
+        val seen = loadedSeen(withoutSeenOf(loaded.seen, droppedFrom(loaded.pending, pending)))
+        val restored = pruned(loaded.copy(pending = pending, seen = seen), nowMs())
         if (restored == loaded) show(restored) else commit(restored)
         wake.trySend(Unit)
     }
@@ -149,12 +151,15 @@ class MeshRelay(
         // Still queued although its seen entry was evicted: one slot per text.
         if (snapshot.pending.any { it.text == text }) return
         val hops = broadcast.relayHops
+        val pending = appended(snapshot.pending, PendingUpload(text, hops, now, nextAttemptAtMs = now), RelayLimits.MAX_PENDING)
+        val dropped = droppedFrom(snapshot.pending, pending)
         commit(
             snapshot.copy(
-                pending = appended(snapshot.pending, PendingUpload(text, hops, now, nextAttemptAtMs = now), RelayLimits.MAX_PENDING),
-                seen = appended(snapshot.seen, SeenText(hash, now), RelayLimits.MAX_SEEN),
+                pending = pending,
+                seen = appended(withoutSeenOf(snapshot.seen, dropped), SeenText(hash, now), RelayLimits.MAX_SEEN),
             ),
         )
+        for (item in dropped) note(relayHash(item.text), item.hops, "dropped, queue full")
         note(hash, hops, "queued")
         wake.trySend(Unit)
     }
@@ -292,6 +297,24 @@ class MeshRelay(
         /** A loaded queue, oldest heard first, at most [RelayLimits.MAX_PENDING]: the oldest heard are dropped. */
         fun loadedPending(items: List<PendingUpload>): List<PendingUpload> =
             items.sortedBy { it.heardAtMs }.takeLast(RelayLimits.MAX_PENDING)
+
+        /** The items of [before] that [after] no longer holds. */
+        fun droppedFrom(before: List<PendingUpload>, after: List<PendingUpload>): List<PendingUpload> {
+            val kept = after.mapTo(HashSet()) { it.text }
+            return before.filterNot { it.text in kept }
+        }
+
+        /**
+         * [seen] without the entries of [dropped], pending items the queue cap pushed out: kept,
+         * they would block the text for 12 h although it was never delivered, so a flood of new
+         * texts could silence a victim's alert. An entry with an ack is a delivery and always
+         * stays (a still-pending text has none, so this only guards a hand-edited store).
+         */
+        fun withoutSeenOf(seen: List<SeenText>, dropped: List<PendingUpload>): List<SeenText> {
+            if (dropped.isEmpty()) return seen
+            val hashes = dropped.mapTo(HashSet()) { relayHash(it.text) }
+            return seen.filterNot { it.ackText == null && it.hash in hashes }
+        }
 
         /** A loaded seen-set, oldest first seen first, at most [RelayLimits.MAX_SEEN]: the oldest first seen are evicted. */
         fun loadedSeen(entries: List<SeenText>): List<SeenText> =
