@@ -31,6 +31,8 @@ const (
 	AckSize = AckBodySize + SignatureSize
 	// NoLocation in loc_age_s means "no fix yet"; lat and lon are then 0.
 	NoLocation uint16 = 0xFFFF
+	// MaxLocAgeS is the largest real loc_age_s, one below NoLocation.
+	MaxLocAgeS = 65534
 	// MaxLatE5 and MaxLonE5 are the degree limits times 1e5.
 	MaxLatE5 = 9_000_000
 	MaxLonE5 = 18_000_000
@@ -50,8 +52,8 @@ func LocAgeOf(age time.Duration, ok bool) uint16 {
 	if s < 0 {
 		return 0
 	}
-	if s > 65534 {
-		return 65534
+	if s > MaxLocAgeS {
+		return MaxLocAgeS
 	}
 	return uint16(s)
 }
