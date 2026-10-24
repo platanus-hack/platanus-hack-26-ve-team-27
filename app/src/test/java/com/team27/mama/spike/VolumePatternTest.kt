@@ -49,4 +49,11 @@ class VolumePatternTest {
         assertFalse(pattern.feed(UP to 1_000, DOWN to 1_200, UP to 1_400).any { it })
         assertTrue(pattern.feed(UP to 6_000, DOWN to 6_200, UP to 6_400).last())
     }
+
+    @Test
+    fun theDefaultGapAllowsBlindPresses() {
+        // Seen on the Xiaomi: 0.96 s and 1.28 s between blind presses.
+        assertTrue(VolumePattern().feed(UP to 0, DOWN to 960, UP to 2_240).last())
+        assertFalse(VolumePattern().feed(UP to 0, DOWN to 1_501, UP to 2_000).any { it })
+    }
 }
