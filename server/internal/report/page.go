@@ -6,10 +6,8 @@ import (
 	"embed"
 	"errors"
 	"html/template"
-	"io/fs"
 	"log"
 	"net/http"
-	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -47,7 +45,9 @@ var templateFS embed.FS
 //go:embed static
 var staticFS embed.FS
 
-var tmpl = template.Must(template.ParseFS(templateFS, "templates/*.html"))
+// tmpl holds every page and section. {{static "file"}} is a static file's
+// versioned URL (StaticURL).
+var tmpl = template.Must(template.New("report").Funcs(template.FuncMap{"static": StaticURL}).ParseFS(templateFS, "templates/*.html"))
 
 // staticTypes are the only files StaticPrefix serves, with their type.
 var staticTypes = map[string]string{
@@ -262,26 +262,4 @@ func render(w http.ResponseWriter, status int, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = w.Write(buf.Bytes())
-}
-
-// serveStatic serves an embedded file. They hold nothing private, so they
-// may be cached; the Referer is still dropped.
-func serveStatic(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("file")
-	typ, ok := staticTypes[path.Ext(name)]
-	if !ok || strings.Contains(name, "/") {
-		http.NotFound(w, r)
-		return
-	}
-	b, err := fs.ReadFile(staticFS, "static/"+name)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	hdr := w.Header()
-	hdr.Set("Content-Type", typ)
-	hdr.Set("Cache-Control", "public, max-age=86400")
-	hdr.Set("Referrer-Policy", "no-referrer")
-	hdr.Set("X-Content-Type-Options", "nosniff")
-	_, _ = w.Write(b)
 }
