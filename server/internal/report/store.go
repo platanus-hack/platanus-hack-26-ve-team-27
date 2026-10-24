@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
@@ -154,7 +155,123 @@ func (s DBStore) Load(ctx context.Context, incidentID string) (Record, error) {
 	if rec.Seal, err = loadSeal(ctx, tx, incidentID); err != nil {
 		return Record{}, err
 	}
+	from, to := rec.span()
+	if rec.Emergencies, err = loadEmergencies(ctx, tx, inc.DeviceID, from.Add(-emergencySlack), to.Add(emergencySlack)); err != nil {
+		return Record{}, err
+	}
 	return rec, tx.Commit()
+}
+
+// emergencySlack widens the incident's time span when linking offline
+// emergencies: the phone may text before the alert reaches the server, or
+// keep sending after the call.
+const emergencySlack = 10 * time.Minute
+
+// span is the first and last time stored about the incident.
+func (rec Record) span() (from, to time.Time) {
+	from, to = rec.Incident.TriggeredAt, rec.Incident.CreatedAt
+	see := func(t time.Time) {
+		if t.Before(from) {
+			from = t
+		}
+		if t.After(to) {
+			to = t
+		}
+	}
+	see(rec.Incident.CreatedAt)
+	if rec.Incident.NotifiedAt != nil {
+		see(*rec.Incident.NotifiedAt)
+	}
+	for _, p := range rec.Points {
+		see(p.RecordedAt)
+		see(p.ReceivedAt)
+	}
+	for _, c := range rec.Calls {
+		see(c.RequestedAt)
+		if c.EndedAt != nil {
+			see(*c.EndedAt)
+		}
+	}
+	return from, to
+}
+
+// loadEmergencies reads the device's offline emergencies whose span
+// [first_received_at, updated_at] overlaps [from, to].
+func loadEmergencies(ctx context.Context, tx *sql.Tx, deviceID string, from, to time.Time) ([]Emergency, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT emergency_id, status, seq, channels, min_hops, lat_e5, lon_e5,
+		       sent_at, first_received_at, updated_at, cancelled_at
+		FROM emergencies
+		WHERE device_id = $1 AND first_received_at <= $3 AND updated_at >= $2
+		ORDER BY first_received_at, emergency_id`, deviceID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Emergency
+	for rows.Next() {
+		var e Emergency
+		var channels string
+		var hops, lat, lon sql.NullInt64
+		var cancelled sql.NullTime
+		if err := rows.Scan(&e.ID, &e.Status, &e.Seq, &channels, &hops, &lat, &lon,
+			&e.SentAt, &e.FirstReceivedAt, &e.UpdatedAt, &cancelled); err != nil {
+			return nil, err
+		}
+		e.Channels = pgTextArray(channels)
+		if hops.Valid {
+			h := int(hops.Int64)
+			e.MinHops = &h
+		}
+		if lat.Valid && lon.Valid {
+			la, lo := float64(lat.Int64)/1e5, float64(lon.Int64)/1e5
+			e.Lat, e.Lng = &la, &lo
+		}
+		e.CancelledAt = nullTime(cancelled)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// pgTextArray parses a Postgres text[] of plain words, "{http,sms}".
+func pgTextArray(s string) []string {
+	s = strings.Trim(s, "{}")
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
+}
+
+// SaveProgress records a Twilio status the call engine saw for callID at
+// at: the first ringing (or later) status stamps ringing_at, the first
+// in-progress answered_at, and the last status is kept.
+func (s DBStore) SaveProgress(ctx context.Context, callID int64, twilioStatus string, at time.Time) error {
+	_, err := s.pool.ExecContext(ctx, `
+		INSERT INTO call_progress (call_id, twilio_status, ringing_at, answered_at, updated_at)
+		SELECT id, $2,
+		       CASE WHEN $2 IN ('ringing', 'in-progress', 'completed') THEN $3::timestamptz END,
+		       CASE WHEN $2 = 'in-progress' THEN $3::timestamptz END,
+		       $3
+		FROM calls WHERE id = $1
+		ON CONFLICT (call_id) DO UPDATE SET
+			twilio_status = EXCLUDED.twilio_status,
+			ringing_at    = COALESCE(call_progress.ringing_at, EXCLUDED.ringing_at),
+			answered_at   = COALESCE(call_progress.answered_at, EXCLUDED.answered_at),
+			updated_at    = EXCLUDED.updated_at`,
+		callID, twilioStatus, at)
+	return err
+}
+
+// NewestIncident is the most recently received incident; ErrUnknownIncident
+// when there is none.
+func (s DBStore) NewestIncident(ctx context.Context, after time.Time) (string, error) {
+	var id string
+	err := s.pool.QueryRowContext(ctx,
+		`SELECT id FROM incidents WHERE created_at > $1 ORDER BY created_at DESC, id LIMIT 1`, after).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrUnknownIncident
+	}
+	return id, err
 }
 
 func loadPoints(ctx context.Context, tx *sql.Tx, incidentID string) ([]Point, error) {
@@ -182,8 +299,11 @@ func loadCalls(ctx context.Context, tx *sql.Tx, incidentID string) ([]Call, erro
 	rows, err := tx.QueryContext(ctx, `
 		SELECT c.id, COALESCE(c.conversation_id, ''), c.status, c.transcript, c.duration_secs,
 		       c.requested_at, c.ended_at, COALESCE(c.verdict, ''), COALESCE(c.verdict_reason, ''), c.verdict_at,
-		       r.content_type, r.sha256, octet_length(r.audio), r.stored_at
-		FROM calls c LEFT JOIN call_recordings r ON r.call_id = c.id
+		       r.content_type, r.sha256, octet_length(r.audio), r.stored_at,
+		       COALESCE(p.twilio_status, ''), p.ringing_at, p.answered_at
+		FROM calls c
+		LEFT JOIN call_recordings r ON r.call_id = c.id
+		LEFT JOIN call_progress p ON p.call_id = c.id
 		WHERE c.incident_id = $1 ORDER BY c.requested_at, c.id`, incidentID)
 	if err != nil {
 		return nil, err
@@ -199,11 +319,14 @@ func loadCalls(ctx context.Context, tx *sql.Tx, incidentID string) ([]Call, erro
 		var contentType sql.NullString
 		var sum []byte
 		var size sql.NullInt64
+		var ringing, answered sql.NullTime
 		if err := rows.Scan(&c.ID, &c.ConversationID, &c.Status, &transcript, &duration,
 			&c.RequestedAt, &ended, &verdict, &c.VerdictReason, &verdictAt,
-			&contentType, &sum, &size, &storedAt); err != nil {
+			&contentType, &sum, &size, &storedAt,
+			&c.TwilioStatus, &ringing, &answered); err != nil {
 			return nil, err
 		}
+		c.RingingAt, c.PickedUpAt = nullTime(ringing), nullTime(answered)
 		if len(transcript) > 0 {
 			if err := json.Unmarshal(transcript, &c.Transcript); err != nil {
 				return nil, fmt.Errorf("report: call %d transcript: %w", c.ID, err)

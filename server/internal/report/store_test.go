@@ -2,10 +2,12 @@ package report
 
 import (
 	"context"
+	"crypto/ed25519"
 	"database/sql"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -206,5 +208,82 @@ func TestLinksReportURL(t *testing.T) {
 	}
 	if _, err := (Links{Store: s, BaseURL: "https://x", TTLDays: 30}).ReportURL(ctx, "00000000-0000-4000-8000-000000000000"); !errors.Is(err, ErrUnknownIncident) {
 		t.Errorf("unknown incident: %v", err)
+	}
+}
+
+func TestSaveProgressStampsRingingAndAnsweredOnce(t *testing.T) {
+	pool := newDB(t)
+	s := NewDBStore(pool)
+	ctx := context.Background()
+	var callID int64
+	if err := pool.QueryRow(`SELECT id FROM calls WHERE conversation_id = 'conv_01'`).Scan(&callID); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []struct{ status, at string }{
+		{"queued", "2026-10-24T13:10:01.5Z"},
+		{"ringing", "2026-10-24T13:10:03Z"},
+		{"in-progress", "2026-10-24T13:10:06Z"},
+		{"completed", "2026-10-24T13:11:05Z"},
+	} {
+		if err := s.SaveProgress(ctx, callID, step.status, at(step.at)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec, err := s.Load(ctx, testIncidentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := rec.Calls[0]
+	if c.TwilioStatus != "completed" || c.RingingAt == nil || !c.RingingAt.Equal(at("2026-10-24T13:10:03Z")) ||
+		c.PickedUpAt == nil || !c.PickedUpAt.Equal(at("2026-10-24T13:10:06Z")) {
+		t.Errorf("progress = %q ringing %v answered %v", c.TwilioStatus, c.RingingAt, c.PickedUpAt)
+	}
+	if err := s.SaveProgress(ctx, 999999, "ringing", at("2026-10-24T13:10:03Z")); err != nil {
+		t.Errorf("unknown call: %v, want it ignored", err)
+	}
+}
+
+// Offline emergencies are linked by device and time only: the same phone in
+// an overlapping window is shown, another phone or another day is not.
+func TestLoadLinksOfflineEmergenciesByDeviceAndTime(t *testing.T) {
+	pool := newDB(t)
+	exec(t, pool, `INSERT INTO devices (id, phone_number, duress_phrase) VALUES ('other', '+584149999999', 'x')`)
+	insert := func(id, device, first, updated string) {
+		exec(t, pool, `INSERT INTO emergencies (emergency_id, device_id, status, seq, sent_at, lat_e5, lon_e5, loc_age_s, location_sent_at,
+			channels, min_hops, first_received_at, updated_at)
+			VALUES ($1, $2, 'open', 1, $3, 1049610, -6685310, 4, $3, '{sms,mesh}', 2, $3, $4)`, id, device, first, updated)
+	}
+	dev := sealedRecord().Incident.DeviceID
+	insert("00000000000000a1", dev, "2026-10-24T13:05:00Z", "2026-10-24T13:10:30Z")     // same phone, overlapping
+	insert("00000000000000a2", "other", "2026-10-24T13:10:00Z", "2026-10-24T13:11:00Z") // another phone
+	insert("00000000000000a3", dev, "2026-10-23T09:00:00Z", "2026-10-23T09:05:00Z")     // the day before
+
+	rec, err := NewDBStore(pool).Load(context.Background(), testIncidentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.Emergencies) != 1 {
+		t.Fatalf("emergencies = %+v, want only a1", rec.Emergencies)
+	}
+	e := rec.Emergencies[0]
+	if e.ID != "00000000000000a1" || strings.Join(e.Channels, ",") != "sms,mesh" || e.MinHops == nil || *e.MinHops != 2 || *e.Lat != 10.4961 {
+		t.Errorf("emergency = %+v", e)
+	}
+	// Shown on the page, never sealed.
+	doc, _ := Document(rec, at("2026-10-24T13:12:00Z"), testKey().Public().(ed25519.PublicKey))
+	if strings.Contains(string(doc), "00000000000000a1") {
+		t.Error("the sealed document carries a linked emergency")
+	}
+}
+
+func TestNewestIncident(t *testing.T) {
+	pool := newDB(t)
+	s := NewDBStore(pool)
+	ctx := context.Background()
+	if id, err := s.NewestIncident(ctx, time.Time{}); err != nil || id != testIncidentID {
+		t.Errorf("newest = %q %v", id, err)
+	}
+	if _, err := s.NewestIncident(ctx, at("2026-10-24T13:10:01Z")); !errors.Is(err, ErrUnknownIncident) {
+		t.Errorf("after the only incident: %v", err)
 	}
 }

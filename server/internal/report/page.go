@@ -12,6 +12,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Route prefixes. The page and its files live under /i/{token}; the shared
@@ -56,9 +57,11 @@ var staticTypes = map[string]string{
 
 // contentSecurityPolicy allows only this server: opening a report makes no
 // request to anyone else (no fonts, maps or scripts from third parties).
-// Links the reader taps (Abrir en Maps) are navigations, not requests.
+// connect-src 'self' is the live stream and the recording the waveform is
+// drawn from; blob: is that same recording, handed to the player. Links the
+// reader taps (Abrir en Maps) are navigations, not requests.
 const contentSecurityPolicy = "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; " +
-	"script-src 'self'; media-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	"script-src 'self'; media-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 // Source is what Handler reads. DBStore is the real one.
 type Source interface {
@@ -75,12 +78,32 @@ type Handler struct {
 	src    Source
 	opts   Options
 	closer *Closer
+	demo   *Demo
+
+	// Live stream timing; the defaults when zero (tests shorten them).
+	LivePoll  time.Duration
+	KeepAlive time.Duration
+	MaxStream time.Duration
+	Now       func() time.Time // time.Now when nil
 }
 
 // NewHandler serves reports from src. opts.Token is ignored (each request
 // has its own).
 func NewHandler(src Source, opts Options) *Handler {
 	return &Handler{src: src, opts: opts}
+}
+
+// WithDemo mounts the presenter's demo routes (Demo).
+func (h *Handler) WithDemo(d *Demo) *Handler {
+	h.demo = d
+	return h
+}
+
+func (h *Handler) now() time.Time {
+	if h.Now != nil {
+		return h.Now()
+	}
+	return time.Now()
 }
 
 // RecoverWith lets a page view restart an unfinished close (Closer.Recover).
@@ -96,6 +119,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+PagePrefix+"{token}/audio.mp3", h.audio)
 	mux.HandleFunc("GET "+PagePrefix+"{token}/ficha.json", h.document)
 	mux.HandleFunc("GET "+PagePrefix+"{token}/ficha.sig", h.signature)
+	mux.HandleFunc("GET "+PagePrefix+"{token}/live", h.live)
+	mux.HandleFunc("GET "+PagePrefix+"{token}/estado.json", h.state)
+	if h.demo != nil {
+		h.demo.register(mux)
+	}
 	mux.HandleFunc("GET "+StaticPrefix+"{file}", serveStatic)
 }
 
@@ -136,6 +164,7 @@ func (h *Handler) page(w http.ResponseWriter, r *http.Request) {
 	h.closer.Recover(rec)
 	opts := h.opts
 	opts.Token = token
+	opts.Now = h.now()
 	render(w, http.StatusOK, "page", Build(rec, opts))
 }
 

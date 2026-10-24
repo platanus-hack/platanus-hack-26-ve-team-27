@@ -51,6 +51,7 @@ func main() {
 	calls.SetFinished(call.Hooks(
 		reportHook(closer),
 	))
+	calls.SetProgress(progressHook(cfg, pool))
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -241,7 +242,28 @@ func newReports(cfg config.Config, pool *sql.DB, signing ed25519.PrivateKey) (*r
 	}
 	log.Printf("report: incident report page is on; links live %d days", cfg.Report.TTLDays)
 	h := report.NewHandler(store, report.Options{Channel: channelName(cfg), CanSeal: signing != nil}).RecoverWith(closer)
+	if cfg.Report.DemoKey != "" {
+		log.Print("report: demo shortcuts GET /demo/latest and /demo/next are on (DEMO_KEY is set)")
+		h.WithDemo(&report.Demo{Key: cfg.Report.DemoKey, Store: store, TTLDays: cfg.Report.TTLDays})
+	}
 	return h, closer
+}
+
+// progressHook stores what the call engine sees polling Twilio (ringing,
+// answered) for the report's timeline and latencies; nil when the report is
+// off or there is no database.
+func progressHook(cfg config.Config, pool *sql.DB) func(context.Context, int64, string, time.Time) {
+	if !cfg.Report.Enabled || pool == nil {
+		return nil
+	}
+	store := report.NewDBStore(pool)
+	return func(ctx context.Context, callID int64, status string, at time.Time) {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := store.SaveProgress(ctx, callID, status, at); err != nil {
+			log.Printf("report: call %d: store Twilio status %s: %v", callID, status, err)
+		}
+	}
 }
 
 // reportSigningKey is the key that seals reports: the offline channel's when

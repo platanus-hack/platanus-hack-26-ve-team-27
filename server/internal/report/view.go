@@ -62,10 +62,16 @@ const (
 	EventPoint         EventKind = "point"          // 11: later locations
 	EventRecording     EventKind = "recording"      // 12: recording stored
 	EventSealed        EventKind = "sealed"         // 13: report sealed
+
+	// Beyond the #76 table: what else the database knows.
+	EventRinging   EventKind = "ringing"   // Twilio said the phone rang (call_progress)
+	EventFallback  EventKind = "fallback"  // every call failed: the WebRTC fallback opened (derived)
+	EventEmergency EventKind = "emergency" // an offline emergency of the same device and time
 )
 
 // Event is one timeline row.
 type Event struct {
+	Key    string // stable across updates, for the live page
 	Kind   EventKind
 	At     time.Time
 	Clock  Clock
@@ -100,10 +106,20 @@ type Page struct {
 	NoCall      string // why there was no call, for the call section
 	MultiCall   bool
 	Seal        SealView
+
+	Live        bool   // not sealed yet: the page follows the case live
+	TriggerISO  string // the gesture's instant, for the running clock
+	CallActive  bool   // a call is being placed, ringing or talking
+	CallPhase   string // "Marcando", "Sonando" or "En llamada"
+	CallSince   string // when CallPhase started (ISO), for the call timer
+	Latencies   []Latency
+	Emergencies []EmergencyView
+	Fallback    bool // every call failed and the WebRTC fallback opened
 }
 
 // PointRow is one row of the locations table.
 type PointRow struct {
+	Key      string
 	N        int
 	At       string // phone clock, VET
 	Accuracy string
@@ -114,6 +130,13 @@ type PointRow struct {
 
 // CallView is one call in the call section.
 type CallView struct {
+	Key       string
+	Retry     bool   // not the first call: a retry
+	Active    bool   // being placed, ringing or talking
+	Phase     string // "Marcando", "Sonando", "En llamada" while active
+	Since     string // ISO start of Phase, for the live call timer
+	Ringing   string // when Twilio said it rang (server clock), "" if unknown
+	PickedUp  string // when Twilio said it was answered (server clock)
 	N         int
 	Number    string // the dialed number, masked
 	Requested string
@@ -169,7 +192,18 @@ type Options struct {
 	Token   string
 	CanSeal bool   // the server has a signing key
 	Channel string // the family message channel: "WhatsApp" or "SMS"
+	// Now is the server time of the render; zero skips the checks that need
+	// it (a call left "in progress" long ago is not shown as live).
+	Now time.Time
 }
+
+// staleCall is how long a call may stay requested or in progress before the
+// page stops calling it live: its webhook never came.
+const staleCall = 15 * time.Minute
+
+// liveWindow is how long after the last thing stored about an unsealed case
+// the page still follows it live (clocks running, "esperando…").
+const liveWindow = 30 * time.Minute
 
 // Build turns a record into the page. It is pure: same record, same page.
 func Build(rec Record, opts Options) Page {
@@ -191,14 +225,45 @@ func Build(rec Record, opts Options) Page {
 	default:
 		p.State, p.StateLabel, p.Character = "open", "Abierto", "escuchando"
 	}
+	_, last := rec.span()
+	p.Live = rec.Seal == nil && (opts.Now.IsZero() || opts.Now.Sub(last) < liveWindow)
+	p.TriggerISO = iso(rec.Incident.TriggeredAt)
 	for i, c := range rec.Calls {
-		p.Calls = append(p.Calls, callView(i+1, c, rec.Device, opts.Token))
+		v := callView(i+1, c, rec.Device, opts.Token)
+		if v.Active && (opts.Now.IsZero() || opts.Now.Sub(c.RequestedAt) < staleCall) && rec.Seal == nil {
+			p.CallActive, p.CallPhase, p.CallSince = true, v.Phase, v.Since
+		} else {
+			v.Active = false
+		}
+		p.Calls = append(p.Calls, v)
+	}
+	if p.CallActive {
+		p.Character = "llamando"
 	}
 	if len(rec.Calls) == 0 {
 		p.NoCall = noCallReason(rec.Incident.Branch)
 	}
+	p.Fallback = fellBack(rec)
+	p.Latencies = Latencies(rec, p.Live, p.CallActive)
+	p.Emergencies = emergencyViews(rec.Emergencies)
 	p.Seal = sealView(rec, opts)
 	return p
+}
+
+// fellBack reports whether the engine opened the WebRTC fallback: no call
+// connected and the last one failed, after the retry (two failed calls) or
+// at once for a number it does not dial (not +58). The engine keeps the
+// fallback in memory, so this reads it back from the calls rows.
+func fellBack(rec Record) bool {
+	if len(rec.Calls) == 0 || rec.Calls[len(rec.Calls)-1].Status != "failed" {
+		return false
+	}
+	for _, c := range rec.Calls {
+		if c.Status == "done" {
+			return false
+		}
+	}
+	return len(rec.Calls) >= 2 || !strings.HasPrefix(rec.Device.PhoneNumber, "+58")
 }
 
 // Timeline builds the 13-event timeline (#76) of a record, ordered by time.
@@ -209,33 +274,43 @@ func Timeline(rec Record, opts Options) []Event {
 	var ev []Event
 	add := func(e Event) { ev = append(ev, e) }
 
-	add(Event{Kind: EventTrigger, At: inc.TriggeredAt, Clock: ClockPhone, Title: "Pidió ayuda", Detail: "Pidió ayuda " + triggerLabel(inc.Trigger)})
+	add(Event{Key: "trigger", Kind: EventTrigger, At: inc.TriggeredAt, Clock: ClockPhone, Title: "Pidió ayuda", Detail: "Pidió ayuda " + triggerLabel(inc.Trigger)})
 	for i, pt := range rec.Points {
-		e := Event{Kind: EventPoint, At: pt.RecordedAt, Clock: ClockPhone, Title: "Ubicación", Detail: pointSummary(pt)}
+		e := Event{Key: "point-" + strconv.Itoa(i+1), Kind: EventPoint, At: pt.RecordedAt, Clock: ClockPhone, Title: "Ubicación", Detail: pointSummary(pt)}
 		if i == 0 {
 			e.Kind, e.Title = EventFirstPoint, "Primera ubicación"
 		}
 		add(e)
 	}
-	add(Event{Kind: EventReceived, At: inc.CreatedAt, Clock: ClockServer, Title: "Llegó al servidor", Detail: receivedLabel(inc.CreatedAt.Sub(inc.TriggeredAt))})
-	add(Event{Kind: EventBranch, At: inc.CreatedAt, Clock: ClockServer, Title: "Rama elegida", Detail: branchLabel(inc.Branch, inc.SpeedMPS)})
+	add(Event{Key: "received", Kind: EventReceived, At: inc.CreatedAt, Clock: ClockServer, Title: "Llegó al servidor", Detail: receivedLabel(inc.CreatedAt.Sub(inc.TriggeredAt))})
+	add(Event{Key: "branch", Kind: EventBranch, At: inc.CreatedAt, Clock: ClockServer, Title: "Rama elegida", Detail: branchLabel(inc.Branch, inc.SpeedMPS)})
 
 	for i, c := range rec.Calls {
 		n := i + 1
-		add(Event{Kind: EventCallRequested, At: c.RequestedAt, Clock: ClockServer, Call: n, Title: "Mamá llamó", Detail: "Llamando a " + maskPhone(rec.Device.PhoneNumber)})
+		key := func(k string) string { return "call-" + strconv.Itoa(n) + "-" + k }
+		req := Event{Key: key("requested"), Kind: EventCallRequested, At: c.RequestedAt, Clock: ClockServer, Call: n, Title: "Mamá llamó", Detail: "Llamando a " + maskPhone(rec.Device.PhoneNumber)}
+		if n > 1 {
+			req.Title, req.Detail = "Mamá volvió a llamar", "Reintento · llamando a "+maskPhone(rec.Device.PhoneNumber)
+		}
+		add(req)
+		if c.RingingAt != nil {
+			add(Event{Key: key("ringing"), Kind: EventRinging, At: *c.RingingAt, Clock: ClockServer, Call: n, Title: "Sonó su teléfono", Detail: "Según el estado de la llamada en Twilio"})
+		}
 		answered, ok := c.AnsweredAt()
 		if ok {
-			add(Event{Kind: EventAnswered, At: answered, Clock: ClockCall, Call: n, Title: "Contestó", Detail: turnsLabel(len(c.Transcript))})
+			add(Event{Key: key("answered"), Kind: EventAnswered, At: answered, Clock: ClockCall, Call: n, Title: "Contestó", Detail: turnsLabel(len(c.Transcript))})
 			phrase := phraseTurns(c.Transcript, rec.Device.DuressPhrase)
 			for j, t := range c.Transcript {
 				if phrase[j] {
-					add(Event{Kind: EventPhrase, At: answered.Add(secs(t.TimeInCallSecs)), Clock: ClockCall, Call: n,
+					add(Event{Key: key("phrase-" + strconv.Itoa(j)), Kind: EventPhrase, At: answered.Add(secs(t.TimeInCallSecs)), Clock: ClockCall, Call: n,
 						Title: "Dijo la frase acordada", Quote: t.Message, Seek: t.TimeInCallSecs})
 				}
 			}
+		} else if c.PickedUpAt != nil {
+			add(Event{Key: key("answered"), Kind: EventAnswered, At: *c.PickedUpAt, Clock: ClockServer, Call: n, Title: "Contestó", Detail: "Según el estado de la llamada en Twilio"})
 		}
 		if c.EndedAt != nil {
-			e := Event{Kind: EventHungUp, At: *c.EndedAt, Clock: ClockServer, Call: n}
+			e := Event{Key: key("ended"), Kind: EventHungUp, At: *c.EndedAt, Clock: ClockServer, Call: n}
 			if c.DurationSecs != nil {
 				e.Clock = ClockCall
 			}
@@ -247,17 +322,34 @@ func Timeline(rec Record, opts Options) []Event {
 			add(e)
 		}
 		if c.Verdict != "" && c.VerdictAt != nil {
-			add(Event{Kind: EventVerdict, At: *c.VerdictAt, Clock: ClockServer, Call: n, Title: "Veredicto", Detail: verdictLine(c.Verdict, c.VerdictReason)})
+			add(Event{Key: key("verdict"), Kind: EventVerdict, At: *c.VerdictAt, Clock: ClockServer, Call: n, Title: "Veredicto", Detail: verdictLine(c.Verdict, c.VerdictReason)})
 		}
 		if r := c.Recording; r != nil {
-			add(Event{Kind: EventRecording, At: r.StoredAt, Clock: ClockServer, Call: n, Title: "Grabación guardada", Detail: "SHA-256 " + shortHex(r.SHA256[:])})
+			add(Event{Key: key("recording"), Kind: EventRecording, At: r.StoredAt, Clock: ClockServer, Call: n, Title: "Grabación guardada", Detail: "SHA-256 " + shortHex(r.SHA256[:])})
+		}
+	}
+	if fellBack(rec) {
+		last := rec.Calls[len(rec.Calls)-1]
+		at := last.RequestedAt
+		if last.EndedAt != nil {
+			at = *last.EndedAt
+		}
+		add(Event{Key: "fallback", Kind: EventFallback, At: at, Clock: ClockServer, Error: true,
+			Title: "Se abrió el respaldo por el navegador", Detail: "Ninguna llamada conectó: MAMÁ abrió la página de respaldo (WebRTC). Deducido del registro de llamadas."})
+	}
+	for _, em := range rec.Emergencies {
+		add(Event{Key: "emergency-" + em.ID, Kind: EventEmergency, At: em.FirstReceivedAt, Clock: ClockServer,
+			Title: "Emergencia sin conexión", Detail: "Llegó por " + channelsLabel(em.Channels) + hopsLabel(em.MinHops) + " · mismo teléfono, misma hora"})
+		if em.CancelledAt != nil {
+			add(Event{Key: "emergency-" + em.ID + "-cancelled", Kind: EventEmergency, At: *em.CancelledAt, Clock: ClockServer,
+				Title: "Emergencia sin conexión cancelada", Detail: "La persona la canceló desde el teléfono"})
 		}
 	}
 	if inc.NotifiedAt != nil {
-		add(Event{Kind: EventNotified, At: *inc.NotifiedAt, Clock: ClockServer, Title: "Aviso a la familia", Detail: notifiedLabel(opts.Channel, rec.Device.FamilyNumbers)})
+		add(Event{Key: "notified", Kind: EventNotified, At: *inc.NotifiedAt, Clock: ClockServer, Title: "Aviso a la familia", Detail: notifiedLabel(opts.Channel, rec.Device.FamilyNumbers)})
 	}
 	if s := rec.Seal; s != nil {
-		add(Event{Kind: EventSealed, At: s.SealedAt, Clock: ClockServer, Title: "Ficha sellada", Detail: "Firmada con la llave Ed25519 del servidor"})
+		add(Event{Key: "sealed", Kind: EventSealed, At: s.SealedAt, Clock: ClockServer, Title: "Ficha sellada", Detail: "Firmada con la llave Ed25519 del servidor"})
 	}
 
 	sort.SliceStable(ev, func(i, j int) bool { return ev[i].At.Before(ev[j].At) })
@@ -293,10 +385,18 @@ func headline(rec Record) (label, kind string) {
 
 func callView(n int, c Call, dev Device, token string) CallView {
 	v := CallView{
+		Key:       "call-" + strconv.Itoa(n),
 		N:         n,
+		Retry:     n > 1,
 		Number:    maskPhone(dev.PhoneNumber),
 		Requested: clock(c.RequestedAt),
 		Failed:    c.Status == "failed",
+	}
+	if c.RingingAt != nil {
+		v.Ringing = clock(*c.RingingAt)
+	}
+	if c.PickedUpAt != nil {
+		v.PickedUp = clock(*c.PickedUpAt)
 	}
 	switch c.Status {
 	case "done":
@@ -307,7 +407,15 @@ func callView(n int, c Call, dev Device, token string) CallView {
 	case "failed":
 		v.Outcome = "La llamada falló"
 	default:
-		v.Outcome = "En curso o sin terminar"
+		v.Outcome = "En curso"
+		v.Active = true
+		v.Phase, v.Since = "Marcando", iso(c.RequestedAt)
+		if c.RingingAt != nil {
+			v.Phase, v.Since = "Sonando", iso(*c.RingingAt)
+		}
+		if c.PickedUpAt != nil {
+			v.Phase, v.Since = "En llamada", iso(*c.PickedUpAt)
+		}
 	}
 	if c.Verdict != "" {
 		v.Verdict = verdictLine(c.Verdict, c.VerdictReason)
@@ -453,6 +561,7 @@ func pointRows(points []Point) []PointRow {
 	rows := make([]PointRow, 0, len(points))
 	for i, p := range points {
 		rows = append(rows, PointRow{
+			Key:      "pt-" + strconv.Itoa(i+1),
 			N:        i + 1,
 			At:       clock(p.RecordedAt),
 			Accuracy: accuracy(p.AccuracyM),
@@ -470,16 +579,31 @@ func MapsURL(lat, lng float64) string {
 	return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%.6f,%.6f", lat, lng)
 }
 
-// Route is the path drawn in SVG from the points, without map tiles.
+// Route is the path drawn in SVG from the points, without map tiles: one
+// segment per pair of points and one dot per point, each keyed so the live
+// page animates only what is new.
 type Route struct {
-	Path       string // SVG polyline points
-	StartX     string
-	StartY     string
-	EndX       string
-	EndY       string
+	Segments   []RouteSegment
+	Dots       []RouteDot
 	Width      int
 	Height     int
 	DistanceKM string
+}
+
+// RouteSegment is the line between two consecutive points.
+type RouteSegment struct {
+	Key            string
+	X1, Y1, X2, Y2 string
+}
+
+// RouteDot is one point on the drawing; Newest pulses.
+type RouteDot struct {
+	Key     string
+	X, Y    string
+	Title   string
+	MapsURL string
+	First   bool
+	Newest  bool
 }
 
 // minRouteSpanM is the smallest span the route box shows, so GPS jitter of a
@@ -487,13 +611,13 @@ type Route struct {
 const minRouteSpanM = 200.0
 
 // route projects the points onto a 320x180 box (equirectangular meters,
-// fine at a city's scale), at least minRouteSpanM across. nil with fewer
-// than two points.
+// fine at a city's scale), at least minRouteSpanM across. nil without
+// points.
 func route(points []Point) *Route {
-	if len(points) < 2 {
+	if len(points) == 0 {
 		return nil
 	}
-	const w, h, pad = 320.0, 180.0, 14.0
+	const w, h, pad = 320.0, 180.0, 16.0
 	const mPerDegLat = 110540.0
 	meanLat := 0.0
 	for _, p := range points {
@@ -513,20 +637,24 @@ func route(points []Point) *Route {
 	offX := (w - (maxX-minX)*scale) / 2
 	offY := (h - (maxY-minY)*scale) / 2
 	f := func(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
-	path := make([]string, len(xy))
-	var sx, sy, ex, ey float64
+	r := &Route{Width: int(w), Height: int(h), DistanceKM: distance(points)}
+	var px, py string
 	for i, c := range xy {
-		x, y := offX+(c[0]-minX)*scale, offY+(c[1]-minY)*scale
-		path[i] = f(x) + "," + f(y)
-		if i == 0 {
-			sx, sy = x, y
+		x, y := f(offX+(c[0]-minX)*scale), f(offY+(c[1]-minY)*scale)
+		n := strconv.Itoa(i + 1)
+		if i > 0 {
+			// The key carries the coordinates: when a new point rescales the
+			// drawing, every segment is new and draws itself again.
+			r.Segments = append(r.Segments, RouteSegment{Key: "seg-" + n + "-" + x + "-" + y + "-" + px + "-" + py, X1: px, Y1: py, X2: x, Y2: y})
 		}
-		ex, ey = x, y
+		r.Dots = append(r.Dots, RouteDot{
+			Key: "dot-" + n + "-" + x + "-" + y, X: x, Y: y, MapsURL: MapsURL(points[i].Lat, points[i].Lng),
+			Title: clock(points[i].RecordedAt) + " · " + accuracy(points[i].AccuracyM) + " · " + movement(points[i].SpeedMPS),
+			First: i == 0, Newest: i == len(xy)-1,
+		})
+		px, py = x, y
 	}
-	return &Route{
-		Path: strings.Join(path, " "), StartX: f(sx), StartY: f(sy), EndX: f(ex), EndY: f(ey),
-		Width: int(w), Height: int(h), DistanceKM: distance(points),
-	}
+	return r
 }
 
 // distance is the path length (haversine): "15 m" under a kilometer, else
@@ -731,6 +859,8 @@ func longClock(t time.Time) string {
 }
 
 func clock(t time.Time) string { return t.In(vet).Format("15:04:05") }
+
+func iso(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 
 // duration is "0,4 s", "42 s" or "1 min 23 s".
 func duration(d time.Duration) string {

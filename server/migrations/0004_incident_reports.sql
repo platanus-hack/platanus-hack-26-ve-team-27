@@ -33,3 +33,14 @@ CREATE TABLE incident_seals (
     signature   BYTEA NOT NULL CHECK (octet_length(signature) = 64),
     public_key  BYTEA NOT NULL CHECK (octet_length(public_key) = 32)
 );
+
+-- What Twilio's call status said while the call engine polled it: when the
+-- phone first rang and when the call was answered (server clock). Written
+-- only when the incident report is on; Twilio's own clock is not used.
+CREATE TABLE call_progress (
+    call_id       BIGINT PRIMARY KEY REFERENCES calls (id) ON DELETE CASCADE,
+    twilio_status TEXT NOT NULL,
+    ringing_at    TIMESTAMPTZ,
+    answered_at   TIMESTAMPTZ,
+    updated_at    TIMESTAMPTZ NOT NULL
+);

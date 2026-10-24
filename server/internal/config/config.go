@@ -111,6 +111,10 @@ type Emergency struct {
 type Report struct {
 	Enabled bool // INCIDENT_REPORT_ENABLED, "true" or "1"; anything else or unset = off
 	TTLDays int  // INCIDENT_REPORT_TTL_DAYS, how long a link lives; DefaultReportTTLDays when unset or invalid
+	// DemoKey is DEMO_KEY, optional: the key of the presenter's shortcuts
+	// GET /demo/latest and /demo/next (the newest incident's report). Blank
+	// leaves them off (404).
+	DemoKey string
 }
 
 // Load reads the config from the process environment.
@@ -160,6 +164,7 @@ func LoadFrom(getenv func(string) string) Config {
 		Report: Report{
 			Enabled: isOn(get("INCIDENT_REPORT_ENABLED")),
 			TTLDays: positiveInt(get("INCIDENT_REPORT_TTL_DAYS"), DefaultReportTTLDays),
+			DemoKey: get("DEMO_KEY"),
 		},
 	}
 	if c.Port == "" {

@@ -23,6 +23,10 @@ type Record struct {
 	Points   []Point // oldest first
 	Calls    []Call  // in the order they were requested
 	Seal     *Seal   // nil until sealed
+	// Emergencies are offline emergencies (#57) of the same device whose
+	// time span overlaps the incident's: linked by device and time only,
+	// since the schema has no link. Shown, never sealed.
+	Emergencies []Emergency
 }
 
 // Incident is the incidents row.
@@ -72,6 +76,27 @@ type Call struct {
 	VerdictReason string
 	VerdictAt     *time.Time // server clock
 	Recording     *Recording // nil until the audio is stored
+	// What the engine saw polling Twilio (call_progress), server clock:
+	// TwilioStatus is the last status, "" when never polled; RingingAt the
+	// first ringing (or later) status, PickedUpAt the first in-progress.
+	TwilioStatus string
+	RingingAt    *time.Time
+	PickedUpAt   *time.Time
+}
+
+// Emergency is an offline emergency (emergencies row) linked to the
+// incident by device and time.
+type Emergency struct {
+	ID              string
+	Status          string // open, acked or cancelled
+	Seq             int
+	Channels        []string // http, sms, mesh, in first-seen order
+	MinHops         *int
+	Lat, Lng        *float64  // nil without a fix
+	SentAt          time.Time // phone clock
+	FirstReceivedAt time.Time // server clock
+	UpdatedAt       time.Time // server clock
+	CancelledAt     *time.Time
 }
 
 // Recording describes a stored call recording; the audio bytes are read

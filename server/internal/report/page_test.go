@@ -82,7 +82,7 @@ func TestPageRendersTheSealedReport(t *testing.T) {
 		`<audio id="audio-1" data-call="1" controls preload="none" src="/i/` + testToken + `/audio.mp3?llamada=1">`,
 		`data-seek="15"`, "La frase acordada", "Tu familiar", "Mamá",
 		`class="clock clock-phone"`, `class="clock clock-server"`, `class="clock clock-elevenlabs"`,
-		"Abrir en Maps", "±12 m", "<polyline",
+		"Abrir en Maps", "±12 m", `class="seg" pathLength="1"`, `class="dot newest"`,
 		`href="/i/` + testToken + `/ficha.json"`, `href="/i/` + testToken + `/ficha.sig"`,
 		"El sello prueba que el registro no cambió desde que el servidor de MAMÁ lo cerró. No es una firma electrónica certificada ni reemplaza una experticia.",
 	} {
@@ -157,7 +157,10 @@ func TestPageMakesNoThirdPartyRequest(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, m := range regexp.MustCompile(`url\(([^)]*)\)|https?://|fetch\(|XMLHttpRequest|@import`).FindAllString(string(b), -1) {
+		// The script fetches only URLs the page gives it (the live stream,
+		// estado.json, the recording: all paths on this server); the CSP's
+		// connect-src 'self' enforces it in the browser.
+		for _, m := range regexp.MustCompile(`url\(([^)]*)\)|https?:|["']//|XMLHttpRequest|@import|WebSocket|sendBeacon`).FindAllString(string(b), -1) {
 			if !strings.HasPrefix(m, `url("/ficha/static/`) {
 				t.Errorf("%s: %q", name, m)
 			}

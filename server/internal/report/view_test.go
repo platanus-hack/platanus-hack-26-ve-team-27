@@ -277,21 +277,36 @@ func TestFormatting(t *testing.T) {
 
 func TestRouteDrawsThePathInsideTheBox(t *testing.T) {
 	r := route(sealedRecord().Points)
-	if r == nil || len(strings.Fields(r.Path)) != 3 || r.DistanceKM == "" {
+	if r == nil || len(r.Segments) != 2 || len(r.Dots) != 3 || r.DistanceKM == "" || !r.Dots[0].First || !r.Dots[2].Newest || r.Dots[1].Newest {
 		t.Fatalf("route = %+v", r)
 	}
-	if route(sealedRecord().Points[:1]) != nil {
-		t.Error("a single point draws a route")
+	for _, d := range r.Dots {
+		x, _ := strconv.ParseFloat(d.X, 64)
+		y, _ := strconv.ParseFloat(d.Y, 64)
+		if x < 0 || x > 320 || y < 0 || y > 180 || !strings.HasPrefix(d.MapsURL, "https://www.google.com/maps/") {
+			t.Errorf("dot %+v outside the box or without a Maps link", d)
+		}
+	}
+	if one := route(sealedRecord().Points[:1]); one == nil || len(one.Segments) != 0 || len(one.Dots) != 1 || !one.Dots[0].Newest {
+		t.Errorf("a single point = %+v, want one pulsing dot", one)
+	}
+	if route(nil) != nil {
+		t.Error("no points draws a route")
 	}
 	same := []Point{{Lat: 1, Lng: 1}, {Lat: 1, Lng: 1}}
-	if r := route(same); r == nil || r.StartX != "160.0" || r.StartY != "90.0" || r.DistanceKM != "0 m" {
+	if r := route(same); r == nil || r.Dots[0].X != "160.0" || r.Dots[0].Y != "90.0" || r.DistanceKM != "0 m" {
 		t.Errorf("equal points = %+v, want centered", r)
 	}
 	// 16 m of GPS jitter stays small: well under a tenth of the box.
 	jitter := route([]Point{{Lat: 10.4806, Lng: -66.9036}, {Lat: 10.4807, Lng: -66.9035}})
-	sx, _ := strconv.ParseFloat(jitter.StartX, 64)
-	ex, _ := strconv.ParseFloat(jitter.EndX, 64)
+	sx, _ := strconv.ParseFloat(jitter.Dots[0].X, 64)
+	ex, _ := strconv.ParseFloat(jitter.Dots[1].X, 64)
 	if math.Abs(ex-sx) > 32 || jitter.DistanceKM != "16 m" {
 		t.Errorf("jitter route = %+v, want a short line and 16 m", jitter)
+	}
+	// A new point that widens the drawing redraws every segment (new keys).
+	more := append(sealedRecord().Points, Point{Lat: 10.51, Lng: -66.84})
+	if r2 := route(more); r2.Segments[0].Key == r.Segments[0].Key {
+		t.Error("a rescaled segment kept its key")
 	}
 }

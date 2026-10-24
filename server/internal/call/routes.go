@@ -87,6 +87,14 @@ func (rt *Routes) SetFinished(f func(ctx context.Context, f Finished)) {
 	}
 }
 
+// SetProgress sets the engine's Twilio status hook (Engine.Progress). Without
+// a database it does nothing.
+func (rt *Routes) SetProgress(f func(ctx context.Context, callID int64, twilioStatus string, at time.Time)) {
+	if rt.engine != nil {
+		rt.engine.Progress = f
+	}
+}
+
 // Hooks runs each post-call hook in order, skipping nil ones, so main can
 // list them in one place: the duress verdict and the family alert (#21)
 // before the incident report (#76), which seals what they stored. It returns

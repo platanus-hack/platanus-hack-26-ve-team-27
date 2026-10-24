@@ -232,3 +232,13 @@ func TestReportReadsFlagAndTTL(t *testing.T) {
 		}
 	}
 }
+
+func TestDemoKeyIsReadAndNeverPrinted(t *testing.T) {
+	c := LoadFrom(envFrom(map[string]string{"DEMO_KEY": " s3cret-demo "}))
+	if c.Report.DemoKey != "s3cret-demo" {
+		t.Errorf("DemoKey = %q", c.Report.DemoKey)
+	}
+	if strings.Contains(c.String(), "s3cret") || strings.Contains(fmt.Sprintf("%v %#v", c, c), "s3cret") {
+		t.Error("the demo key leaks through String")
+	}
+}
