@@ -16,6 +16,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"regexp"
 	"time"
 )
 
@@ -44,6 +46,10 @@ func main() {
 	mux.HandleFunc("POST /incidents/{id}/points", record(f, noContent))
 	mux.HandleFunc("POST /devices", record(f, noContent))
 	mux.HandleFunc("POST /spike/note", record(f, noContent))
+	// The phone's warm-up GET; the real server answers GET / too.
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("spike receiver\n")) })
+	// The camera probe's mp4, saved next to the log.
+	mux.HandleFunc("POST /spike/video", saveVideo(f, filepath.Dir(*out)))
 
 	log.Printf("spike receiver on %s, logging to %s", *addr, *out)
 	log.Fatal(http.ListenAndServe(*addr, mux))
@@ -83,5 +89,41 @@ func record(f *os.File, reply func(http.ResponseWriter, []byte)) http.HandlerFun
 		fmt.Fprintln(f, string(line))
 		log.Println(string(line))
 		reply(w, body)
+	}
+}
+
+var safeID = regexp.MustCompile(`^[0-9a-f-]{1,64}$`)
+
+// saveVideo stores the raw body as spike-video-<incident_id>.mp4 in dir and
+// logs its size and arrival time.
+func saveVideo(f *os.File, dir string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		received := time.Now().UTC()
+		id := r.URL.Query().Get("incident_id")
+		if !safeID.MatchString(id) {
+			http.Error(w, "bad incident_id", http.StatusBadRequest)
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, 50<<20))
+		if err != nil {
+			http.Error(w, "read body", http.StatusBadRequest)
+			return
+		}
+		path := filepath.Join(dir, "spike-video-"+id+".mp4")
+		if err := os.WriteFile(path, body, 0o644); err != nil {
+			http.Error(w, "write", http.StatusInternalServerError)
+			return
+		}
+		line, _ := json.Marshal(map[string]any{
+			"received_at":          received.Format(time.RFC3339Nano),
+			"path":                 r.URL.Path,
+			"incident_id":          id,
+			"bytes":                len(body),
+			"saved":                path,
+			"since_trigger_ms_hdr": r.Header.Get("X-Spike-Since-Trigger-Ms"),
+		})
+		fmt.Fprintln(f, string(line))
+		log.Println(string(line))
+		w.WriteHeader(http.StatusNoContent)
 	}
 }

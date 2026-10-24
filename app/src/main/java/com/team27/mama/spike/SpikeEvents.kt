@@ -16,6 +16,16 @@ object SpikeEvents {
     /** Spike-only route on spikes/trigger/receiver.go; never on the real server. */
     fun noteUrl(baseUrl: String) = base(baseUrl) + "/spike/note"
 
+    /** Spike-only route on the receiver: the raw mp4 of the camera probe. */
+    fun videoUrl(baseUrl: String, incidentId: String) = base(baseUrl) + "/spike/video?incident_id=$incidentId"
+
+    /** Good enough to send at once: at most [maxAgeMs] old and [maxAccuracyM] precise (an unknown accuracy is not). */
+    fun isFreshEnough(ageMs: Long, accuracyM: Float?, maxAgeMs: Long = 30_000, maxAccuracyM: Float = 50f): Boolean =
+        ageMs in 0..maxAgeMs && accuracyM != null && accuracyM <= maxAccuracyM
+
+    /** Precise enough to place the person: GPS-grade, within [maxAccuracyM]. */
+    fun isPrecise(accuracyM: Float, maxAccuracyM: Float = 20f): Boolean = accuracyM in 0f..maxAccuracyM
+
     /** A contract Point. A fix without speed or accuracy leaves the field out (never 0). */
     fun point(lat: Double, lng: Double, accuracyM: Float?, speedMps: Float?, timeMs: Long) = Point(
         lat = lat,
