@@ -267,7 +267,7 @@ the newest call's verdict. Sample: `notifier_message.json`.
 `ed25519_public_key` and `key_id` to `devices`; `0003_emergencies.sql` adds the `emergencies` table;
 `0004_incident_reports.sql` adds `incident_reports`, `call_recordings`,
 `incident_seals` and `call_progress` for the incident report (#76, approved
-by the Tech lead on Oct 24); `0005_notify_deliveries.sql` adds
+by the Tech lead on Oct 24); `0006_notify_deliveries.sql` adds
 `notify_deliveries` (#76). The server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a

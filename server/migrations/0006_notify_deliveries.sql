@@ -1,4 +1,4 @@
--- 0005_notify_deliveries: each family message the notifier sent, and what
+-- 0006_notify_deliveries: each family message the notifier sent, and what
 -- Kapso later reported about it (#76), so the incident report shows that
 -- every relative was notified. Written only when the incident report is on.
 -- A new file, not part of 0004: databases that already applied 0004 get it.
