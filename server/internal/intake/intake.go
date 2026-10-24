@@ -5,7 +5,8 @@
 //
 // Status codes:
 //
-//	POST /devices                          204 stored; 400 bad body
+//	POST /devices                          204 stored; 400 bad body or malformed ed25519_public_key;
+//	                                       409 ed25519_public_key registered to another device
 //	POST /incidents                        201 new incident, 200 retried incident_id (stored decision);
 //	                                       400 bad body; 409 incident_id taken by another device;
 //	                                       422 device not registered
@@ -19,6 +20,7 @@ package intake
 
 import (
 	"context"
+	"crypto/ed25519"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -68,7 +70,11 @@ func (h *Handler) handleDevice(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := upsertDevice(r.Context(), h.pool, reg); err != nil {
+	switch err := upsertDevice(r.Context(), h.pool, reg); {
+	case errors.Is(err, errKeyTaken):
+		writeError(w, http.StatusConflict, "ed25519_public_key is registered to another device")
+		return
+	case err != nil:
 		internalError(w, "upsert device", err)
 		return
 	}
@@ -211,6 +217,8 @@ func validateDevice(reg contract.DeviceRegistration) error {
 		return errors.New("device_id is required")
 	case reg.PhoneNumber == "":
 		return errors.New("phone_number is required")
+	case len(reg.Ed25519PublicKey) != 0 && len(reg.Ed25519PublicKey) != ed25519.PublicKeySize:
+		return errors.New("ed25519_public_key must be 32 bytes of standard Base64")
 	}
 	return nil
 }

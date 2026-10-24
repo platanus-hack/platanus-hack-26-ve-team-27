@@ -2,6 +2,7 @@ package intake
 
 import (
 	"bytes"
+	"encoding/base64"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -375,6 +376,8 @@ func TestBadInputIs400(t *testing.T) {
 		{"bad trigger", "/incidents", strings.Replace(good, `"volume_pattern"`, `"shake"`, 1)},
 		{"incident_id not a UUID", "/incidents", strings.Replace(good, incidentID, "abc", 1)},
 		{"lat out of range", "/incidents", strings.Replace(good, `10.4961`, `100.4961`, 1)},
+		{"key not Base64", "/devices", `{"device_id":"x","phone_number":"+584141234567","family_numbers":[],"duress_phrase":"p","ed25519_public_key":"!!!"}`},
+		{"key 31 bytes", "/devices", `{"device_id":"x","phone_number":"+584141234567","family_numbers":[],"duress_phrase":"p","ed25519_public_key":"` + base64.StdEncoding.EncodeToString(make([]byte, 31)) + `"}`},
 		{"device without phone", "/devices", `{"device_id":"x","phone_number":"","family_numbers":[],"duress_phrase":"p"}`},
 	}
 	for _, c := range cases {

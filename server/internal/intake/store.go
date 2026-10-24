@@ -2,16 +2,20 @@ package intake
 
 import (
 	"context"
+	"crypto/ed25519"
 	"database/sql"
 	"errors"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/devicekeys"
 )
 
 var (
 	errUnknownDevice   = errors.New("intake: device not registered")
 	errUnknownIncident = errors.New("intake: incident not found")
 	errDeviceMismatch  = errors.New("intake: incident belongs to another device")
+	errKeyTaken        = errors.New("intake: ed25519_public_key is registered to another device")
 )
 
 // execer is the part of *sql.DB and *sql.Tx that insertPoints needs.
@@ -25,16 +29,29 @@ func upsertDevice(ctx context.Context, pool *sql.DB, reg contract.DeviceRegistra
 	if family == nil {
 		family = []string{}
 	}
+	// Untyped nil, not a nil []byte, so an absent key is NULL and COALESCE
+	// keeps the stored one.
+	var key, keyID any
+	if len(reg.Ed25519PublicKey) > 0 {
+		key = []byte(reg.Ed25519PublicKey)
+		keyID = devicekeys.KeyID(ed25519.PublicKey(reg.Ed25519PublicKey))
+	}
 	_, err := pool.ExecContext(ctx, `
-		INSERT INTO devices (id, phone_number, family_numbers, duress_phrase, app_version)
-		VALUES ($1, $2, $3, $4, NULLIF($5, ''))
+		INSERT INTO devices (id, phone_number, family_numbers, duress_phrase, app_version, ed25519_public_key, key_id)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7)
 		ON CONFLICT (id) DO UPDATE SET
-			phone_number   = EXCLUDED.phone_number,
-			family_numbers = EXCLUDED.family_numbers,
-			duress_phrase  = EXCLUDED.duress_phrase,
-			app_version    = EXCLUDED.app_version,
-			updated_at     = now()`,
-		reg.DeviceID, reg.PhoneNumber, family, reg.DuressPhrase, reg.AppVersion)
+			phone_number       = EXCLUDED.phone_number,
+			family_numbers     = EXCLUDED.family_numbers,
+			duress_phrase      = EXCLUDED.duress_phrase,
+			app_version        = EXCLUDED.app_version,
+			ed25519_public_key = COALESCE(EXCLUDED.ed25519_public_key, devices.ed25519_public_key),
+			key_id             = COALESCE(EXCLUDED.key_id, devices.key_id),
+			updated_at         = now()`,
+		reg.DeviceID, reg.PhoneNumber, family, reg.DuressPhrase, reg.AppVersion, key, keyID)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return errKeyTaken
+	}
 	return err
 }
 
