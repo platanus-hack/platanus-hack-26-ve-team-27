@@ -58,7 +58,7 @@ type BuiltInTools struct {
 type SystemTool struct {
 	Type        string           `json:"type"` // always "system"
 	Name        string           `json:"name"`
-	Description string           `json:"description"` // empty keeps the default behavior
+	Description string           `json:"description,omitempty"` // left out: default behavior
 	Params      SystemToolParams `json:"params"`
 }
 

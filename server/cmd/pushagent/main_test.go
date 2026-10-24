@@ -108,8 +108,9 @@ func TestPushNeedsConfig(t *testing.T) {
 }
 
 func TestDryRunPrintsBody(t *testing.T) {
+	body, _ := json.Marshal(agent.NewUpdate())
 	var out bytes.Buffer
-	if err := printBody(&out); err != nil {
+	if err := printBody(&out, body); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{

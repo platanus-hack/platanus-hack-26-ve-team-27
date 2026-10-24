@@ -2,7 +2,7 @@
 // (server/internal/call/agent) to the ElevenLabs agent:
 //
 //	cd server && go run ./cmd/pushagent            # backup, then PATCH
-//	cd server && go run ./cmd/pushagent --dry-run  # print the body only
+//	cd server && go run ./cmd/pushagent --dry-run  # print the body only (also with --restore)
 //	cd server && go run ./cmd/pushagent --restore cmd/pushagent/backup/<file>.json
 //
 // It reads ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID. Before writing, it
@@ -45,12 +45,6 @@ func main() {
 	restore := flag.String("restore", "", "backup file whose agent section is sent back instead of the prompt")
 	flag.Parse()
 
-	if *dryRun {
-		if err := printBody(os.Stdout); err != nil {
-			log.Fatal(err)
-		}
-		return
-	}
 	var body []byte
 	var err error
 	if *restore != "" {
@@ -60,6 +54,12 @@ func main() {
 	}
 	if err != nil {
 		log.Fatal(err)
+	}
+	if *dryRun {
+		if err := printBody(os.Stdout, body); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 	p := &pusher{
 		BaseURL:   call.BaseURL,
@@ -80,12 +80,12 @@ func main() {
 }
 
 // printBody writes the PATCH body, indented, to w.
-func printBody(w io.Writer) error {
-	raw, err := json.MarshalIndent(agent.NewUpdate(), "", "  ")
-	if err != nil {
+func printBody(w io.Writer, body []byte) error {
+	var out bytes.Buffer
+	if err := json.Indent(&out, body, "", "  "); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(w, "%s\n", raw)
+	_, err := fmt.Fprintf(w, "%s\n", out.Bytes())
 	return err
 }
 
