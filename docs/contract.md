@@ -247,7 +247,7 @@ DeviceRegistration and then the alert. Sample: `alert_event.json`.
 
 An offline emergency (`POST /emergencies`, the inbound SMS webhook or
 `POST /emergencies/relay`) also opens an incident, server-side only: its id is
-derived from the `emergency_id`, `trigger` is `offline` (migration 0007; a phone
+derived from the `emergency_id`, `trigger` is `offline` (migration 0008; a phone
 never sends it), the branch is `immediate_alert`, and each frame with a fix adds
 a GPS point. An emergency already cancelled opens nothing.
 
@@ -401,7 +401,8 @@ none got the alert.
 by the Tech lead on Oct 24); `0005_device_setup.sql` adds `user_name`,
 `safe_phrase` and `voice_id` to `devices` (#104, approved by the Tech lead on
 Oct 24); `0006_notify_deliveries.sql` adds `notify_deliveries` (#76); `0007_device_voice_consent.sql` adds
-`voice_consent_at` and `voice_consent_sha256` to `devices` (#107). The
+`voice_consent_at` and `voice_consent_sha256` to `devices` (#107);
+`0008_offline_incidents.sql` adds `offline` to the `incidents.trigger` check (#59). The
 server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
