@@ -14,6 +14,32 @@ team-27
 - Daniel Castellanos ([@dancas03](https://github.com/dancas03))
 - Daniel Alejandro Ross Requena ([@danirssx](https://github.com/danirssx))
 
+## Build and run
+
+One command builds and tests both the Go server and the Android app. Run it, and walk the demo path locally, before merging. There is no CI.
+
+```bash
+scripts/build.sh
+```
+
+Requirements: Go 1.24+, a JDK (on macOS the script uses Android Studio's bundled JBR if `JAVA_HOME` is unset) and the Android SDK, set through `local.properties` (`sdk.dir=/path/to/Android/sdk`) or `ANDROID_HOME`. Gradle downloads missing SDK platforms and build tools on the first build.
+
+Run the server (listens on `$PORT`, default 8080):
+
+```bash
+cd server && go run ./cmd/server
+curl localhost:8080/
+```
+
+Install the app on a connected phone:
+
+```bash
+./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+To work on the app in Android Studio, open the repo root (not `app/`). Layout and conventions for coding agents are in `AGENTS.md`.
+
 Before Submitting:
 
 - ✅ Fill in the project metadata (name, oneliner, description and deploy URL) in platanus-hack-project.jsonc
