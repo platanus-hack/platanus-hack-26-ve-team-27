@@ -40,6 +40,36 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 To work on the app in Android Studio, open the repo root (not `app/`). Layout and conventions for coding agents are in `AGENTS.md`.
 
+## Signed release APK
+
+The demo phones run the signed release build. The keystore and its passwords live in the team vault, never in the repo (`*.jks`, `*.keystore` and `keystore.properties` are gitignored).
+
+1. Get `mama-release.jks` and its `keystore.properties` from the vault and put both in `~/.mama-keys/` (`chmod 700 ~/.mama-keys`, `chmod 600` the files). `storeFile` in `keystore.properties` must be the absolute path to the `.jks`.
+2. Build:
+
+   ```bash
+   scripts/release.sh
+   ```
+
+   It writes `app/build/outputs/apk/release/app-release.apk` and prints the signing certificate (`CN=MAMA Team 27, O=Platanus Hack 26, C=VE`).
+
+Signing credentials are read from, in order: the env vars `MAMA_KEYSTORE_PATH`, `MAMA_KEYSTORE_PASSWORD`, `MAMA_KEY_ALIAS` and `MAMA_KEY_PASSWORD`; a `keystore.properties` at the repo root (keys `storeFile`, `storePassword`, `keyAlias`, `keyPassword`); then `~/.mama-keys/keystore.properties` (only through `scripts/release.sh`). Without any of them the release build fails. It never falls back to debug signing.
+
+### Install on the demo Xiaomi and the backup Android
+
+```bash
+scripts/install.sh                # every connected phone
+scripts/install.sh <serial>       # one phone, serial from `adb devices`
+scripts/install.sh --reinstall    # uninstall first, needed if a debug build is installed (different signature)
+```
+
+It runs `adb install -r` and then opens the app on each phone. `adb` comes from Android Studio's SDK (`platform-tools`).
+
+Phone setup, once per phone:
+
+- Any Android: Settings > About phone, tap "Build number" 7 times; then Developer options > enable "USB debugging". Plug in over USB and accept the "Allow USB debugging?" prompt (tick "Always allow").
+- Xiaomi (HyperOS/MIUI) also needs: a SIM and a signed-in Mi account; Settings > About phone, tap "OS version" 7 times; Additional settings > Developer options > enable "USB debugging", "Install via USB" and "USB debugging (Security settings)". During `adb install`, accept the install prompt on the phone screen. `INSTALL_FAILED_USER_RESTRICTED` means "Install via USB" is off or the prompt was not accepted.
+
 Before Submitting:
 
 - ✅ Fill in the project metadata (name, oneliner, description and deploy URL) in platanus-hack-project.jsonc
