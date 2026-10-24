@@ -11,6 +11,7 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/sms"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/report"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/voice"
 )
 
 // newMux registers every HTTP route. Add new routes here so there is one
@@ -22,7 +23,8 @@ import (
 // POST /sms/inbound/{provider} unmounted (404). With it, and without a pool,
 // the emergency routes answer 503. reports is the incident report page (#76),
 // an extra behind INCIDENT_REPORT_ENABLED: nil leaves GET /i/{token} and its
-// files unmounted (404).
+// files unmounted (404). The device voice routes (#107) read
+// ELEVENLABS_API_KEY themselves and answer 503 without it or without a pool.
 func newMux(pool *sql.DB, notifier intake.Notifier, calls *call.Routes, offline *offlineEmergency, reports *report.Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleRoot)
@@ -30,6 +32,7 @@ func newMux(pool *sql.DB, notifier intake.Notifier, calls *call.Routes, offline 
 	incidents := intake.New(pool, calls.Starter(), notifier)
 	incidents.Register(mux)
 	calls.Register(mux)
+	voice.FromEnv(pool).Register(mux)
 	if offline != nil {
 		offline.register(mux, pool, incidents.OfflinePublisher())
 	}
