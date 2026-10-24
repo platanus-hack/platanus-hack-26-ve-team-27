@@ -58,6 +58,8 @@ class SetupStoreTest {
         store.ownNumber = "+584141234567"
         store.familyNumbers = listOf("+584241112233", "+584125556677")
         store.duressPhrase = "dile a la tía Carmen que llego tarde"
+        store.userName = "Dani"
+        store.safePhrase = "voy llegando, ya casi"
         assertEquals(
             DeviceRegistration(
                 deviceId = "3f1c9a52-7b1e-4c8a-9a0e-2d6b8f4e1a77",
@@ -65,10 +67,26 @@ class SetupStoreTest {
                 familyNumbers = listOf("+584241112233", "+584125556677"),
                 duressPhrase = "dile a la tía Carmen que llego tarde",
                 appVersion = "0.1.0",
+                userName = "Dani",
+                safePhrase = "voy llegando, ya casi",
             ),
             store.registration("0.1.0"),
         )
         assertNull(store.registration(" ")?.appVersion)
+    }
+
+    @Test
+    fun aPhoneSetUpBeforeTheNameStillRegistersAndKeepsTheServersValues() {
+        val store = SetupStore(MemoryStore()) { "id" }
+        store.ownNumber = "+584141234567"
+        store.familyNumbers = listOf("+584241112233")
+        store.duressPhrase = "dile a la tía Carmen que llego tarde"
+        val registration = store.registration("0.1.0")!!
+        // Left out, the server keeps what it has stored (docs/contract.md).
+        assertNull(registration.userName)
+        assertNull(registration.safePhrase)
+        store.userName = " "
+        assertNull(store.registration("0.1.0")!!.userName)
     }
 
     @Test

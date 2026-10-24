@@ -13,7 +13,8 @@ fun interface HttpTransport {
     fun execute(method: String, url: String, jsonBody: String?): HttpResponse
 }
 
-class ServerHttpException(val code: Int, message: String) : IOException(message)
+/** A non-2xx answer. [body] is the server's, e.g. `{"error": "..."}` (setup shows a 422 on its field). */
+class ServerHttpException(val code: Int, message: String, val body: String = "") : IOException(message)
 
 /** Blocking calls to the MAMÁ server; callers run them off the main thread. */
 interface ServerApi {
@@ -48,6 +49,6 @@ class HttpServerApi(
     }
 
     private fun check2xx(what: String, res: HttpResponse) {
-        if (res.code !in 200..299) throw ServerHttpException(res.code, "$what: HTTP ${res.code}")
+        if (res.code !in 200..299) throw ServerHttpException(res.code, "$what: HTTP ${res.code}", res.body)
     }
 }

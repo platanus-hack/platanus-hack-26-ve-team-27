@@ -64,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.team27.mama.BuildConfig
 import com.team27.mama.R
+import com.team27.mama.setup.FormField
 import com.team27.mama.setup.MAMA_CONTACT_NAME
 import com.team27.mama.setup.PermissionFlow
 import com.team27.mama.setup.PhoneNumbers
@@ -421,8 +422,24 @@ private fun FormPhase(state: SetupUiState, mamaNumber: String?, actions: SetupAc
     val errors = state.formErrors.takeIf { state.showFormErrors }
     Header(
         title = "¿A quién avisamos?",
-        body = "Mamá te llama a tu número. Si dices tu frase en la llamada, tu familia recibe dónde estás.",
+        body = "Mamá te llama a tu número y te saluda por tu nombre. Si dices tu frase de alerta en la llamada, tu familia recibe dónde estás.",
         pose = MamaPose.Listening,
+    )
+
+    SectionLabel("Cómo te llama Mamá")
+    val nameError = state.errorFor(FormField.USER_NAME)
+    OutlinedTextField(
+        value = form.userName,
+        onValueChange = { actions.onFormChange(form.copy(userName = it)) },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Tu nombre") },
+        placeholder = { Text("Dani") },
+        isError = nameError != null,
+        supportingText = {
+            Text(nameError ?: "Mamá te saluda así: «¡Hola, ${form.userName.trim().ifEmpty { "Dani" }}!».")
+        },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
     )
 
     SectionLabel("Tu número")
@@ -468,17 +485,27 @@ private fun FormPhase(state: SetupUiState, mamaNumber: String?, actions: SetupAc
         }
     }
 
-    SectionLabel("Tu frase secreta")
-    OutlinedTextField(
+    SectionLabel("Tus frases")
+    Text(
+        text = "Las dos tienen que sonar a una respuesta a «¿cómo vas?», así quien te escucha no nota nada.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    PhraseField(
         value = form.duressPhrase,
         onValueChange = { actions.onFormChange(form.copy(duressPhrase = it)) },
-        modifier = Modifier.fillMaxWidth(),
-        label = { Text("Tu frase") },
-        isError = errors?.duressPhrase != null,
-        supportingText = {
-            Text(errors?.duressPhrase ?: "Si la dices en la llamada, tu familia recibe dónde estás. Para quien te escucha, es una frase cualquiera.")
-        },
-        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+        label = "Frase de alerta",
+        hint = "Si la dices, tu familia recibe dónde estás. Ejemplo: «dile a la tía Carmen que llego tarde».",
+        error = state.errorFor(FormField.DURESS_PHRASE),
+        imeAction = ImeAction.Next,
+    )
+    PhraseField(
+        value = form.safePhrase,
+        onValueChange = { actions.onFormChange(form.copy(safePhrase = it)) },
+        label = "Frase de todo bien",
+        hint = "Si la dices, Mamá sabe que todo va bien. Ejemplo: «voy llegando, ya casi».",
+        error = state.errorFor(FormField.SAFE_PHRASE),
+        imeAction = ImeAction.Done,
     )
 
     SectionLabel("El contacto Mamá")
@@ -539,7 +566,7 @@ private fun DonePhase(state: SetupUiState, mamaNumber: String?) {
             )
         }
     }
-    SectionLabel("Tu frase secreta")
+    SectionLabel("Tus frases")
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
@@ -550,11 +577,20 @@ private fun DonePhase(state: SetupUiState, mamaNumber: String?) {
             modifier = Modifier.padding(MamaSpacing.m),
             verticalArrangement = Arrangement.spacedBy(MamaSpacing.s),
         ) {
+            if (state.form.userName.isNotBlank()) {
+                Text(text = "Mamá te saluda: «¡Hola, ${state.form.userName.trim()}!»", style = MaterialTheme.typography.bodyMedium)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
             Text(text = "«${state.form.duressPhrase.trim().replaceFirstChar(Char::uppercase)}»", style = MaterialTheme.typography.titleLarge)
             Text(
                 text = "Si la dices en la llamada, tu familia recibe dónde estás. Para quien te escucha, es una frase cualquiera.",
                 style = MaterialTheme.typography.bodyMedium,
             )
+            if (state.form.safePhrase.isNotBlank()) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Text(text = "«${state.form.safePhrase.trim().replaceFirstChar(Char::uppercase)}»", style = MaterialTheme.typography.titleLarge)
+                Text(text = "Si la dices, Mamá sabe que todo va bien.", style = MaterialTheme.typography.bodyMedium)
+            }
         }
     }
     SectionLabel("El contacto Mamá")
@@ -580,6 +616,26 @@ private fun PhoneField(
         supportingText = error?.let { { Text(it) } },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
+    )
+}
+
+@Composable
+private fun PhraseField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    hint: String,
+    error: String?,
+    imeAction: ImeAction,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(label) },
+        isError = error != null,
+        supportingText = { Text(error ?: hint) },
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = imeAction),
     )
 }
 
@@ -705,7 +761,7 @@ private fun previewState(phase: SetupPhase): SetupUiState {
     return SetupUiState(
         phase = phase,
         permissions = flow,
-        form = SetupForm(ownNumber = "0414 123 4567", familyNumbers = listOf("+58 424 111 2233", "0412 555 6677")),
+        form = SetupForm(userName = "Dani", ownNumber = "0414 123 4567", familyNumbers = listOf("+58 424 111 2233", "0412 555 6677")),
         contact = SetupTask(TaskStatus.DONE),
         registration = when (phase) {
             SetupPhase.FINISHING -> SetupTask(TaskStatus.FAILED, "No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.")
