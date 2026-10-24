@@ -42,6 +42,7 @@ import com.team27.mama.mesh.protocol.SpecialRecipients
 import com.team27.mama.mesh.services.AppStateStore
 import com.team27.mama.mesh.sync.GossipSyncManager
 import com.team27.mama.mesh.util.AppConstants
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -70,7 +71,10 @@ internal class BleMeshNode(
 
     override val myPeerId: String = crypto.myPeerID
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = CoroutineScope(
+        Dispatchers.IO + SupervisorJob() +
+            CoroutineExceptionHandler { _, e -> Log.e(TAG, "Uncaught mesh coroutine error: ${e.message}", e) }
+    )
     private val factory = MeshPacketFactory(crypto)
     private val peerManager = PeerManager()
     private val fragmentManager = FragmentManager()
@@ -92,7 +96,7 @@ internal class BleMeshNode(
 
     private val lock = Any()
     private var started = false
-    private var stopped = false
+    @Volatile private var stopped = false
     private var announcementJob: Job? = null
 
     init {
@@ -125,6 +129,7 @@ internal class BleMeshNode(
             wasStarted = started
         }
         Log.i(TAG, "Stopping BLE mesh")
+        AppStateStore.setDirectPeers(emptySet())
         announcementJob?.cancel()
         if (wasStarted) {
             try {
@@ -220,6 +225,7 @@ internal class BleMeshNode(
     private fun setupDelegates() {
         peerManager.delegate = object : PeerManagerDelegate {
             override fun onPeerListUpdated(peerIDs: List<String>) {
+                if (stopped) return
                 val direct = peerManager.getVerifiedPeers().filter { it.value.isDirectConnection }.keys
                 AppStateStore.setDirectPeers(direct)
             }

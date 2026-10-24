@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Debug builds only: drives the BLE mesh from adb for the two-phone test. -->
+        <receiver
+            android:name="com.team27.mama.debug.MeshDebugReceiver"
+            android:exported="true" />
+    </application>
+</manifest>

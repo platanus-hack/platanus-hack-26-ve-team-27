@@ -64,4 +64,18 @@ class MeshKeyStoreTest {
         val bytes = Base64.getDecoder().decode(store.getString(key))
         assertEquals(EncryptionService.KEY_SIZE, bytes.size)
     }
+
+    @Test
+    fun loadOrCreate_writesBothKeysInOneBatch() {
+        var batches = 0
+        val store = object : KeyValueStore {
+            val map = HashMap<String, String>()
+            override fun getString(key: String): String? = map[key]
+            override fun putString(key: String, value: String) { map[key] = value }
+            override fun putStrings(values: Map<String, String>) { batches++; map.putAll(values) }
+        }
+        MeshKeyStore.loadOrCreate(store)
+        assertEquals(1, batches)
+        assertEquals(2, store.map.size)
+    }
 }

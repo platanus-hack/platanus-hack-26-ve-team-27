@@ -18,6 +18,11 @@ import java.util.Base64
 internal interface KeyValueStore {
     fun getString(key: String): String?
     fun putString(key: String, value: String)
+
+    /** Writes all [values] together; implementations should make this a single atomic write. */
+    fun putStrings(values: Map<String, String>) {
+        values.forEach { (k, v) -> putString(k, v) }
+    }
 }
 
 /**
@@ -41,8 +46,12 @@ internal object MeshKeyStore {
         Log.i(TAG, "No valid stored mesh identity; generating a new one")
         val (freshStatic, freshSigning) = EncryptionService.generatePrivateKeys(random)
         val encoder = Base64.getEncoder()
-        store.putString(KEY_STATIC_PRIVATE, encoder.encodeToString(freshStatic))
-        store.putString(KEY_SIGNING_PRIVATE, encoder.encodeToString(freshSigning))
+        store.putStrings(
+            mapOf(
+                KEY_STATIC_PRIVATE to encoder.encodeToString(freshStatic),
+                KEY_SIGNING_PRIVATE to encoder.encodeToString(freshSigning)
+            )
+        )
         return EncryptionService(freshStatic, freshSigning)
     }
 
@@ -66,9 +75,15 @@ internal object MeshKeyStore {
         return object : KeyValueStore {
             override fun getString(key: String): String? = prefs.getString(key, null)
 
-            // commit(), not apply(): the identity must be on disk before it is announced.
-            override fun putString(key: String, value: String) {
-                prefs.edit().putString(key, value).commit()
+            override fun putString(key: String, value: String) = putStrings(mapOf(key to value))
+
+            // One commit(), not apply(): the identity must be on disk, both keys together, before it is announced.
+            override fun putStrings(values: Map<String, String>) {
+                val editor = prefs.edit()
+                values.forEach { (k, v) -> editor.putString(k, v) }
+                if (!editor.commit()) {
+                    Log.e(TAG, "Failed to persist mesh identity: commit() returned false")
+                }
             }
         }
     }

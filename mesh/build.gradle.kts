@@ -28,7 +28,7 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.process)
-    implementation(libs.kotlinx.coroutines.android)
+    api(libs.kotlinx.coroutines.android) // Flow is part of the public MeshGateway API
     implementation(libs.bouncycastle.bcprov)
     implementation(libs.androidx.security.crypto)
 

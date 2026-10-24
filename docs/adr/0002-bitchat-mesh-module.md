@@ -21,6 +21,7 @@ MAMÁ needs an offline Bluetooth Low Energy mesh so an emergency can leave a pho
 - Our node appears in bitchat peer lists under its 16-hex peer ID.
 - Receivers drop, and do not relay, a MESSAGE until they hold our ANNOUNCE, so we send an announce before each broadcast.
 - A clock skewed by more than 10 minutes breaks announce verification on bitchat receivers. We document the limit instead of working around it.
+- ANNOUNCE-before-MESSAGE ordering is guaranteed on the first hop only. Peers two or more hops away may drop the first MESSAGE until gossip sync or periodic announces catch up, so emitters must re-emit until acked.
 - Upstream broadcast store-and-forward actually goes through gossip sync (`StoreForwardManager` skips broadcasts), so we copy both.
 - The foreground service is deferred to #60.
 - We do not track upstream automatically. Re-syncing means re-running the Task 1 copy at a new SHA and re-applying our adaptations.
