@@ -1,23 +1,23 @@
 package com.team27.mama.ui.theme
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -41,9 +41,9 @@ import com.team27.mama.R
  * MamaWordmark(), so changing a value below changes every screen. No other
  * file may define colors or fonts (see app/UI_RULES.md).
  *
- * Identity (#8): taken from the Platanus Hack 26 Caracas logo
- * (project-logo.png): charcoal #181918 and chartreuse #EFFE00, plus its ↗
- * arrow as the mark. Dark mode is the logo itself (chartreuse on charcoal).
+ * Identity (#8, #89): palette taken from the Platanus Hack 26 Caracas logo
+ * (project-logo.png): charcoal #181918 and chartreuse #EFFE00. The mark is
+ * Mamá herself (MamaMark). Dark mode is the logo itself (chartreuse on charcoal).
  * Chartreuse is unreadable on white, so light mode uses a deep olive of the
  * same hue for primary and keeps chartreuse as a soft container. Secondary is
  * a warm graphite (the logo's charcoal) and tertiary a muted periwinkle (the
@@ -284,10 +284,9 @@ object MamaSpacing {
 // --------------------------------------------------------------- Wordmark
 
 /**
- * The MAMÁ wordmark: the ↗ mark from the event logo in a rounded tile, then
- * "MAMÁ". Colors come from the color scheme (primary / onPrimary for the
- * tile, onSurface for the letters) and the type from MamaTypography, so it
- * follows every palette or font change in this file. [compact] is the
+ * The MAMÁ wordmark: Mamá's face in a circle, then "MAMÁ". The letters take
+ * onSurface and MamaTypography, so they follow every palette or font change in
+ * this file; the mark is the illustration itself (#89). [compact] is the
  * top-bar size.
  */
 @Composable
@@ -311,23 +310,22 @@ fun MamaWordmark(modifier: Modifier = Modifier, compact: Boolean = false) {
     }
 }
 
-/** The mark alone (the launcher icon draws the same arrow, see res/drawable/ic_launcher_foreground.xml). */
+/**
+ * The mark alone: Mamá's face, a head crop of the riso illustration that
+ * MamaCharacter animates (res/drawable-nodpi/mama_mark.webp), clipped to a
+ * circle. The drawable carries its own chartreuse circle, so it needs no tile
+ * color and looks the same in both modes. The launcher icon is the whole bust
+ * of the same drawing, as a bitmap foreground per density (ic_launcher_foreground.png
+ * under each mipmap folder).
+ */
 @Composable
 fun MamaMark(size: Dp, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.size(size),
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.primary,
-        contentColor = MaterialTheme.colorScheme.onPrimary,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                painter = painterResource(R.drawable.ic_mama_mark),
-                contentDescription = null,
-                modifier = Modifier.padding(size / 6),
-            )
-        }
-    }
+    Image(
+        painter = painterResource(R.drawable.mama_mark),
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = modifier.size(size).clip(CircleShape),
+    )
 }
 
 // ------------------------------------------------------------------ Theme
