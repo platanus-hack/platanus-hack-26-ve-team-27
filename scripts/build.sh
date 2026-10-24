@@ -26,7 +26,11 @@ fi
 step() { printf '\n==> %s\n' "$*"; }
 
 # --- secret scan (ticket #4) ---------------------------------------------
-# HOOK: ticket #4 adds the secret scan here, before anything is built.
+# Runs first so a planted key fails the build before anything compiles.
+step "secret scan"
+scripts/secret-scan.sh
+scan_test_out="$(scripts/secret-scan-test.sh 2>&1)" || { printf '%s\n' "$scan_test_out"; exit 1; }
+echo "secret scan self-test: passed"
 # --------------------------------------------------------------------------
 
 step "server: go vet"
