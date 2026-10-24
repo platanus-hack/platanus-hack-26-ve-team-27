@@ -527,7 +527,12 @@ default; then every route below answers `404`). Code:
   authorities. Once sealed, it is built from the stored `ficha.json`; before
   that it is marked "Borrador, sin sellar". The family messages and linked
   offline emergencies come from the live record and are labelled as outside
-  the seal. It uses `github.com/go-pdf/fpdf` with Lexend embedded.
+  the seal. A call with a ficha (#106, `calls.ficha`) gets a "Contexto de la
+  llamada" section after it, with situación, lugar, personas, vehículo, rumbo
+  and confianza (those with a value), and a note that an AI extracted them
+  and they must be checked against the recording. The seal signs that
+  context too, as the optional `calls[].context` in `ficha.json` (ADR 0005).
+  It uses `github.com/go-pdf/fpdf` with Lexend embedded.
 - **Family messages.** With the report on, the notifier records every send in
   `notify_deliveries`, with the number masked. Kapso's message status webhook
   (`whatsapp.message.sent`, `.delivered`, `.read`, `.failed`) goes to
@@ -582,9 +587,12 @@ default; then every route below answers `404`). Code:
   (`activo`, `en llamada`, `alerta` for a `duress` verdict, `cancelado` for
   an explicit cancellation or a `no_duress` verdict that notified nobody,
   `cerrado`). `GET /central/r/{incident_id}` follows one case: the stage
-  track, the call with the transcript as it is stored (also during the call),
-  the route and points, the timeline, `calls.ficha` (#106) when the column
-  exists, and the notified people per channel. Both stream through the same
+  track (its only timeline), the call with the transcript as it is stored
+  (also during the call), the route with each point's time, the call's
+  one-line situation under the name (`calls.ficha` → `situacion`, #106, when
+  the column exists; nothing otherwise), and the notified people: a summary,
+  one row per person by role (relatives, then whoever asked for help) and
+  each channel's status in words. Both stream through the same
   live loop as `/i/{token}/live` (`/central/live`,
   `/central/r/{incident_id}/live`, and their `estado.json`). Access:
   `?key=<CENTRAL_KEY>` once, compared in constant time, sets an HttpOnly,

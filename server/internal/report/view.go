@@ -675,6 +675,7 @@ func MapsURL(lat, lng float64) string {
 type Route struct {
 	Segments   []RouteSegment
 	Dots       []RouteDot
+	Labels     []RouteLabel // the points' times; the central's route only
 	Width      int
 	Height     int
 	DistanceKM string
@@ -694,6 +695,19 @@ type RouteDot struct {
 	MapsURL string
 	First   bool
 	Newest  bool
+	x, y    float64 // X and Y as numbers, for placing labels
+	at      string  // the point's time of day (phone clock, VET)
+}
+
+// RouteLabel is a point's time written next to it on the drawing. Only the
+// central dashboard draws them (centralRoute); the family page's route has
+// none.
+type RouteLabel struct {
+	Key    string
+	X, Y   string
+	Anchor string // text-anchor: start, middle or end
+	Text   string // "17:11:47"
+	Newest bool
 }
 
 // minRouteSpanM is the smallest span the route box shows, so GPS jitter of a
@@ -703,11 +717,13 @@ const minRouteSpanM = 200.0
 // route projects the points onto a 320x180 box (equirectangular meters,
 // fine at a city's scale), at least minRouteSpanM across. nil without
 // points.
-func route(points []Point) *Route {
+func route(points []Point) *Route { return routeIn(points, 320, 180, 16) }
+
+// routeIn projects the points onto a w x h box, pad from its edges.
+func routeIn(points []Point, w, h, pad float64) *Route {
 	if len(points) == 0 {
 		return nil
 	}
-	const w, h, pad = 320.0, 180.0, 16.0
 	const mPerDegLat = 110540.0
 	meanLat := 0.0
 	for _, p := range points {
@@ -730,7 +746,8 @@ func route(points []Point) *Route {
 	r := &Route{Width: int(w), Height: int(h), DistanceKM: distance(points)}
 	var px, py string
 	for i, c := range xy {
-		x, y := f(offX+(c[0]-minX)*scale), f(offY+(c[1]-minY)*scale)
+		fx, fy := offX+(c[0]-minX)*scale, offY+(c[1]-minY)*scale
+		x, y := f(fx), f(fy)
 		n := strconv.Itoa(i + 1)
 		if i > 0 {
 			// The key carries the coordinates: when a new point rescales the
@@ -740,7 +757,7 @@ func route(points []Point) *Route {
 		r.Dots = append(r.Dots, RouteDot{
 			Key: "dot-" + n + "-" + x + "-" + y, X: x, Y: y, MapsURL: MapsURL(points[i].Lat, points[i].Lng),
 			Title: clock(points[i].RecordedAt) + " · " + accuracy(points[i].AccuracyM) + " · " + movement(points[i].SpeedMPS),
-			First: i == 0, Newest: i == len(xy)-1,
+			First: i == 0, Newest: i == len(xy)-1, x: fx, y: fy, at: clock(points[i].RecordedAt),
 		})
 		px, py = x, y
 	}

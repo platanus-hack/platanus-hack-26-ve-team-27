@@ -38,6 +38,7 @@ type pdfReport struct {
 	Timeline    []pdfEvent
 	Points      []pdfPoint
 	Calls       []pdfCall
+	Contexts    []pdfContext // the calls' contexts (#106); none without a ficha
 	Family      []pdfFamily
 	FamilyNote  string
 	Emergencies []string
@@ -57,6 +58,12 @@ type pdfCall struct {
 	Title string
 	Facts [][2]string
 	Turns []pdfTurn
+}
+
+// pdfContext is one call's context: its fields that have a value.
+type pdfContext struct {
+	Title  string
+	Fields [][2]string
 }
 
 type pdfTurn struct {
@@ -121,6 +128,13 @@ func buildPDF(rec Record, opts PDFOptions) (pdfReport, error) {
 	}
 	for i, c := range src.Calls {
 		r.Calls = append(r.Calls, pdfCallOf(i+1, len(src.Calls), c, src.Device))
+		if c.Context != nil {
+			title := "Contexto de la llamada"
+			if len(src.Calls) > 1 {
+				title += " " + strconv.Itoa(i+1)
+			}
+			r.Contexts = append(r.Contexts, pdfContext{Title: title, Fields: c.Context.Fields()})
+		}
 	}
 	for _, d := range rec.Deliveries {
 		f := pdfFamily{Recipient: d.Recipient, Error: d.Error}
@@ -263,6 +277,10 @@ func recordFromDocument(raw []byte, live Record) (Record, error) {
 			ConversationID: c.ConversationID, Status: c.Status, Transcript: c.Transcript, DurationSecs: c.DurationSecs,
 			RequestedAt: parse(c.RequestedAt), EndedAt: parsePtr(c.EndedAt),
 			Verdict: contract.Verdict(c.Verdict), VerdictReason: c.VerdictReason, VerdictAt: parsePtr(c.VerdictAt),
+		}
+		if c.Context != nil {
+			ctx := *c.Context
+			call.Context = &ctx
 		}
 		if r := c.Recording; r != nil {
 			rr := &Recording{ContentType: r.ContentType, Size: r.SizeBytes, StoredAt: parse(r.StoredAt)}
@@ -501,6 +519,15 @@ func renderPDF(r pdfReport) ([]byte, error) {
 				pdf.SetY(y + float64(n)*4.8 + 8)
 			}
 		}
+	}
+
+	for _, c := range r.Contexts {
+		heading(c.Title)
+		color(pdfGraphite)
+		pdf.SetFont("Lexend", "", 8.5)
+		pdf.MultiCell(textW, 4.2, ContextNote, "", "L", false)
+		pdf.Ln(1.5)
+		facts(c.Fields)
 	}
 
 	heading("Aviso a la familia")

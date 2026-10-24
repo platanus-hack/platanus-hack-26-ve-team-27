@@ -305,7 +305,8 @@ func loadCalls(ctx context.Context, tx *sql.Tx, incidentID string) ([]Call, erro
 		SELECT c.id, COALESCE(c.conversation_id, ''), c.status, c.transcript, c.duration_secs,
 		       c.requested_at, c.ended_at, COALESCE(c.verdict, ''), COALESCE(c.verdict_reason, ''), c.verdict_at,
 		       r.content_type, r.sha256, octet_length(r.audio), r.stored_at,
-		       COALESCE(p.twilio_status, ''), p.ringing_at, p.answered_at
+		       COALESCE(p.twilio_status, ''), p.ringing_at, p.answered_at,
+		       to_jsonb(c) -> 'ficha'
 		FROM calls c
 		LEFT JOIN call_recordings r ON r.call_id = c.id
 		LEFT JOIN call_progress p ON p.call_id = c.id
@@ -325,12 +326,14 @@ func loadCalls(ctx context.Context, tx *sql.Tx, incidentID string) ([]Call, erro
 		var sum []byte
 		var size sql.NullInt64
 		var ringing, answered sql.NullTime
+		var ficha []byte // calls.ficha (#106) through to_jsonb: NULL until that column exists
 		if err := rows.Scan(&c.ID, &c.ConversationID, &c.Status, &transcript, &duration,
 			&c.RequestedAt, &ended, &verdict, &c.VerdictReason, &verdictAt,
 			&contentType, &sum, &size, &storedAt,
-			&c.TwilioStatus, &ringing, &answered); err != nil {
+			&c.TwilioStatus, &ringing, &answered, &ficha); err != nil {
 			return nil, err
 		}
+		c.Context = parseCallContext(ficha)
 		c.RingingAt, c.PickedUpAt = nullTime(ringing), nullTime(answered)
 		if len(transcript) > 0 {
 			if err := json.Unmarshal(transcript, &c.Transcript); err != nil {

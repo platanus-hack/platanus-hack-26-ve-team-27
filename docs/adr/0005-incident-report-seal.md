@@ -31,6 +31,21 @@ phones pin its public half from `GET /config`.
    and anyone holding the link downloads the file: with it they could
    re-register the device to their own numbers or add points to its
    incidents. The audio is covered by its SHA-256, not embedded.
+
+   **Optional `calls[].context`** (added with #106's call ficha). When the
+   call's ficha (`calls.ficha`) exists at sealing time, the call carries a
+   `context` object with the fields that have a value, in this order:
+   `situacion`, `lugar`, `personas`, `vehiculo`, `rumbo` and `confianza`
+   (`baja`, `media` or `alta`). Fields the call did not tell ("no se sabe")
+   are left out. Without a ficha the key is absent, so a document is byte
+   for byte what it would have been before. The format stays
+   `MAMA-incident-report-v1`, and nothing about the signature changes:
+   - reports sealed before this field existed still verify as they are;
+   - `verify-ficha` accepts documents with and without it;
+   - an older verifier ignores the key it does not know, and still checks
+     the bytes.
+   The context is what an LLM took from the transcript. The seal proves it
+   is what the server had, not that it is right.
 2. **Exact bytes.** The document is stored as it was signed
    (`incident_seals.document`, `BYTEA`) and served byte for byte as
    `GET /i/{token}/ficha.json`. There is no canonicalization step to agree on:
@@ -82,6 +97,10 @@ phones pin its public half from `GET /config`.
    what the seal covers. It adds what the seal leaves out (each family
    message's delivery status, linked offline emergencies) under a note that
    says so. Before the seal it is a draft, marked "Borrador, sin sellar".
+   A call with a context gets a "Contexto de la llamada" section after it:
+   every field with a value, under a note that an AI extracted it from the
+   call and that it must be checked against the recording. Without a
+   context there is no section.
 8. **Verification.** `go run ./cmd/verify-ficha ficha.json ficha.sig <key>`
    prints "firma válida" or why not. The key must come from the page or from
    `GET /config`, never from `ficha.json` itself. The document names the key,

@@ -88,6 +88,9 @@ type Call struct {
 	TwilioStatus string
 	RingingAt    *time.Time
 	PickedUpAt   *time.Time
+	// Context is the call's ficha (#106, calls.ficha) once stored; nil
+	// without one, or before that column exists.
+	Context *CallContext
 }
 
 // Emergency is an offline emergency (emergencies row) linked to the
