@@ -6,8 +6,6 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -49,8 +47,29 @@ private val NightSurface = Color(0xFF1B2024)
 private val NightVariant = Color(0xFF40484E)
 private val Mist = Color(0xFFE1E3E5)
 private val White = Color(0xFFFFFFFF)
+private val Black = Color(0xFF000000)
+// Surface ramps (lowest -> highest) used by cards, sheets, menus and bars.
+private val PaperLowest = Color(0xFFFFFFFF)
+private val PaperLow = Color(0xFFF2F4F6)
+private val PaperMid = Color(0xFFECEFF1)
+private val PaperHigh = Color(0xFFE6E9EC)
+private val PaperHighest = Color(0xFFE0E4E7)
+private val PaperDim = Color(0xFFD8DCDF)
+private val NightLowest = Color(0xFF0C0F11)
+private val NightLow = Color(0xFF171B1E)
+private val NightMid = Color(0xFF1D2226)
+private val NightHigh = Color(0xFF272C30)
+private val NightHighest = Color(0xFF32373B)
+private val NightBright = Color(0xFF363B3F)
+private val LineSoft = Color(0xFFC2C8CD)
 
-val MamaLightColors: ColorScheme = lightColorScheme(
+/*
+ * Both schemes use the full ColorScheme constructor, which has no defaults:
+ * the compiler refuses a scheme that forgets a role, so no Material baseline
+ * color (the default lavender) can leak into a screen.
+ */
+
+val MamaLightColors: ColorScheme = ColorScheme(
     primary = Slate,
     onPrimary = White,
     primaryContainer = SlateContainer,
@@ -74,9 +93,34 @@ val MamaLightColors: ColorScheme = lightColorScheme(
     surfaceVariant = PaperVariant,
     onSurfaceVariant = Slate,
     outline = Line,
+    outlineVariant = LineSoft,
+    surfaceTint = Slate,
+    inversePrimary = SlateLight,
+    inverseSurface = NightHigh,
+    inverseOnSurface = Mist,
+    scrim = Black,
+    surfaceBright = Paper,
+    surfaceDim = PaperDim,
+    surfaceContainerLowest = PaperLowest,
+    surfaceContainerLow = PaperLow,
+    surfaceContainer = PaperMid,
+    surfaceContainerHigh = PaperHigh,
+    surfaceContainerHighest = PaperHighest,
+    primaryFixed = SlateContainer,
+    primaryFixedDim = SlateLight,
+    onPrimaryFixed = Ink,
+    onPrimaryFixedVariant = Slate,
+    secondaryFixed = SageContainer,
+    secondaryFixedDim = SageLight,
+    onSecondaryFixed = Ink,
+    onSecondaryFixedVariant = Sage,
+    tertiaryFixed = ClayContainer,
+    tertiaryFixedDim = ClayLight,
+    onTertiaryFixed = Ink,
+    onTertiaryFixedVariant = Clay,
 )
 
-val MamaDarkColors: ColorScheme = darkColorScheme(
+val MamaDarkColors: ColorScheme = ColorScheme(
     primary = SlateLight,
     onPrimary = Ink,
     primaryContainer = Slate,
@@ -100,6 +144,31 @@ val MamaDarkColors: ColorScheme = darkColorScheme(
     surfaceVariant = NightVariant,
     onSurfaceVariant = SlateLight,
     outline = Line,
+    outlineVariant = NightVariant,
+    surfaceTint = SlateLight,
+    inversePrimary = Slate,
+    inverseSurface = Mist,
+    inverseOnSurface = Ink,
+    scrim = Black,
+    surfaceBright = NightBright,
+    surfaceDim = Night,
+    surfaceContainerLowest = NightLowest,
+    surfaceContainerLow = NightLow,
+    surfaceContainer = NightMid,
+    surfaceContainerHigh = NightHigh,
+    surfaceContainerHighest = NightHighest,
+    primaryFixed = SlateContainer,
+    primaryFixedDim = SlateLight,
+    onPrimaryFixed = Ink,
+    onPrimaryFixedVariant = Slate,
+    secondaryFixed = SageContainer,
+    secondaryFixedDim = SageLight,
+    onSecondaryFixed = Ink,
+    onSecondaryFixedVariant = Sage,
+    tertiaryFixed = ClayContainer,
+    tertiaryFixedDim = ClayLight,
+    onTertiaryFixed = Ink,
+    onTertiaryFixedVariant = Clay,
 )
 
 // ------------------------------------------------------------- Typography
