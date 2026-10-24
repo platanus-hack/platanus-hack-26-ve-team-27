@@ -4,11 +4,13 @@ package com.team27.mama.spike
 enum class PressSource { ACCESSIBILITY, MEDIA_SESSION }
 
 /**
- * With the screen on, one physical press can reach both the accessibility
- * service and the media session. Accepts a press unless the last accepted one
- * was the same key from the other source less than [windowMs] earlier.
+ * One physical press can reach both the accessibility service and the media
+ * session (screen on, or the always-on display lit). Accepts a press unless
+ * the last accepted one was the same key from the other source less than
+ * [windowMs] earlier. The window can be wide: up-down-up never repeats a key,
+ * and on the Xiaomi the session copy of a press came up to ~390 ms late.
  */
-class PressDeduper(private val windowMs: Long = 250) {
+class PressDeduper(private val windowMs: Long = 1_000) {
     private var last: Triple<VolumeKey, PressSource, Long>? = null
 
     fun accept(key: VolumeKey, source: PressSource, atMs: Long): Boolean {

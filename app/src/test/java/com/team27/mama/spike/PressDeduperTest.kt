@@ -49,4 +49,12 @@ class PressDeduperTest {
         val matches = presses.filter { (k, s, t) -> d.accept(k, s, t) }.map { (k, _, t) -> pattern.onPress(k, t) }
         assertEquals(listOf(false, false, true), matches)
     }
+
+    @Test
+    fun theDefaultWindowCoversALateSessionCopy() {
+        // Seen on the Xiaomi: the session copy of an up arrived 388 ms after the accessibility one.
+        val d = PressDeduper()
+        assertTrue(d.accept(VolumeKey.UP, ACCESSIBILITY, 0))
+        assertEquals(false, d.accept(VolumeKey.UP, MEDIA_SESSION, 388))
+    }
 }
