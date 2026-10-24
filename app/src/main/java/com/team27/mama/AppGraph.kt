@@ -24,6 +24,14 @@ import com.team27.mama.mesh.MeshGateway
 import com.team27.mama.onboarding.ConnectivityNetworkStatus
 import com.team27.mama.onboarding.DeviceRegistrar
 import com.team27.mama.onboarding.OnboardingGate
+import com.team27.mama.relay.GatewayRelayMesh
+import com.team27.mama.relay.MeshRelay
+import com.team27.mama.relay.DelegatingRelayControls
+import com.team27.mama.relay.OwnTextMeshChannel
+import com.team27.mama.relay.RelayControls
+import com.team27.mama.relay.RelaySettings
+import com.team27.mama.relay.ServerRelayUploader
+import com.team27.mama.relay.SharedPreferencesRelayStore
 import com.team27.mama.server.HttpServerApi
 import com.team27.mama.server.ServerApi
 import com.team27.mama.server.UrlConnectionTransport
@@ -63,7 +71,7 @@ class AppGraph(
     val remoteConfig: RemoteConfigRepository =
         RemoteConfigRepository(serverApi, SharedPreferencesConfigStore(app), BuildConfig.DEFAULT_SMS_NUMBER)
 
-    private val networkStatus = ConnectivityNetworkStatus(app)
+    internal val networkStatus = ConnectivityNetworkStatus(app)
 
     val onboardingGate: OnboardingGate = OnboardingGate(networkStatus, remoteConfig, background)
 
@@ -91,7 +99,8 @@ class AppGraph(
     /**
      * #60 reads `graph.emergency?.state`. The trigger service calls `declare()` when its alert
      * fails (`emergency.OfflineFallback`). Null with the flag off: the orchestrator and the mesh
-     * gateway never start.
+     * gateway never start. With the flag on it is built eagerly in `Application.onCreate`,
+     * because MamaApp reads its state.
      */
     val emergency: EmergencyOrchestrator? by lazy {
         if (!offlineEmergency) return@lazy null
@@ -112,7 +121,7 @@ class AppGraph(
                     ContextCompat.checkSelfPermission(app, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
                 },
             ),
-            mesh = GatewayMeshChannel(gateway),
+            mesh = OwnTextMeshChannel(GatewayMeshChannel(gateway), requireNotNull(relay)::markOwn),
             location = AndroidLocationSource(app),
             network = networkStatus,
             channelOverride = channelOverride::value,
@@ -120,6 +129,35 @@ class AppGraph(
             // Only the tag: a throwable's message or causes could carry a location or a number.
             onError = { message, _ -> Log.w(LOG_TAG, message) },
         )
+    }
+
+    /** Opt-in switch for the relay (MeshController, #60's settings screen). Null with the flag off. */
+    val relaySettings: RelaySettings? by lazy { if (offlineEmergency) RelaySettings(app) else null }
+
+    /**
+     * The BLE relay (#60): MamaApp starts it, the settings screen reads its counters, and the
+     * orchestrator's mesh channel feeds it [MeshRelay.markOwn]. Null with the flag off. Its scope
+     * is single-threaded because the relay confines its snapshot to it.
+     */
+    val relay: MeshRelay? by lazy {
+        if (!offlineEmergency) return@lazy null
+        MeshRelay(
+            GatewayRelayMesh(MeshGateway.getInstance(app)),
+            ServerRelayUploader(BuildConfig.SERVER_URL, UrlConnectionTransport(10_000, 10_000)),
+            networkStatus,
+            SharedPreferencesRelayStore(app),
+            CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1)),
+            // Info: every line is a routine outcome (queued, acked, a retried failure). The real failures, a
+            // refused service start or mesh call, are warnings from MeshController and RelayForegroundService.
+            log = { Log.i("MamaRelay", it) },
+        )
+    }
+
+    /** The settings screen's view of the relay. Null with the flag off, so no Settings route exists. */
+    val relayControls: RelayControls? by lazy {
+        val settings = relaySettings ?: return@lazy null
+        val mesh = relay ?: return@lazy null
+        DelegatingRelayControls(settings, mesh)
     }
 
     fun deviceRegistrar(signer: PayloadSigner): DeviceRegistrar = DeviceRegistrar(serverApi, signer)
