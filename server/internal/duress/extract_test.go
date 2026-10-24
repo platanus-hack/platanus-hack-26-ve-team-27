@@ -112,3 +112,22 @@ func TestExtractContextFailure(t *testing.T) {
 		t.Fatalf("err %v, want no API key", err)
 	}
 }
+
+func TestExtractKeepsTheCodePhrasesOut(t *testing.T) {
+	llm, _ := fakeAPI(t, answer(`{"lugar": "la autopista", "personas": "dos panas", "vehiculo": "no se sabe", "rumbo": "no se sabe",
+		"situacion": "Dijo: dile a la tía Carmen que llego tarde.", "confianza": "media"}`))
+	got, err := llm.Extract(context.Background(), carCall, bothPhrases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Situacion != contract.CallContextUnknown || got.Lugar != "la autopista" {
+		t.Errorf("got %+v, want the quoting situacion dropped and the rest kept", got)
+	}
+	safe := scrubPhrases(contract.CallContext{Rumbo: "ya voy llegando a la casa", Lugar: "la casa de la tía"}, bothPhrases)
+	if safe.Rumbo != contract.CallContextUnknown || safe.Lugar != "la casa de la tía" {
+		t.Errorf("scrub %+v", safe)
+	}
+	if !strings.Contains(extractPrompt, "never repeat them") {
+		t.Error("the prompt should forbid repeating the code phrases")
+	}
+}

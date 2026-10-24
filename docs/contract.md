@@ -392,8 +392,11 @@ Messages API client and model as the verdict, low effort, transcript fenced as
 data) reads the transcript and returns `lugar`, `personas`, `vehiculo`,
 `rumbo`, `situacion` (one sentence) and `confianza` (`baja`, `media` or
 `alta`). Any field is `"no se sabe"` when the call did not say it; it only
-uses what was said or heard on the person's line. It has its own 6 s timeout:
-if it fails or times out, the message goes out on time without it. It is
+uses what was said or heard on the person's line, and a field that quotes
+either phrase is dropped to `"no se sabe"`. It starts together with the
+verdict's LLM step (unless the rules already heard the safe phrase), so the
+two waits overlap, and has its own 6 s timeout: if it fails or times out, the
+message goes out without it. It is
 stored in `calls.ficha` with the verdict, before the message. Only the
 WhatsApp text shows it, one line per known field, after the verdict:
 "Dijo que está: <lugar>", "Con: <personas>", "En: <vehiculo>", "Va hacia:

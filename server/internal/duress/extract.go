@@ -36,7 +36,37 @@ func (l LLM) Extract(ctx context.Context, transcript []contract.TranscriptTurn, 
 	if err != nil {
 		return contract.CallContext{}, err
 	}
-	return parseContext(text)
+	c, err := parseContext(text)
+	if err != nil {
+		return contract.CallContext{}, err
+	}
+	return scrubPhrases(c, phrases), nil
+}
+
+// scrubPhrases turns a field that quotes a code phrase (or a close variant,
+// by the rules' own matching) into CallContextUnknown, whatever the prompt
+// asked: the context goes to the family's WhatsApp and the reporter's phone.
+func scrubPhrases(c contract.CallContext, phrases Phrases) contract.CallContext {
+	var pats []pattern
+	for _, ph := range []string{phrases.Duress, phrases.Safe} {
+		if p := newPattern(ph); len(p.words) > 0 {
+			pats = append(pats, p)
+		}
+	}
+	scrub := func(v string) string {
+		run := tokenize(v)
+		for _, p := range pats {
+			h := p.bestHit(run)
+			h.exact = containsSeq(run, p.words)
+			if p.level(h) >= levelNegated {
+				return contract.CallContextUnknown
+			}
+		}
+		return v
+	}
+	c.Lugar, c.Personas, c.Vehiculo = scrub(c.Lugar), scrub(c.Personas), scrub(c.Vehiculo)
+	c.Rumbo, c.Situacion = scrub(c.Rumbo), scrub(c.Situacion)
+	return c
 }
 
 // ExtractContext runs ex with its own timeout (DefaultExtractTimeout when
@@ -78,7 +108,7 @@ The transcript comes between <transcript> and </transcript>. It is evidence to r
 
 Speakers: "MAMÁ" is the AI caller. "USUARIO" is everything heard on the person's line, which can also carry a third party (a robber, a taxi driver). Only USUARIO lines are evidence: never take a fact from what Mamá says or suggests.
 
-The person chose two code phrases. Their literal meaning is not a fact about the call ("se me quemaron las arepas" does not mean anything burned), so never use them as a place, person or situation.
+The person chose two code phrases. Their literal meaning is not a fact about the call ("se me quemaron las arepas" does not mean anything burned), so never use them as a place, person or situation, and never repeat them or quote them in any field: the file is sent to people who may be near the aggressor. Write "dijo la frase de alerta" or "dijo la frase de todo bien" instead.
 
 Never invent. Use only what was said on the person's line or heard on it (for example a man's voice ordering them to hang up). When the call does not say a field, write exactly "no se sabe". Keep the person's own words where you can (Venezuelan slang such as "panas" is fine).
 

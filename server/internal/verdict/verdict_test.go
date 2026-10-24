@@ -206,3 +206,28 @@ func TestDecideAlertsWithoutTheFichaWhenTheLLMFails(t *testing.T) {
 		})
 	}
 }
+
+// slowDetector answers after delay, like a slow LLM step.
+type slowDetector struct{ delay time.Duration }
+
+func (s slowDetector) Detect(ctx context.Context, t []contract.TranscriptTurn, p duress.Phrases) (duress.Result, error) {
+	time.Sleep(s.delay)
+	return duress.Rules{}.Detect(ctx, t, p)
+}
+
+// The detector's LLM and the extraction wait together, not one after the
+// other.
+func TestDecideRunsTheExtractionAlongsideTheDetector(t *testing.T) {
+	const delay = 300 * time.Millisecond
+	ex := &fakeExtractor{ficha: carFicha, delay: delay}
+	rec := &recorder{}
+	d := Decider{Detector: slowDetector{delay}, Extractor: ex, Store: rec}
+	start := time.Now()
+	got, err := d.Decide(context.Background(), safeCall("Voy en un carro por la autopista."), nil)
+	if elapsed := time.Since(start); elapsed > delay+200*time.Millisecond {
+		t.Errorf("Decide took %v, want about %v (the two waits overlap)", elapsed, delay)
+	}
+	if err != nil || got.Verdict != contract.VerdictUnclear || got.Ficha == nil {
+		t.Fatalf("got %+v, %v; want unclear with the ficha", got, err)
+	}
+}

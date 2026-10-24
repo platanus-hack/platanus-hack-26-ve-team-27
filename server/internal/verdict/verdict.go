@@ -69,24 +69,29 @@ type Decider struct {
 // (duress or unclear, never no_duress), stores both, then calls notify (when
 // not nil) with them, and returns them.
 //
+// The extraction starts with the detector, unless the rules alone already
+// say no_duress (the safe phrase), so the LLM verdict and the context share
+// one wait instead of adding up. If the final verdict is no_duress anyway,
+// the context is dropped.
+//
 // A detector error becomes an unclear verdict instead of stopping the
 // alert. An extraction error or timeout only drops the context: the alert
 // goes out without it. A store error is returned, but only after notify ran:
 // the family's alert matters more than the row, and a retried webhook stores
 // it again.
 func (d Decider) Decide(ctx context.Context, call Call, notify Notify) (Decision, error) {
+	var ficha chan *contract.CallContext
+	if d.Extractor != nil && !rulesCancel(ctx, call) {
+		ficha = make(chan *contract.CallContext, 1)
+		go func() { ficha <- d.extract(ctx, call) }()
+	}
 	r, err := d.Detector.Detect(ctx, call.Transcript, call.phrases())
 	if err != nil {
 		r = duress.Result{Verdict: contract.VerdictUnclear, Reason: "the detector failed: " + err.Error()}
 	}
 	dec := Decision{Result: r}
-	if d.Extractor != nil && r.Verdict != contract.VerdictNoDuress {
-		c, err := duress.ExtractContext(ctx, d.Extractor, d.ExtractTimeout, call.Transcript, call.phrases())
-		if err != nil {
-			log.Printf("verdict: conversation %s: no call context (%v); alerting without it", call.ConversationID, err)
-		} else {
-			dec.Ficha = &c
-		}
+	if ficha != nil && r.Verdict != contract.VerdictNoDuress {
+		dec.Ficha = <-ficha // bounded by ExtractTimeout
 	}
 	saveErr := d.Store.SaveVerdict(ctx, call.ConversationID, dec)
 	if notify != nil {
@@ -96,6 +101,23 @@ func (d Decider) Decide(ctx context.Context, call Call, notify Notify) (Decision
 		return dec, fmt.Errorf("verdict: save %s: %w", call.ConversationID, saveErr)
 	}
 	return dec, nil
+}
+
+// rulesCancel reports whether the rules alone say no_duress, so the context
+// is never asked for on the safe phrase.
+func rulesCancel(ctx context.Context, call Call) bool {
+	r, err := duress.Rules{}.Detect(ctx, call.Transcript, call.phrases())
+	return err == nil && r.Verdict == contract.VerdictNoDuress
+}
+
+// extract takes the call's context within ExtractTimeout; nil when it fails.
+func (d Decider) extract(ctx context.Context, call Call) *contract.CallContext {
+	c, err := duress.ExtractContext(ctx, d.Extractor, d.ExtractTimeout, call.Transcript, call.phrases())
+	if err != nil {
+		log.Printf("verdict: conversation %s: no call context (%v); alerting without it", call.ConversationID, err)
+		return nil
+	}
+	return &c
 }
 
 // Decide is Decider{Detector: det, Store: store}.Decide: no call context.
