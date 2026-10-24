@@ -157,8 +157,8 @@ main() {
   unzip -q -o "$apk" -d "$work/apk"
 
   # BuildConfig made it into the code.
-  if ! cat "$work"/apk/classes*.dex | grep -a -q -F "$server_url"; then die "SERVER_URL $server_url is not in the APK's code"; fi
-  if ! cat "$work"/apk/classes*.dex | grep -a -q -F "$twilio"; then die "TWILIO_NUMBER $twilio is not in the APK's code"; fi
+  if ! grep -a -q -F -e "$server_url" "$work"/apk/classes*.dex; then die "SERVER_URL $server_url is not in the APK's code"; fi
+  if ! grep -a -q -F -e "$twilio" "$work"/apk/classes*.dex; then die "TWILIO_NUMBER $twilio is not in the APK's code"; fi
 
   # Nothing secret inside.
   local bad
