@@ -67,8 +67,15 @@ if [[ -s "$FILES" ]]; then
     flags="${rest%%|*}"; rest="${rest#*|}"
     filter="${rest%%|*}"; regex="${rest#*|}"
 
+    # A regex this grep rejects must fail loudly, not scan as "clean": xargs
+    # folds grep's "no match" (1) and "error" (2) into one exit code below.
+    rc=0; grep "$flags" -e "$regex" </dev/null >/dev/null 2>&1 || rc=$?
+    if ((rc > 1)); then
+      printf 'secret scan: rule %s is not a valid regex for this grep\n' "$name" >&2
+      exit 2
+    fi
     # grep exits 1 when a batch has no match; that is not an error here.
-    xargs -0 grep -nHI "$flags" -e "$regex" -- <"$FILES" 2>/dev/null >"$HITS" || true
+    xargs -0 grep -nHI "$flags" -e "$regex" -- <"$FILES" >"$HITS" || true
 
     while IFS= read -r hit; do
       file="${hit%%:*}"; rest="${hit#*:}"
