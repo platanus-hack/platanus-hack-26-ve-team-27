@@ -46,6 +46,8 @@ class VolumeSessionService : Service() {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         } catch (e: Exception) {
             SpikeLog.log(this, "session startForeground failed ${e.javaClass.simpleName}: ${e.message}")
+            stopSelf()
+            return
         }
         session = MediaSession(this, "mama-volume").apply {
             // Without a callback, MediaSession drops every VolumeProvider adjustment.
@@ -111,6 +113,10 @@ class VolumeSessionService : Service() {
             } catch (e: Exception) {
                 SpikeLog.log(context, "session start failed ${e.javaClass.simpleName}: ${e.message}")
             }
+        }
+
+        fun stop(context: Context) {
+            context.stopService(Intent(context, VolumeSessionService::class.java))
         }
     }
 }

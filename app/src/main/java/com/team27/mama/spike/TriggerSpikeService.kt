@@ -59,6 +59,11 @@ class TriggerSpikeService : Service() {
         val detectedAt = intent?.getLongExtra(EXTRA_DETECTED_AT, -1L)?.takeIf { it > 0 } ?: startedAt
         val fgs = goForeground()
         SpikeLog.log(this, "service start trigger=$trigger fgs=$fgs sinceTriggerMs=${startedAt - detectedAt}")
+        if (fgs == "none") {
+            // Android would kill the app for a started-but-never-foreground service.
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         scope.launch {
             try {
                 send(trigger, detectedAt, fgs)
