@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -99,7 +101,7 @@ func (c *Central) gate(next http.HandlerFunc) http.HandlerFunc {
 			}
 			http.SetCookie(w, &http.Cookie{
 				Name: centralCookie, Value: c.cookieValue(), Path: "/central",
-				MaxAge: int(centralCookieMaxAge.Seconds()), HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+				MaxAge: int(centralCookieMaxAge.Seconds()), HttpOnly: true, Secure: !isLoopback(r.Host), SameSite: http.SameSiteStrictMode,
 			})
 			q.Del("key")
 			u := url.URL{Path: r.URL.Path, RawQuery: q.Encode()}
@@ -432,4 +434,19 @@ func (h *Handler) centralCaseState(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// isLoopback reports whether host (a Host header, port optional) is this
+// machine. The central cookie is Secure everywhere else; on plain-http
+// localhost Safari would drop a Secure cookie and the dashboard would 404
+// after the key redirect, so local runs get it without the flag.
+func isLoopback(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
