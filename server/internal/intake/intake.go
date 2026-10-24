@@ -98,7 +98,7 @@ func (h *Handler) handleAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branch := ev.Branch()
+	branch := chooseBranch(ev)
 	speed := branchSpeed(ev.LastPoint())
 	resp, created, err := createIncident(r.Context(), h.pool, ev, branch, speed)
 	switch {

@@ -43,6 +43,11 @@ alert. Thresholds live in one place per side: `contract.StillBelowMPS` and
 | Otherwise | `call` | `1.0` to `< 7.0`, or unknown | `3.6` to `< 25.2` | "Mamá" calls. |
 | Moving fast (a car) | `silent_tracker` | `>= 7.0` | `>= 25.2` | Silent tracker mode: the phone keeps sending points, no call. |
 
+With `CALL_WHEN_STILL=true` on the server, the still row picks `call` too: a
+person standing still (as on stage) still gets "Mamá". The fast row and the
+unknown-speed rule do not change. The switch lives only on the server (the
+response carries the branch), so Kotlin's `chooseBranch` stays as it is.
+
 An unknown speed (the fix has no `speed_mps`, or it is negative) picks
 `call`, because the call asks the person (the phone must leave `speed_mps`
 out rather than send `0`, see Conventions). `ChooseBranch` (Go) and
