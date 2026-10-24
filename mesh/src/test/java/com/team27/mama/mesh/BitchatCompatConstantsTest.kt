@@ -18,6 +18,8 @@ class BitchatCompatConstantsTest {
         assertEquals(43_200_000L, AppConstants.StoreForward.MESSAGE_CACHE_TIMEOUT_MS)
         assertEquals(512, AppConstants.Fragmentation.FRAGMENT_SIZE_THRESHOLD)
         assertEquals(UUID.fromString("F47B5E2D-4A9E-4C5A-9B3F-8E1D2C3A4B5C"), AppConstants.Mesh.Gatt.SERVICE_UUID)
+        assertEquals(UUID.fromString("A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D"), AppConstants.Mesh.Gatt.CHARACTERISTIC_UUID)
+        assertEquals(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"), AppConstants.Mesh.Gatt.DESCRIPTOR_UUID)
         assertEquals(0x02, MessageType.MESSAGE.value.toInt())
         assertArrayEquals(ByteArray(8) { 0xFF.toByte() }, SpecialRecipients.BROADCAST)
     }
