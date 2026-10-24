@@ -21,7 +21,10 @@ object PressRouter {
             return
         }
         // Before setup is done there is no registered device to alert for.
-        if (!SetupStore(SharedPreferencesStore.forSetup(context)).setupCompleted) return
+        if (!SetupStore(SharedPreferencesStore.forSetup(context)).setupCompleted) {
+            TriggerLog.log(context, "key $key from=$source ignored: setup not finished")
+            return
+        }
         val locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
         // Only a locked phone warms up: ordinary volume use on an unlocked
         // phone must not wake mobile data, the GPS or the server.

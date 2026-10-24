@@ -91,7 +91,14 @@ class LocationFixes(private val context: Context) {
     }
 }
 
-fun Location.ageMs(): Long = (SystemClock.elapsedRealtimeNanos() - elapsedRealtimeNanos) / 1_000_000
+/**
+ * How old the fix is. Some GNSS HALs (the emulator's) stamp a bogus
+ * elapsedRealtimeNanos ahead of now; then the fix's wall-clock time is used.
+ */
+fun Location.ageMs(): Long {
+    val monotonic = (SystemClock.elapsedRealtimeNanos() - elapsedRealtimeNanos) / 1_000_000
+    return if (monotonic >= 0) monotonic else System.currentTimeMillis() - time
+}
 
 /** A fix with no accuracy reports 0, which must not read as precise: null instead. */
 fun Location.accuracyOrNull(): Float? = if (hasAccuracy()) accuracy else null
