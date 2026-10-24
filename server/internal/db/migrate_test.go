@@ -3,7 +3,10 @@ package db
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"reflect"
+	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"testing/fstest"
@@ -16,6 +19,21 @@ import (
 // TEST_DATABASE_URL.
 func freshDB(t *testing.T) *sql.DB { return dbtest.Fresh(t) }
 
+// embeddedVersions lists every migration in migrations.FS in apply order, so
+// these tests keep passing when a ticket adds the next NNNN_name.sql.
+func embeddedVersions(t *testing.T) []string {
+	t.Helper()
+	names, err := fs.Glob(migrations.FS, "*.sql")
+	if err != nil || len(names) == 0 {
+		t.Fatalf("embedded migrations: %v (%d files)", err, len(names))
+	}
+	sort.Strings(names)
+	for i, name := range names {
+		names[i] = strings.TrimSuffix(name, ".sql")
+	}
+	return names
+}
+
 func TestMigrateFreshThenNoOp(t *testing.T) {
 	pool := freshDB(t)
 	ctx := context.Background()
@@ -24,13 +42,23 @@ func TestMigrateFreshThenNoOp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Migrate: %v", err)
 	}
-	if want := []string{"0001_init"}; !reflect.DeepEqual(applied, want) {
+	want := embeddedVersions(t)
+	if !reflect.DeepEqual(applied, want) {
 		t.Fatalf("first Migrate applied %v, want %v", applied, want)
 	}
 	for _, table := range []string{"devices", "incidents", "gps_points", "calls", "schema_migrations"} {
 		var ok bool
 		if err := pool.QueryRow("SELECT to_regclass($1) IS NOT NULL", table).Scan(&ok); err != nil || !ok {
 			t.Errorf("table %s missing (err %v)", table, err)
+		}
+	}
+	// 0002_device_keys adds the device key columns (#55).
+	for _, column := range []string{"ed25519_public_key", "key_id"} {
+		var ok bool
+		err := pool.QueryRow(`SELECT EXISTS (SELECT 1 FROM information_schema.columns
+			WHERE table_name = 'devices' AND column_name = $1)`, column).Scan(&ok)
+		if err != nil || !ok {
+			t.Errorf("column devices.%s missing (err %v)", column, err)
 		}
 	}
 
@@ -42,8 +70,8 @@ func TestMigrateFreshThenNoOp(t *testing.T) {
 		t.Fatalf("second Migrate applied %v, want nothing", applied)
 	}
 	var n int
-	if err := pool.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&n); err != nil || n != 1 {
-		t.Fatalf("schema_migrations rows = %d (err %v), want 1", n, err)
+	if err := pool.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&n); err != nil || n != len(want) {
+		t.Fatalf("schema_migrations rows = %d (err %v), want %d", n, err, len(want))
 	}
 }
 
@@ -66,8 +94,14 @@ func TestMigrateConcurrentBoots(t *testing.T) {
 			t.Fatalf("boot %d: %v", i, err)
 		}
 	}
-	if total := len(results[0]) + len(results[1]); total != 1 {
-		t.Fatalf("applied %v and %v, want 0001_init exactly once", results[0], results[1])
+	// One boot applies everything, the other finds it done and applies nothing.
+	want := embeddedVersions(t)
+	first, second := results[0], results[1]
+	if len(first) == 0 {
+		first, second = second, first
+	}
+	if !reflect.DeepEqual(first, want) || len(second) != 0 {
+		t.Fatalf("applied %v and %v, want %v exactly once", results[0], results[1], want)
 	}
 }
 

@@ -17,6 +17,7 @@ var allVars = []string{
 	"TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER",
 	"KAPSO_API_KEY", "KAPSO_PHONE_NUMBER_ID",
 	"ANTHROPIC_API_KEY",
+	"EMERGENCY_SMS_NUMBER", "EMERGENCY_ED25519_SEED", "EMERGENCY_X25519_PRIVATE_KEY",
 }
 
 func TestEmptyEnvDefaultsPortAndReportsEverythingMissing(t *testing.T) {
@@ -40,18 +41,21 @@ func TestLoadReadsEveryVar(t *testing.T) {
 		t.Fatalf("Missing() = %v, want none", c.Missing())
 	}
 	checks := map[string]string{
-		"PORT":                       c.Port,
-		"DATABASE_URL":               c.DatabaseURL,
-		"ELEVENLABS_API_KEY":         c.ElevenLabs.APIKey,
-		"ELEVENLABS_AGENT_ID":        c.ElevenLabs.AgentID,
-		"ELEVENLABS_PHONE_NUMBER_ID": c.ElevenLabs.PhoneNumberID,
-		"ELEVENLABS_WEBHOOK_SECRET":  c.ElevenLabs.WebhookSecret,
-		"TWILIO_ACCOUNT_SID":         c.Twilio.AccountSID,
-		"TWILIO_AUTH_TOKEN":          c.Twilio.AuthToken,
-		"TWILIO_PHONE_NUMBER":        c.Twilio.PhoneNumber,
-		"KAPSO_API_KEY":              c.Kapso.APIKey,
-		"KAPSO_PHONE_NUMBER_ID":      c.Kapso.PhoneNumberID,
-		"ANTHROPIC_API_KEY":          c.Anthropic.APIKey,
+		"PORT":                         c.Port,
+		"DATABASE_URL":                 c.DatabaseURL,
+		"ELEVENLABS_API_KEY":           c.ElevenLabs.APIKey,
+		"ELEVENLABS_AGENT_ID":          c.ElevenLabs.AgentID,
+		"ELEVENLABS_PHONE_NUMBER_ID":   c.ElevenLabs.PhoneNumberID,
+		"ELEVENLABS_WEBHOOK_SECRET":    c.ElevenLabs.WebhookSecret,
+		"TWILIO_ACCOUNT_SID":           c.Twilio.AccountSID,
+		"TWILIO_AUTH_TOKEN":            c.Twilio.AuthToken,
+		"TWILIO_PHONE_NUMBER":          c.Twilio.PhoneNumber,
+		"KAPSO_API_KEY":                c.Kapso.APIKey,
+		"KAPSO_PHONE_NUMBER_ID":        c.Kapso.PhoneNumberID,
+		"ANTHROPIC_API_KEY":            c.Anthropic.APIKey,
+		"EMERGENCY_SMS_NUMBER":         c.Emergency.SMSNumber,
+		"EMERGENCY_ED25519_SEED":       c.Emergency.Ed25519Seed,
+		"EMERGENCY_X25519_PRIVATE_KEY": c.Emergency.X25519PrivateKey,
 	}
 	for name, got := range checks {
 		if got != env[name] {
@@ -99,6 +103,22 @@ func TestFormattingNeverPrintsValues(t *testing.T) {
 	}
 }
 
+func TestEmergencyFormattingNeverPrintsValues(t *testing.T) {
+	const secret = "planted-emergency-secret-456" // secret-scan:allow (test fixture)
+	e := Emergency{SMSNumber: secret, Ed25519Seed: secret}
+	for _, verb := range []string{"%v", "%+v", "%#v", "%s"} {
+		out := fmt.Sprintf(verb, e)
+		if strings.Contains(out, secret) {
+			t.Errorf("Sprintf(%q, emergency) leaks a value: %s", verb, out)
+		}
+		for _, want := range []string{"EMERGENCY_SMS_NUMBER=set", "EMERGENCY_ED25519_SEED=set", "EMERGENCY_X25519_PRIVATE_KEY=unset"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("Sprintf(%q, emergency) = %s, want it to show %s", verb, out, want)
+			}
+		}
+	}
+}
+
 func TestNotifierDefaultsToKapsoAndIsLowercased(t *testing.T) {
 	if got := LoadFrom(envFrom(nil)).Notifier; got != NotifierKapso {
 		t.Errorf("unset NOTIFIER = %q, want %q", got, NotifierKapso)
@@ -141,5 +161,14 @@ func TestCallSpikeVarsAreOptional(t *testing.T) {
 	}
 	if s := c.String(); strings.Contains(s, "tok") || strings.Contains(s, "voice123") {
 		t.Errorf("String() leaks a value: %s", s)
+	}
+}
+
+func TestEmergencyOfflineFlagIsOffUnlessTrueOr1(t *testing.T) {
+	for v, want := range map[string]bool{"": false, "true": true, "TRUE": true, "1": true, " true ": true, "yes": false, "0": false, "false": false, "tru": false} {
+		got := LoadFrom(envFrom(map[string]string{"EMERGENCY_OFFLINE_ENABLED": v})).Emergency.Enabled
+		if got != want {
+			t.Errorf("EMERGENCY_OFFLINE_ENABLED=%q: Enabled = %v, want %v", v, got, want)
+		}
 	}
 }
