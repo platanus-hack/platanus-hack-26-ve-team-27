@@ -37,8 +37,11 @@ type Store interface {
 	// Failed marks the call failed, unless a webhook already finished it.
 	Failed(ctx context.Context, callID int64) error
 	// FailedConversation marks the call with conversationID failed, unless
-	// a webhook already finished it. A conversation not stored is no error.
-	FailedConversation(ctx context.Context, conversationID string) error
+	// a webhook already finished it. When no row has conversationID yet
+	// (the failure beat Placed), it applies the SaveTranscript fallback: the
+	// newest row of incidentID with no conversation_id. Finding no row is no
+	// error.
+	FailedConversation(ctx context.Context, conversationID, incidentID string) error
 	// SaveTranscript stores a post-call webhook (docs/contract.md
 	// "CallWebhook"). A repeated webhook updates the same row.
 	SaveTranscript(ctx context.Context, hook contract.CallWebhook) error
@@ -87,11 +90,35 @@ func (s DBStore) Failed(ctx context.Context, callID int64) error {
 	return err
 }
 
-func (s DBStore) FailedConversation(ctx context.Context, conversationID string) error {
-	_, err := s.pool.ExecContext(ctx,
-		`UPDATE calls SET status = 'failed', ended_at = now() WHERE conversation_id = $1 AND status IN ('requested', 'in_progress')`,
-		conversationID)
-	return err
+func (s DBStore) FailedConversation(ctx context.Context, conversationID, incidentID string) error {
+	tx, err := s.pool.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var exists bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM calls WHERE conversation_id = $1)`, conversationID).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		_, err = tx.ExecContext(ctx,
+			`UPDATE calls SET status = 'failed', ended_at = now() WHERE conversation_id = $1 AND status IN ('requested', 'in_progress')`,
+			conversationID)
+	} else if uuidRE.MatchString(incidentID) {
+		// Placed later keeps the failed status and only adds the ids.
+		_, err = tx.ExecContext(ctx, `
+			UPDATE calls SET conversation_id = $1, status = 'failed', ended_at = now()
+			WHERE id = (
+				SELECT id FROM calls WHERE incident_id = $2 AND conversation_id IS NULL
+				ORDER BY requested_at DESC, id DESC LIMIT 1 FOR UPDATE
+			)`,
+			conversationID, incidentID)
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SaveTranscript follows the contract's matching rule, in one transaction:
@@ -101,6 +128,10 @@ func (s DBStore) FailedConversation(ctx context.Context, conversationID string) 
 // two concurrent copies of the same webhook still leave one row.
 func (s DBStore) SaveTranscript(ctx context.Context, hook contract.CallWebhook) error {
 	d := hook.Data
+	if d.ConversationID == "" {
+		// Nothing to dedupe on: a second one would collide on the unique key.
+		return ErrUnknownIncident
+	}
 	transcript := d.Transcript
 	if transcript == nil {
 		transcript = []contract.TranscriptTurn{}

@@ -43,13 +43,13 @@ var (
 
 // Webhook handles POST /webhooks/elevenlabs. Received is called once per
 // valid post_call_transcription; it defaults to logging a summary.
-// InitiationFailed is called with the conversation_id of a call that never
-// connected; it defaults to logging the reason. The call engine sets both
+// InitiationFailed is called with a call_initiation_failure webhook, a call
+// that never connected; it defaults to logging the reason. The call engine sets both
 // (Engine.Received, Engine.InitiationFailed).
 type Webhook struct {
 	Secret           string // ELEVENLABS_WEBHOOK_SECRET; blank refuses every request
 	Received         func(ctx context.Context, hook contract.CallWebhook) error
-	InitiationFailed func(ctx context.Context, conversationID string) error
+	InitiationFailed func(ctx context.Context, hook contract.CallWebhook) error
 	Now              func() time.Time // time.Now when nil
 }
 
@@ -93,7 +93,7 @@ func (wh *Webhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case TypeCallInitiationFailure:
 		logInitiationFailure(raw)
 		if wh.InitiationFailed != nil && hook.Data.ConversationID != "" {
-			if err := wh.InitiationFailed(r.Context(), hook.Data.ConversationID); err != nil {
+			if err := wh.InitiationFailed(r.Context(), hook); err != nil {
 				log.Printf("call webhook: conversation %s: mark failed: %v", hook.Data.ConversationID, err)
 				http.Error(w, "could not store the call", http.StatusInternalServerError)
 				return

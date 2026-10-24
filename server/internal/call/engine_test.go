@@ -384,3 +384,41 @@ func TestConcurrentCopiesOfTheWebhookLeaveOneRow(t *testing.T) {
 		}
 	}
 }
+
+func TestInitiationFailureThatBeatsThePlacedResponseStaysFailed(t *testing.T) {
+	pool := callDB(t, victimPhone)
+	_, mux := engineRoutes(t, pool, "")
+	store := NewDBStore(pool)
+	ctx := context.Background()
+	callID, _, err := store.Begin(ctx, sampleIncident)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body := []byte(`{"type":"call_initiation_failure","data":{"conversation_id":"` + sampleConv + `","failure_reason":"busy",` +
+		`"conversation_initiation_client_data":{"dynamic_variables":{"incident_id":"` + sampleIncident + `"}}}}`)
+	if rec := postSigned(mux, body); rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if err := store.Placed(ctx, callID, Placed{ConversationID: sampleConv, CallSID: "CA1"}); err != nil {
+		t.Fatal(err)
+	}
+	if rows := callRows(t, pool); len(rows) != 1 || rows[0].Status != StatusFailed || rows[0].ConversationID.String != sampleConv {
+		t.Errorf("rows = %+v, want the requested row failed", rows)
+	}
+}
+
+func TestWebhookWithoutAConversationIDIsDropped(t *testing.T) {
+	pool := callDB(t, victimPhone)
+	_, mux := engineRoutes(t, pool, "")
+	if _, _, err := NewDBStore(pool).Begin(context.Background(), sampleIncident); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte(strings.Replace(string(sampleWebhook(t)), sampleConv, "", 1))
+	if rec := postSigned(mux, body); rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if rows := callRows(t, pool); len(rows) != 1 || rows[0].Status != StatusRequested || rows[0].ConversationID.Valid {
+		t.Errorf("rows = %+v, want the requested row untouched", rows)
+	}
+}

@@ -34,7 +34,9 @@ type Engine struct {
 	Placer Placer
 	// Finished, when set, runs after a post-call webhook is stored: the
 	// hook for the duress verdict and the family alert. It runs inside the
-	// webhook request, so start a goroutine for slow work.
+	// webhook request, so start a goroutine for slow work. It runs again for
+	// a repeated webhook, so it must be idempotent (db.SaveVerdict
+	// overwrites, and the notifier claims the incident once).
 	Finished func(ctx context.Context, f Finished)
 }
 
@@ -106,6 +108,6 @@ func (e *Engine) Received(ctx context.Context, hook contract.CallWebhook) error 
 
 // InitiationFailed marks the call failed when it never connected (busy, no
 // answer, Twilio refused the number).
-func (e *Engine) InitiationFailed(ctx context.Context, conversationID string) error {
-	return e.Store.FailedConversation(ctx, conversationID)
+func (e *Engine) InitiationFailed(ctx context.Context, hook contract.CallWebhook) error {
+	return e.Store.FailedConversation(ctx, hook.Data.ConversationID, hook.IncidentID())
 }
