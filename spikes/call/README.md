@@ -18,9 +18,11 @@ What lives where:
 
 1. **ElevenLabs API key.** Put `ELEVENLABS_API_KEY` in the main repo `.env`
    (it is not there yet). Scope it to Agents and give it a credit cap.
-2. **Agent "hackathon"** (`ELEVENLABS_AGENT_ID`): set the first message (for
-   example "¿Aló? Mi amor, ¿dónde estás?"), the prompt, and **Publish**.
-   Assign it to the imported Twilio number ("hackathon").
+2. **Agent "hackathon"** (`ELEVENLABS_AGENT_ID`): the prompt and first
+   message live in [`server/internal/call/agent/`](../../server/internal/call/agent/README.md);
+   upload them with `cd server && go run ./cmd/pushagent` (it backs up the
+   current configuration first), then **Publish**. Assign the agent to the
+   imported Twilio number ("hackathon").
 3. **Voice.** Until #35 lands, the agent's stock voice (Maggie) is used. To
    swap in Mariana's voice without touching the agent, set
    `ELEVENLABS_VOICE_ID` and turn on Agent > Security > Overrides > Voice;
