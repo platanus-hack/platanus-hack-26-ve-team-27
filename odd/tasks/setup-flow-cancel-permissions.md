@@ -32,3 +32,5 @@ Delegated direct (writer trigger: 3 non-trivial areas across several files).
 
 ## Progress
 - Branch `fix/setup-flow-cancel-permissions` created from `main` at `ed1f82c`.
+- T1 0086827 (route: delegated direct), T2 0c7ba74, T3 09f86b0.
+- T2 gap: the server has no cancel endpoint for online incidents (POST /incidents only); app-side stop done, server-side cancel/call cancel not possible without a server change.
