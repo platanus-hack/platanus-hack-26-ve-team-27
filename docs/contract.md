@@ -256,7 +256,7 @@ the newest call's verdict. Sample: `notifier_message.json`.
 ## Postgres schema
 
 `server/migrations/0001_init.sql`; `0002_device_keys.sql` adds
-`ed25519_public_key` and `key_id` to `devices`. The server applies pending migrations on
+`ed25519_public_key` and `key_id` to `devices`; `0003_emergencies.sql` adds the `emergencies` table. The server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
 no-op. Without `DATABASE_URL` the server boots and skips migrations.
@@ -267,6 +267,7 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 | `incidents` | `id` = `incident_id` | device, trigger, branch, speed used, `notified_at` |
 | `gps_points` | identity; unique `(incident_id, recorded_at)` | every fix of an incident |
 | `calls` | identity; unique `conversation_id` | call status, transcript (JSONB), duration, **verdict** |
+| `emergencies` | `emergency_id` (16 hex) | offline emergency: device, status, highest seq, last fix, channels, min hops (#57) |
 | `schema_migrations` | `version` | applied migration files |
 
 The verdict lives on `calls` (`verdict`, `verdict_reason`, `verdict_at`)
@@ -291,3 +292,18 @@ public key) is not the UUID `device_id` used above. `devices.key_id` stores
 those 8 bytes for every device that registered its key, and
 `devicekeys.Lookup` maps a payload's `device_id` to the device row and its
 public key.
+
+Endpoints (#57, `server/internal/emergency/ingest/http.go`). Both answer `200`
+`text/plain` with the signed ack text `MAMA1:ACK:<std Base64>` (also for a
+duplicate), to be rebroadcast verbatim by a relay.
+
+- `POST /emergencies`: body is the SMS text `MAMA1 <Base64url>` of the signed
+  payload, any `Content-Type`. Channel `http`.
+- `POST /emergencies/relay`: JSON `{"text":"MAMA1:SEAL:<Base64>","hops":2}`;
+  `hops` is optional (`0..255`, omitted = unknown). Unknown JSON fields are
+  rejected. Channel `mesh`.
+
+Errors are JSON `{"error":"..."}`: `400` malformed payload, text, JSON or
+hops; `403` bad signature; `409` the `emergency_id` belongs to another device;
+`413` body over 1 KiB; `422` device not registered; `503` no database; `500`
+anything else. 4xx is permanent: retry only 5xx.

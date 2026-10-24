@@ -61,6 +61,17 @@ func TestConfigRouteIsMounted(t *testing.T) {
 	}
 }
 
+func TestEmergencyRoutesAreMounted(t *testing.T) {
+	mux := newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testKeys(t), "")
+	for _, path := range []string{"/emergencies", "/emergencies/relay"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader("MAMA1 x")))
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("POST %s = %d, want 503", path, rec.Code)
+		}
+	}
+}
+
 func TestCallWebhookIsMounted(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/elevenlabs", strings.NewReader(`{"type":"post_call_audio"}`))

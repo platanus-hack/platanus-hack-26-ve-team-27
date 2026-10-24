@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/call"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/ingest"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/remoteconfig"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/serverkeys"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
@@ -15,6 +16,7 @@ import (
 // notifier alerts the family for the incidents that skip the call; calls
 // holds the ElevenLabs webhook and the #11 spike route. keys is the server key
 // pair and smsNumber the central SMS number served in GET /config.
+// Without a pool the offline emergency routes answer 503.
 func newMux(pool *sql.DB, notifier intake.Notifier, calls *call.Routes, keys serverkeys.Keys, smsNumber string) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleRoot)
@@ -23,7 +25,14 @@ func newMux(pool *sql.DB, notifier intake.Notifier, calls *call.Routes, keys ser
 	intake.New(pool, intake.LogHandoff{}, notifier).Register(mux)
 	calls.Register(mux)
 	remoteconfig.New(smsNumber, keys).Register(mux)
-	// #57 mounts its offline ingest handler here with keys and pool.
+	// The Kapso module replaces LogPublisher. #58 mounts the SMS webhook with
+	// emergencies. emergencies is nil without a database, so the webhook
+	// handler must answer 503 like ingest.Handler.ready does.
+	var emergencies *ingest.Service
+	if pool != nil {
+		emergencies = ingest.New(ingest.NewDBStore(pool), keys, ingest.LogPublisher{})
+	}
+	ingest.NewHandler(emergencies).Register(mux)
 	return mux
 }
 
