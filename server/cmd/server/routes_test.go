@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
@@ -56,5 +57,16 @@ func TestConfigRouteIsMounted(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /config with no database = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestEmergencyRoutesAreMounted(t *testing.T) {
+	mux := newMux(nil, intake.LogHandoff{}, testKeys(t), "")
+	for _, path := range []string{"/emergencies", "/emergencies/relay"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader("MAMA1 x")))
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("POST %s = %d, want 503", path, rec.Code)
+		}
 	}
 }

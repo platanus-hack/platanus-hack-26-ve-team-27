@@ -118,6 +118,8 @@ nothing sleeps. Every push to `main` deploys.
 | `GET /version` | `{"commit":"<sha>"}` from `RENDER_GIT_COMMIT` (`"dev"` locally) |
 | `GET /health` | `200 {"status":"ok"}` when Postgres answers a ping within 2 s, `503` otherwise (also when `DATABASE_URL` is unset) |
 | `GET /config` | `200` with the central SMS number (when set) and the server public keys; public, no auth, no database needed (#55) |
+| `POST /emergencies` | Offline emergency over HTTP: body is the `MAMA1 ...` SMS text; `200` with the signed ack text `MAMA1:ACK:...` (#57) |
+| `POST /emergencies/relay` | Mesh relay upload: JSON `{"text":"MAMA1:SEAL:...","hops":N}`; same ack; 4xx is permanent (#57) |
 
 ### Deploy it (once)
 

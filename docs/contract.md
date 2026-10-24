@@ -262,3 +262,18 @@ public key) is not the UUID `device_id` used above. `devices.key_id` stores
 those 8 bytes for every device that registered its key, and
 `devicekeys.Lookup` maps a payload's `device_id` to the device row and its
 public key.
+
+Endpoints (#57, `server/internal/emergency/ingest/http.go`). Both answer `200`
+`text/plain` with the signed ack text `MAMA1:ACK:<std Base64>` (also for a
+duplicate), to be rebroadcast verbatim by a relay.
+
+- `POST /emergencies`: body is the SMS text `MAMA1 <Base64url>` of the signed
+  payload, any `Content-Type`. Channel `http`.
+- `POST /emergencies/relay`: JSON `{"text":"MAMA1:SEAL:<Base64>","hops":2}`;
+  `hops` is optional (`0..255`, omitted = unknown). Unknown JSON fields are
+  rejected. Channel `mesh`.
+
+Errors are JSON `{"error":"..."}`: `400` malformed payload, text, JSON or
+hops; `403` bad signature; `409` the `emergency_id` belongs to another device;
+`413` body over 1 KiB; `422` device not registered; `503` no database; `500`
+anything else. 4xx is permanent: retry only 5xx and 503.
