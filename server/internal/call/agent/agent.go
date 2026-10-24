@@ -20,8 +20,9 @@ var firstMessage string
 // Language is the agent language (ASR and TTS).
 const Language = "es"
 
-// Prompt is the system prompt of the agent.
-func Prompt() string { return prompt }
+// Prompt is the system prompt of the agent. Line endings are normalized to
+// \n, since a Windows checkout may embed \r\n.
+func Prompt() string { return strings.ReplaceAll(prompt, "\r\n", "\n") }
 
 // FirstMessage is what the agent says when the call is answered.
 func FirstMessage() string { return strings.TrimSpace(firstMessage) }
