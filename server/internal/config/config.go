@@ -29,6 +29,7 @@ type Config struct {
 	Twilio     Twilio
 	Kapso      Kapso
 	Anthropic  Anthropic
+	Emergency  Emergency
 }
 
 // ElevenLabs is the voice agent that places the "Mamá" call through its
@@ -58,6 +59,15 @@ type Kapso struct {
 type Anthropic struct {
 	APIKey      string // ANTHROPIC_API_KEY, sent as the x-api-key header
 	DuressModel string // DURESS_LLM_MODEL, optional; blank = duress.DefaultModel
+}
+
+// Emergency is the offline emergency channel (#55): the central SMS number the
+// phones text and the server key pair they pin. Both keys are standard Base64
+// of 32 raw bytes; serverkeys validates them.
+type Emergency struct {
+	SMSNumber        string // EMERGENCY_SMS_NUMBER, E.164; blank = not served in GET /config
+	Ed25519Seed      string // EMERGENCY_ED25519_SEED, signs offline acks
+	X25519PrivateKey string // EMERGENCY_X25519_PRIVATE_KEY, opens mesh sealed boxes
 }
 
 // Load reads the config from the process environment.
@@ -92,6 +102,11 @@ func LoadFrom(getenv func(string) string) Config {
 			APIKey:      get("ANTHROPIC_API_KEY"),
 			DuressModel: get("DURESS_LLM_MODEL"),
 		},
+		Emergency: Emergency{
+			SMSNumber:        get("EMERGENCY_SMS_NUMBER"),
+			Ed25519Seed:      get("EMERGENCY_ED25519_SEED"),
+			X25519PrivateKey: get("EMERGENCY_X25519_PRIVATE_KEY"),
+		},
 	}
 	if c.Port == "" {
 		c.Port = DefaultPort
@@ -118,6 +133,9 @@ func (c Config) vars() []struct{ name, value string } {
 		{"KAPSO_API_KEY", c.Kapso.APIKey},
 		{"KAPSO_PHONE_NUMBER_ID", c.Kapso.PhoneNumberID},
 		{"ANTHROPIC_API_KEY", c.Anthropic.APIKey},
+		{"EMERGENCY_SMS_NUMBER", c.Emergency.SMSNumber},
+		{"EMERGENCY_ED25519_SEED", c.Emergency.Ed25519Seed},
+		{"EMERGENCY_X25519_PRIVATE_KEY", c.Emergency.X25519PrivateKey},
 	}
 }
 
