@@ -120,6 +120,7 @@ nothing sleeps. Every push to `main` deploys.
 | `GET /config` | Only with `EMERGENCY_OFFLINE_ENABLED=true`. `200` with the central SMS number (when set) and the server public keys; public, no auth, no database needed (#55) |
 | `POST /emergencies` | Only with `EMERGENCY_OFFLINE_ENABLED=true`. Offline emergency over HTTP: body is the `MAMA1 ...` SMS text; `200` with the signed ack text `MAMA1:ACK:...` (#57) |
 | `POST /emergencies/relay` | Only with `EMERGENCY_OFFLINE_ENABLED=true`. Mesh relay upload: JSON `{"text":"MAMA1:SEAL:...","hops":N}`; same ack; 4xx is permanent (#57) |
+| `POST /sms/inbound/{provider}` | Only with `EMERGENCY_OFFLINE_ENABLED=true`. Webhook for an SMS texted to the central number; only `twilio` exists. `200` with the signed ack as a reply SMS (TwiML), `403` bad signature, `503` while `TWILIO_AUTH_TOKEN` or `PUBLIC_BASE_URL` is unset (#58) |
 
 ### Deploy it (once)
 
@@ -159,11 +160,12 @@ the ones that are unset, never the values.
 | `ELEVENLABS_VOICE_ID` | Optional. Voice that overrides the agent's on each call; the agent must allow the voice override. Set it to Mariana's cloned voice, `SnLK0h3jnPTd3J6pYcO3` (#35), a voice ID, not a secret | ElevenLabs > Voices > the voice > ID |
 | `CALL_SPIKE_TOKEN` | Optional, spike #11 only. Bearer token that turns on `POST /spike/call`; unset keeps the route off | Any random string, e.g. `openssl rand -hex 16` |
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID (`AC...`) | console.twilio.com > Account Info |
-| `TWILIO_AUTH_TOKEN` | Twilio Auth Token | console.twilio.com > Account Info |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token. Also verifies the `X-Twilio-Signature` of the inbound SMS webhook (#58) | console.twilio.com > Account Info |
 | `TWILIO_PHONE_NUMBER` | Our Twilio number, E.164 (`+1...`); also saved as the "Mamá" contact | console.twilio.com > Phone Numbers > Active numbers |
 | `KAPSO_API_KEY` | Kapso API key (`X-API-Key` header) | Kapso dashboard > Integrations > API keys |
 | `KAPSO_PHONE_NUMBER_ID` | WhatsApp `phone_number_id` of our Kapso number | app.kapso.ai > WhatsApp > Phone numbers |
 | `EMERGENCY_OFFLINE_ENABLED` | Optional. Turns on the offline emergency channel (#55, #57): `true` or `1`; anything else or unset is off (default). Off: `GET /config` and `POST /emergencies*` answer 404 and the three `EMERGENCY_*` vars below are neither read nor required, so a Render deploy boots without them. On: they apply as described below | Set it in Render > Environment only when the channel is wanted |
+| `PUBLIC_BASE_URL` | Optional. Public origin of this server, no trailing slash (a trailing one is trimmed), e.g. `https://mama-server.onrender.com`. Twilio signs the full URL it calls, so the inbound SMS webhook (#58) needs it; unset, `POST /sms/inbound/twilio` answers 503. In the Twilio console set the number's "A message comes in" webhook to `POST <PUBLIC_BASE_URL>/sms/inbound/twilio` | Render > mama-server > the service URL |
 | `EMERGENCY_SMS_NUMBER` | Central SMS number the phones text when offline, E.164; served in `GET /config`; the Twilio inbound number for #58 | Twilio console > Phone Numbers (optional: unset omits it from `GET /config`) |
 | `EMERGENCY_ED25519_SEED` | Signs offline acks; standard Base64 of 32 bytes. Only read with `EMERGENCY_OFFLINE_ENABLED`. Required then in production: on Render (`RENDER` set) the server refuses to boot without it and `EMERGENCY_X25519_PRIVATE_KEY`; locally it warns and uses an ephemeral key. Changing it breaks phones until they refresh config | Generate with `openssl rand -base64 32` |
 | `EMERGENCY_X25519_PRIVATE_KEY` | Opens mesh sealed boxes; standard Base64 of 32 bytes. Required with the flag on in production, like `EMERGENCY_ED25519_SEED`; same caveat | Generate with `openssl rand -base64 32` |

@@ -77,6 +77,20 @@ func TestEmergencyRoutesAreMounted(t *testing.T) {
 	}
 }
 
+func TestInboundSMSRouteIsMounted(t *testing.T) {
+	mux := newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}, nil), testOffline(t))
+	for path, want := range map[string]int{
+		"/sms/inbound/twilio": http.StatusServiceUnavailable, // mounted, no database
+		"/sms/inbound/nope":   http.StatusNotFound,           // mounted, unknown provider
+	} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader("Body=x")))
+		if rec.Code != want {
+			t.Errorf("POST %s = %d, want %d", path, rec.Code, want)
+		}
+	}
+}
+
 func TestCallWebhookIsMounted(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/elevenlabs", strings.NewReader(`{"type":"post_call_audio"}`))
@@ -94,6 +108,7 @@ func TestOfflineEmergencyRoutesAreNotMountedWhenOff(t *testing.T) {
 		{http.MethodGet, "/config"},
 		{http.MethodPost, "/emergencies"},
 		{http.MethodPost, "/emergencies/relay"},
+		{http.MethodPost, "/sms/inbound/twilio"},
 	} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(c.method, c.path, strings.NewReader("MAMA1 x")))

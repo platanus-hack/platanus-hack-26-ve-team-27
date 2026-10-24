@@ -294,7 +294,7 @@ those 8 bytes for every device that registered its key, and
 public key.
 
 The offline emergency routes (`GET /config`, `POST /emergencies`,
-`POST /emergencies/relay`) exist only when the server runs with
+`POST /emergencies/relay`, `POST /sms/inbound/{provider}`) exist only when the server runs with
 `EMERGENCY_OFFLINE_ENABLED=true`; otherwise they answer `404`. It is off by
 default, so the skeleton and the demo path do not depend on them.
 
@@ -312,3 +312,31 @@ Errors are JSON `{"error":"..."}`: `400` malformed payload, text, JSON or
 hops; `403` bad signature; `409` the `emergency_id` belongs to another device;
 `413` body over 1 KiB; `422` device not registered; `503` no database; `500`
 anything else. 4xx is permanent: retry only 5xx.
+
+### Inbound SMS (`POST /sms/inbound/{provider}`, #58)
+
+Not called by the app: the SMS provider calls it when a phone texts the
+central number (`sms_number` in `GET /config`). The request is the provider's
+own webhook. Only `twilio` exists
+(`server/internal/emergency/inboundsms/`); another provider is one more
+adapter behind the `InboundSMSProvider` interface. The SMS text `MAMA1 <Base64url>`
+is the same signed payload as `POST /emergencies` and enters the same
+pipeline with channel `sms`.
+
+Twilio's webhook is authenticated with `X-Twilio-Signature`
+(HMAC-SHA1 of `PUBLIC_BASE_URL` + request URI + the sorted POST parameters,
+keyed with `TWILIO_AUTH_TOKEN`). The Twilio console webhook must be
+`POST <PUBLIC_BASE_URL>/sms/inbound/twilio`.
+
+| Status | When | Provider reply |
+| --- | --- | --- |
+| `200` | stored or duplicate | TwiML `<Message>` with the ack text `MAMA1 <Base64url>` (signed, 76 bytes) |
+| `200` | permanent failure: text is not a payload, payload signature bad, device not registered, `emergency_id` taken | empty `<Response/>`; nothing is texted back and nothing is retried |
+| `400` / `413` | malformed form body / body over 16 KiB | none |
+| `403` | webhook signature missing or invalid | none |
+| `404` | unknown `{provider}` | none |
+| `503` | no database, or `TWILIO_AUTH_TOKEN` / `PUBLIC_BASE_URL` unset (fails closed) | none |
+| `500` | anything else; the provider may retry | none |
+
+The ack SMS is `payload.SMSText` of the ack, which the phone parses like the
+HTTP ack. Logs never include the sender number or the message text.

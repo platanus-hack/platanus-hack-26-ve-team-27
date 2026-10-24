@@ -24,6 +24,10 @@ type Config struct {
 	Port        string // PORT
 	DatabaseURL string // DATABASE_URL
 	Notifier    string // NOTIFIER, lowercased; NotifierKapso when unset
+	// PublicBaseURL is PUBLIC_BASE_URL, the origin the internet reaches this
+	// server at, no trailing slash. Provider webhooks sign the full URL they
+	// call (inbound SMS, #58), so the server cannot derive it behind a proxy.
+	PublicBaseURL string
 
 	ElevenLabs ElevenLabs
 	Twilio     Twilio
@@ -90,9 +94,10 @@ func Load() Config { return LoadFrom(os.Getenv) }
 func LoadFrom(getenv func(string) string) Config {
 	get := func(name string) string { return strings.TrimSpace(getenv(name)) }
 	c := Config{
-		Port:        get("PORT"),
-		DatabaseURL: get("DATABASE_URL"),
-		Notifier:    strings.ToLower(get("NOTIFIER")),
+		Port:          get("PORT"),
+		DatabaseURL:   get("DATABASE_URL"),
+		Notifier:      strings.ToLower(get("NOTIFIER")),
+		PublicBaseURL: strings.TrimRight(get("PUBLIC_BASE_URL"), "/"),
 		ElevenLabs: ElevenLabs{
 			APIKey:         get("ELEVENLABS_API_KEY"),
 			AgentID:        get("ELEVENLABS_AGENT_ID"),
@@ -140,6 +145,7 @@ func isOn(v string) bool { return v == "1" || strings.EqualFold(v, "true") }
 func (c Config) vars() []struct{ name, value string } {
 	return append([]struct{ name, value string }{
 		{"DATABASE_URL", c.DatabaseURL},
+		{"PUBLIC_BASE_URL", c.PublicBaseURL},
 		{"ELEVENLABS_API_KEY", c.ElevenLabs.APIKey},
 		{"ELEVENLABS_AGENT_ID", c.ElevenLabs.AgentID},
 		{"ELEVENLABS_PHONE_NUMBER_ID", c.ElevenLabs.PhoneNumberID},

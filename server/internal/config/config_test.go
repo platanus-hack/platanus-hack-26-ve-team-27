@@ -12,7 +12,7 @@ func envFrom(m map[string]string) func(string) string {
 }
 
 var allVars = []string{
-	"DATABASE_URL",
+	"DATABASE_URL", "PUBLIC_BASE_URL",
 	"ELEVENLABS_API_KEY", "ELEVENLABS_AGENT_ID", "ELEVENLABS_PHONE_NUMBER_ID", "ELEVENLABS_WEBHOOK_SECRET",
 	"TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER",
 	"KAPSO_API_KEY", "KAPSO_PHONE_NUMBER_ID",
@@ -43,6 +43,7 @@ func TestLoadReadsEveryVar(t *testing.T) {
 	checks := map[string]string{
 		"PORT":                         c.Port,
 		"DATABASE_URL":                 c.DatabaseURL,
+		"PUBLIC_BASE_URL":              c.PublicBaseURL,
 		"ELEVENLABS_API_KEY":           c.ElevenLabs.APIKey,
 		"ELEVENLABS_AGENT_ID":          c.ElevenLabs.AgentID,
 		"ELEVENLABS_PHONE_NUMBER_ID":   c.ElevenLabs.PhoneNumberID,
@@ -161,6 +162,24 @@ func TestCallSpikeVarsAreOptional(t *testing.T) {
 	}
 	if s := c.String(); strings.Contains(s, "tok") || strings.Contains(s, "voice123") {
 		t.Errorf("String() leaks a value: %s", s)
+	}
+}
+
+func TestPublicBaseURLIsTrimmedAndNotPrinted(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://mama.example.com":    "https://mama.example.com",
+		" https://mama.example.com/ ": "https://mama.example.com",
+		"https://mama.example.com//":  "https://mama.example.com",
+		"":                            "",
+	} {
+		c := LoadFrom(envFrom(map[string]string{"PUBLIC_BASE_URL": in}))
+		if c.PublicBaseURL != want {
+			t.Errorf("PUBLIC_BASE_URL=%q: PublicBaseURL = %q, want %q", in, c.PublicBaseURL, want)
+		}
+	}
+	c := LoadFrom(envFrom(map[string]string{"PUBLIC_BASE_URL": "https://mama.example.com"}))
+	if s := c.String(); strings.Contains(s, "mama.example.com") || !strings.Contains(s, "PUBLIC_BASE_URL=set") {
+		t.Errorf("String() = %s, want PUBLIC_BASE_URL=set without the value", s)
 	}
 }
 

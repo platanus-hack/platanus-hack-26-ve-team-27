@@ -15,6 +15,7 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/call"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/db"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/inboundsms"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/remoteconfig"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/serverkeys"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
@@ -62,7 +63,15 @@ func loadOfflineEmergency(cfg config.Config, onRender bool) *offlineEmergency {
 	if remoteconfig.CheckSMSNumber(cfg.Emergency.SMSNumber) != nil {
 		log.Fatalf("emergency: EMERGENCY_SMS_NUMBER must be E.164 (+ and 7-15 digits)")
 	}
-	return &offlineEmergency{keys: keys, smsNumber: cfg.Emergency.SMSNumber}
+	if !inboundsms.NewTwilio(cfg.Twilio.AuthToken, cfg.PublicBaseURL).Configured() {
+		log.Print("emergency: POST /sms/inbound/twilio answers 503 until TWILIO_AUTH_TOKEN and PUBLIC_BASE_URL are set")
+	}
+	return &offlineEmergency{
+		keys:            keys,
+		smsNumber:       cfg.Emergency.SMSNumber,
+		twilioAuthToken: cfg.Twilio.AuthToken,
+		publicBaseURL:   cfg.PublicBaseURL,
+	}
 }
 
 // loadServerKeys builds the offline-emergency key pair. A malformed key exits
