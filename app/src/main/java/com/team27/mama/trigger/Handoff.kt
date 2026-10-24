@@ -7,10 +7,8 @@ import com.team27.mama.contract.Branch
  * alert with branch `call`, the trigger calls [ring] once with the incident
  * id, from a background thread, with the phone possibly locked.
  *
- * #96 implements it with the CallStyle incoming-call notification (full
- * screen when locked) that opens #94's "Llamada entrante", and swaps its
- * implementation in at `AppGraph.incomingCall`. Until then the default,
- * [ConfirmationScreenLauncher], opens the trigger confirmation screen.
+ * The demo uses [PhoneCallOnlyLauncher] (`AppGraph.incomingCall`): "Mamá"
+ * rings as a normal phone call and the app opens nothing.
  */
 fun interface IncomingCallLauncher {
     fun ring(incidentId: String)
@@ -18,7 +16,7 @@ fun interface IncomingCallLauncher {
 
 /** What the phone shows once the server has answered the alert. */
 sealed interface Handoff {
-    /** Branch `call`: "Mamá" calls inside the app ([IncomingCallLauncher]). */
+    /** Branch `call`: "Mamá" calls ([IncomingCallLauncher]; in the demo a normal phone call). */
     data class IncomingCall(val incidentId: String) : Handoff
 
     /** Branch `immediate_alert` or `silent_tracker` (or an unreadable 2xx): the confirmation screen. */
