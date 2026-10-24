@@ -76,6 +76,8 @@ import com.team27.mama.setup.StepStatus
 import com.team27.mama.setup.SystemScreens
 import com.team27.mama.setup.TaskStatus
 import com.team27.mama.setup.openFirst
+import com.team27.mama.ui.components.MamaCharacter
+import com.team27.mama.ui.components.MamaPose
 import com.team27.mama.ui.theme.MamaSpacing
 import com.team27.mama.ui.theme.MamaTheme
 import com.team27.mama.ui.theme.MamaWordmark
@@ -333,8 +335,9 @@ private fun BottomActions(state: SetupUiState, actions: SetupActions) {
 }
 
 @Composable
-private fun Header(title: String, body: String) {
+private fun Header(title: String, body: String, pose: MamaPose) {
     Column(verticalArrangement = Arrangement.spacedBy(MamaSpacing.s)) {
+        MamaCharacter(pose = pose, size = 128.dp, modifier = Modifier.align(Alignment.CenterHorizontally))
         Text(text = title, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
         Text(text = body, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -352,6 +355,11 @@ private fun PermissionsPhase(flow: PermissionFlow) {
             null -> "Listo. Ahora cuéntanos a quién avisar."
             else -> "Si algún día estás en peligro, presionas volumen arriba-abajo-arriba y Mamá te llama. " +
                 "Quien esté a tu lado solo ve una llamada normal."
+        },
+        pose = when (currentStatus) {
+            StepStatus.DENIED, StepStatus.BLOCKED -> MamaPose.Alert
+            null -> MamaPose.Relieved
+            else -> MamaPose.Idle
         },
     )
     SectionLabel("Permisos, en este orden")
@@ -393,6 +401,7 @@ private fun FormPhase(state: SetupUiState, mamaNumber: String?, actions: SetupAc
     Header(
         title = "¿A quién avisamos?",
         body = "Mamá te llama a tu número. Si dices tu frase en la llamada, tu familia recibe dónde estás.",
+        pose = MamaPose.Listening,
     )
 
     SectionLabel("Tu número")
@@ -466,6 +475,7 @@ private fun FinishingPhase(state: SetupUiState) {
     Header(
         title = if (state.anyTaskFailed) "Falta un paso" else "Activando MAMÁ",
         body = if (state.anyTaskFailed) "Revisa lo que falló y vuelve a intentarlo." else "Esto toma unos segundos.",
+        pose = if (state.anyTaskFailed) MamaPose.Alert else MamaPose.Typing,
     )
     SectionLabel("Último paso")
     GroupCard {
@@ -495,6 +505,7 @@ private fun DonePhase(state: SetupUiState, mamaNumber: String?) {
     Header(
         title = "MAMÁ está lista",
         body = "Si algún día estás en peligro, presiona volumen arriba-abajo-arriba. Mamá te llama en segundos.",
+        pose = MamaPose.Relieved,
     )
     SectionLabel("Tu familia")
     GroupCard {

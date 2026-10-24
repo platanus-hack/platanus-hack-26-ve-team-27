@@ -40,7 +40,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newMux(pool, notifier, call.NewRoutes(cfg.ElevenLabs), offline),
+		Handler:           newMux(pool, notifier, newCallRoutes(cfg, pool), offline),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -170,6 +170,15 @@ func newNotifier(cfg config.Config, pool *sql.DB) intake.Notifier {
 		log.Printf("notifier: WARNING: %s credentials are not set; every family alert will fail", cfg.Notifier)
 	}
 	return notify.New(notify.NewDBStore(pool), sender)
+}
+
+// newCallRoutes builds the call engine on the database. Without one the
+// webhook only logs and intake never hands off a call.
+func newCallRoutes(cfg config.Config, pool *sql.DB) *call.Routes {
+	if pool == nil {
+		return call.NewRoutes(cfg.ElevenLabs, nil)
+	}
+	return call.NewRoutes(cfg.ElevenLabs, call.NewDBStore(pool))
 }
 
 // channelConfigured reports whether the NOTIFIER channel has its credentials,
