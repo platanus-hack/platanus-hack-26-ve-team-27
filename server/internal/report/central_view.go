@@ -1,7 +1,6 @@
 package report
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -250,72 +249,6 @@ func caseCounts(rows []CaseRow) []CaseCount {
 		out = append(out, CaseCount{State: s, Label: caseCountLabel(s, n[s]), N: n[s]})
 	}
 	return out
-}
-
-// situationOf is the call's one-line summary in a calls.ficha value (#106:
-// its "situacion"), a JSON object or a string holding one. "" when there is
-// none, or when it says the call did not tell ("no se sabe"). The other
-// ficha fields (lugar, personas, vehículo, rumbo) are not shown here.
-func situationOf(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var s string
-	if json.Unmarshal(raw, &s) == nil {
-		raw = json.RawMessage(s)
-	}
-	var m map[string]any
-	if json.Unmarshal(raw, &m) != nil {
-		return ""
-	}
-	for k, v := range m {
-		if plainKey(k) == "situacion" {
-			if t := valueText(v); !unknownValue(t) {
-				return t
-			}
-		}
-	}
-	return ""
-}
-
-// accents drops the Spanish accents from lowercase text.
-var accents = strings.NewReplacer("á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u", "ü", "u")
-
-// plainKey lowercases a key and drops its accents: "Vehículo" is vehiculo.
-func plainKey(k string) string { return accents.Replace(strings.ToLower(strings.TrimSpace(k))) }
-
-func valueText(v any) string {
-	switch t := v.(type) {
-	case nil:
-		return ""
-	case string:
-		return strings.TrimSpace(t)
-	case float64:
-		return strconv.FormatFloat(t, 'f', -1, 64)
-	case bool:
-		if t {
-			return "sí"
-		}
-		return "no"
-	case []any:
-		parts := make([]string, 0, len(t))
-		for _, e := range t {
-			if s := valueText(e); s != "" {
-				parts = append(parts, s)
-			}
-		}
-		return strings.Join(parts, ", ")
-	}
-	b, _ := json.Marshal(v)
-	return string(b)
-}
-
-func unknownValue(s string) bool {
-	switch plainKey(s) {
-	case "", "no se sabe", "desconocido", "n/a", "-", "—":
-		return true
-	}
-	return false
 }
 
 // ---------------------------------------------------------------- the route's times

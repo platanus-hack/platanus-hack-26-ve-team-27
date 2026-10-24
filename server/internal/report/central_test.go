@@ -397,7 +397,8 @@ func TestCentralCaseWithAndWithoutSituationAndName(t *testing.T) {
 	}
 
 	rec.Device.UserName = "María Rodríguez"
-	store.setCase(rec, CaseExtras{Ficha: json.RawMessage(testFicha)})
+	rec.Calls[0].Context = parseCallContext(json.RawMessage(testFicha))
+	store.setCase(rec, CaseExtras{})
 	_, body = cget(t, srv.URL+"/central/r/"+testIncidentID, ck)
 	text = html.UnescapeString(body)
 	name, sit := strings.Index(text, `class="c-name-big">María Rodríguez</h1>`), strings.Index(text, `class="c-situation-line">Parece que se la llevan en un carro.</p>`)
@@ -420,7 +421,8 @@ func TestCentralSituationArrivesLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := centralCaseSnapshot(buildCentralCase(rec, CaseExtras{Ficha: json.RawMessage(testFicha)}, opts), centralNow)
+	rec.Calls[0].Context = parseCallContext(json.RawMessage(testFicha))
+	after, err := centralCaseSnapshot(buildCentralCase(rec, CaseExtras{}, opts), centralNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,17 +541,26 @@ func TestNotifiedPanelSummaryRolesAndStatuses(t *testing.T) {
 	}
 }
 
-func TestSituationOf(t *testing.T) {
-	for _, raw := range []string{``, `null`, `{}`, `{"lugar": "Petare"}`, `{"situacion": "no se sabe"}`, `[1]`} {
-		if got := situationOf(json.RawMessage(raw)); got != "" {
-			t.Errorf("situationOf(%s) = %q, want none", raw, got)
+func TestParseCallContext(t *testing.T) {
+	for _, raw := range []string{``, `null`, `{}`, `{"situacion": "no se sabe", "rumbo": ""}`, `[1]`, `"texto"`} {
+		if got := parseCallContext(json.RawMessage(raw)); got != nil {
+			t.Errorf("parseCallContext(%s) = %+v, want nil", raw, got)
 		}
 	}
+	want := CallContext{Situacion: "Parece que se la llevan en un carro.", Lugar: "Autopista Caracas-La Guaira",
+		Personas: "Dos hombres", Vehiculo: "Carro gris", Confianza: "alta"} // rumbo: "no se sabe"
 	quoted, _ := json.Marshal(testFicha) // stored as a JSON string
-	for _, raw := range []json.RawMessage{json.RawMessage(testFicha), quoted, json.RawMessage(`{"Situación": " Parece que se la llevan en un carro. "}`)} {
-		if got := situationOf(raw); got != "Parece que se la llevan en un carro." {
-			t.Errorf("situationOf(%s) = %q", raw, got)
+	for _, raw := range []json.RawMessage{json.RawMessage(testFicha), quoted} {
+		if got := parseCallContext(raw); got == nil || *got != want {
+			t.Errorf("parseCallContext(%s) = %+v", raw, got)
 		}
+	}
+	if got := parseCallContext(json.RawMessage(`{"Situación": " Se la llevan. ", "VEHÍCULO": "moto"}`)); got == nil || got.Situacion != "Se la llevan." || got.Vehiculo != "moto" {
+		t.Errorf("accented keys: %+v", got)
+	}
+	f := want.Fields()
+	if len(f) != 5 || f[0] != [2]string{"Situación", want.Situacion} || f[3] != [2]string{"Vehículo", "Carro gris"} || f[4][0] != "Confianza" {
+		t.Errorf("fields = %v", f)
 	}
 }
 

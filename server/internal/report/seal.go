@@ -77,6 +77,9 @@ type docCall struct {
 	VerdictReason  string                    `json:"verdict_reason,omitempty"`
 	VerdictAt      string                    `json:"verdict_at,omitempty"`
 	Recording      *docRecording             `json:"recording,omitempty"`
+	// Context is the call's ficha (#106) when one was stored by the seal:
+	// optional, so documents sealed without it stay valid as they are.
+	Context *CallContext `json:"context,omitempty"`
 }
 
 type docRecording struct {
@@ -101,8 +104,9 @@ var clockNotes = docClockNotes{
 }
 
 // Document is ficha.json for rec, sealed at sealedAt by pub: the incident,
-// its points, its calls with transcript, verdict and recording hash, and the
-// time the family message was claimed. It leaves out the phone numbers, the
+// its points, its calls with transcript, verdict, recording hash and, when
+// stored, the call's context (#106), and the time the family message was
+// claimed. It leaves out the phone numbers, the
 // device id (see docIncident) and the duress phrase. Callers store and serve
 // the returned bytes as they are.
 func Document(rec Record, sealedAt time.Time, pub ed25519.PublicKey) ([]byte, error) {
@@ -145,6 +149,10 @@ func Document(rec Record, sealedAt time.Time, pub ed25519.PublicKey) ([]byte, er
 		}
 		if dc.Transcript == nil {
 			dc.Transcript = []contract.TranscriptTurn{}
+		}
+		if c.Context != nil {
+			ctx := *c.Context
+			dc.Context = &ctx
 		}
 		if r := c.Recording; r != nil {
 			dc.Recording = &docRecording{

@@ -15,8 +15,15 @@ import (
 )
 
 // sealed writes a sealed ficha.json and ficha.sig to a temp dir and returns
-// their paths and the key in Base64, as the page shows it.
+// their paths and the key in Base64, as the page shows it. The call has no
+// context (#106): the shape of every report sealed before it existed.
 func sealed(t *testing.T) (docPath, sigPath, key string, doc []byte) {
+	t.Helper()
+	return sealedWith(t, nil)
+}
+
+// sealedWith is sealed with the call's context, when ctx is not nil.
+func sealedWith(t *testing.T, ctx *report.CallContext) (docPath, sigPath, key string, doc []byte) {
 	t.Helper()
 	priv := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{9}, 32))
 	pub := priv.Public().(ed25519.PublicKey)
@@ -28,7 +35,8 @@ func sealed(t *testing.T) (docPath, sigPath, key string, doc []byte) {
 			Branch: contract.BranchCall, TriggeredAt: ended.Add(-65 * time.Second), CreatedAt: ended.Add(-64 * time.Second),
 		},
 		Calls: []report.Call{{ConversationID: "conv_1", Status: "done", RequestedAt: ended.Add(-63 * time.Second), EndedAt: &ended, DurationSecs: &d,
-			Transcript: []contract.TranscriptTurn{{Role: "user", Message: "dile a la tía Carmen que llego tarde", TimeInCallSecs: 15}}}},
+			Transcript: []contract.TranscriptTurn{{Role: "user", Message: "dile a la tía Carmen que llego tarde", TimeInCallSecs: 15}},
+			Context:    ctx}},
 	}
 	doc, err := report.Document(rec, ended.Add(20*time.Second), pub)
 	if err != nil {
@@ -114,5 +122,31 @@ func TestAcceptsARawSignature(t *testing.T) {
 	write(t, sigPath, raw)
 	if code, out := verify(docPath, sigPath, key); code != 0 {
 		t.Errorf("raw signature: %d %q", code, out)
+	}
+}
+
+// A report sealed with the call's context (#106, calls[].context) verifies,
+// and so does one sealed without it, as every report before it was; a
+// one-byte change inside the context breaks the seal like any other.
+func TestAcceptsReportsWithAndWithoutTheCallContext(t *testing.T) {
+	ctx := &report.CallContext{Situacion: "Parece que se la llevan en un carro.", Lugar: "Autopista", Vehiculo: "Carro gris", Confianza: "alta"}
+	for name, c := range map[string]*report.CallContext{"without": nil, "with": ctx} {
+		docPath, sigPath, key, doc := sealedWith(t, c)
+		if has := bytes.Contains(doc, []byte(`"context"`)); has != (c != nil) {
+			t.Fatalf("%s: context in the document = %t", name, has)
+		}
+		if code, out := verify(docPath, sigPath, key); code != 0 || !strings.HasPrefix(out, "firma válida\n") {
+			t.Fatalf("%s: code %d, output:\n%s", name, code, out)
+		}
+		if c == nil {
+			continue
+		}
+		i := bytes.Index(doc, []byte("Carro gris"))
+		changed := bytes.Clone(doc)
+		changed[i] = 'B'
+		write(t, docPath, changed)
+		if code, out := verify(docPath, sigPath, key); code != 1 || !strings.HasPrefix(out, "firma NO válida") {
+			t.Errorf("context changed: code %d, output %q", code, out)
+		}
 	}
 }

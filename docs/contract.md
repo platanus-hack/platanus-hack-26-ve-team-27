@@ -527,7 +527,12 @@ default; then every route below answers `404`). Code:
   authorities. Once sealed, it is built from the stored `ficha.json`; before
   that it is marked "Borrador, sin sellar". The family messages and linked
   offline emergencies come from the live record and are labelled as outside
-  the seal. It uses `github.com/go-pdf/fpdf` with Lexend embedded.
+  the seal. A call with a ficha (#106, `calls.ficha`) gets a "Contexto de la
+  llamada" section after it, with situación, lugar, personas, vehículo, rumbo
+  and confianza (those with a value), and a note that an AI extracted them
+  and they must be checked against the recording. The seal signs that
+  context too, as the optional `calls[].context` in `ficha.json` (ADR 0005).
+  It uses `github.com/go-pdf/fpdf` with Lexend embedded.
 - **Family messages.** With the report on, the notifier records every send in
   `notify_deliveries`, with the number masked. Kapso's message status webhook
   (`whatsapp.message.sent`, `.delivered`, `.read`, `.failed`) goes to

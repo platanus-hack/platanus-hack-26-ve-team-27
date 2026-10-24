@@ -269,7 +269,13 @@ func buildCentralCase(rec Record, x CaseExtras, opts Options) centralCase {
 	}
 	page.Route = centralRoute(rec.Points)
 	item := caseItemOf(rec, x)
-	d := centralCase{Page: page, Case: caseRow(item, opts.Now), Situation: situationOf(x.Ficha), at: opts.Now}
+	d := centralCase{Page: page, Case: caseRow(item, opts.Now), at: opts.Now}
+	for i := len(rec.Calls) - 1; i >= 0; i-- { // the newest call's summary
+		if c := rec.Calls[i].Context; c != nil && c.Situacion != "" {
+			d.Situation = c.Situacion
+			break
+		}
+	}
 	d.follow = page.Live || (rec.Seal != nil && opts.Now.Sub(rec.Seal.SealedAt) < followSeal)
 	if d.Case.State == CaseCancelled {
 		d.Title, d.TitleKind = "Cancelado por la persona", "cancelled"

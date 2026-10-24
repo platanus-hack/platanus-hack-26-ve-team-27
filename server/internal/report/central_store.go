@@ -3,7 +3,6 @@ package report
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -41,13 +40,10 @@ type CaseItem struct {
 }
 
 // CaseExtras is what the central detail reads beyond the Record: columns
-// other tickets add, read so their absence is no error.
+// other tickets may add, read so their absence is no error. (The calls'
+// ficha, #106, is in the Record: Call.Context.)
 type CaseExtras struct {
 	Cancelled bool
-	// Ficha is the newest call's context from #106 (calls.ficha: lugar,
-	// personas, vehículo, rumbo, situación, confianza) as stored; nil when
-	// the column does not exist or no call has one.
-	Ficha json.RawMessage
 }
 
 // casesQuery is the central list: the newest incidents with their newest
@@ -133,23 +129,12 @@ func (s DBStore) Extras(ctx context.Context, incidentID string) (CaseExtras, err
 		return CaseExtras{}, ErrUnknownIncident
 	}
 	var x CaseExtras
-	var ficha []byte
-	err := s.pool.QueryRowContext(ctx, `
-		SELECT (to_jsonb(i) ->> 'cancelled_at') IS NOT NULL,
-		       (SELECT to_jsonb(c) -> 'ficha' FROM calls c
-		        WHERE c.incident_id = i.id AND jsonb_typeof(to_jsonb(c) -> 'ficha') IN ('object', 'string')
-		        ORDER BY c.requested_at DESC, c.id DESC LIMIT 1)
-		FROM incidents i WHERE i.id = $1`, incidentID).Scan(&x.Cancelled, &ficha)
+	err := s.pool.QueryRowContext(ctx,
+		`SELECT (to_jsonb(i) ->> 'cancelled_at') IS NOT NULL FROM incidents i WHERE i.id = $1`, incidentID).Scan(&x.Cancelled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaseExtras{}, ErrUnknownIncident
 	}
-	if err != nil {
-		return CaseExtras{}, err
-	}
-	if len(ficha) > 0 {
-		x.Ficha = json.RawMessage(ficha)
-	}
-	return x, nil
+	return x, err
 }
 
 // caseItemOf sums up a full record the way DBStore.Cases does.

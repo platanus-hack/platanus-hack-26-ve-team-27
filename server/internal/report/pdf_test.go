@@ -2,7 +2,9 @@ package report
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -91,5 +93,90 @@ func TestPDFRoute(t *testing.T) {
 	checkPrivacyHeaders(t, rec)
 	if rec := serve(t, fakeSource{}, "/i/"+testToken+"/reporte.pdf"); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown token = %d", rec.Code)
+	}
+}
+
+// testContext is a call's ficha (#106) with every field.
+func testContext() *CallContext {
+	return &CallContext{Situacion: "Parece que se la llevan en un carro contra su voluntad.", Lugar: "Autopista Caracas-La Guaira",
+		Personas: "Dos hombres con ella", Vehiculo: "Carro gris", Rumbo: "Hacia La Guaira", Confianza: "alta"}
+}
+
+// sealedWithContext is sealedRecord sealed with the call's context, the way
+// the closer seals once #106 stored it.
+func sealedWithContext(t *testing.T) Record {
+	t.Helper()
+	rec := openRecordWith(sealedRecord())
+	rec.Calls[0].Context = testContext()
+	key := testKey()
+	sealedAt := at("2026-10-24T13:11:25Z")
+	doc, err := Document(rec, sealedAt, key.Public().(ed25519.PublicKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.Seal = &Seal{SealedAt: sealedAt, Document: doc, Signature: Sign(doc, key), PublicKey: key.Public().(ed25519.PublicKey)}
+	return rec
+}
+
+// The sealed document carries the call's context as an optional object, in
+// a fixed order, and the PDF built from it keeps it: a "Contexto de la
+// llamada" section after the call, with every field that has a value and
+// the note that an AI extracted it. Without a ficha there is no object and
+// no section, and the document is what it was before (it still verifies).
+func TestSealAndPDFCarryTheCallContext(t *testing.T) {
+	rec := sealedWithContext(t)
+	doc := string(rec.Seal.Document)
+	want := `"context": {
+        "situacion": "Parece que se la llevan en un carro contra su voluntad.",
+        "lugar": "Autopista Caracas-La Guaira",
+        "personas": "Dos hombres con ella",
+        "vehiculo": "Carro gris",
+        "rumbo": "Hacia La Guaira",
+        "confianza": "alta"
+      }`
+	if !strings.Contains(doc, want) {
+		t.Errorf("ficha.json lacks the context object:\n%s", doc)
+	}
+	if _, err := Verify(rec.Seal.Document, rec.Seal.Signature, rec.Seal.PublicKey); err != nil {
+		t.Errorf("Verify with the context: %v", err)
+	}
+	if _, err := Verify([]byte(strings.Replace(doc, "Carro gris", "Carro azul", 1)), rec.Seal.Signature, rec.Seal.PublicKey); !errors.Is(err, ErrSealInvalid) {
+		t.Errorf("a changed context still verifies: %v", err)
+	}
+
+	// The PDF reads it from the sealed bytes, not from the live row.
+	live := rec
+	live.Calls = append([]Call(nil), rec.Calls...)
+	live.Calls[0].Context = &CallContext{Situacion: "cambiado después del sello"}
+	rep, err := buildPDF(live, pdfOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Contexts) != 1 || rep.Contexts[0].Title != "Contexto de la llamada" || len(rep.Contexts[0].Fields) != 6 ||
+		rep.Contexts[0].Fields[0] != [2]string{"Situación", testContext().Situacion} || rep.Contexts[0].Fields[5] != [2]string{"Confianza", "alta"} {
+		t.Errorf("sealed PDF contexts = %+v", rep.Contexts)
+	}
+	b, err := renderPDF(rep)
+	if err != nil || len(b) < 1000 {
+		t.Fatalf("render: %v (%d bytes)", err, len(b))
+	}
+
+	// A draft reads the live context, and leaves out fields with no value.
+	draft := openRecordWith(sealedRecord())
+	draft.Calls[0].Context = &CallContext{Situacion: "Se la llevan.", Vehiculo: "Moto"}
+	if rep, _ := buildPDF(draft, pdfOpts()); len(rep.Contexts) != 1 || len(rep.Contexts[0].Fields) != 2 || rep.Contexts[0].Fields[1][0] != "Vehículo" {
+		t.Errorf("draft PDF contexts = %+v", rep.Contexts)
+	}
+
+	// Without a ficha: no object, no section, and the seal verifies.
+	plain := sealedRecord()
+	if strings.Contains(string(plain.Seal.Document), `"context"`) {
+		t.Error("a document without a ficha has a context object")
+	}
+	if _, err := Verify(plain.Seal.Document, plain.Seal.Signature, plain.Seal.PublicKey); err != nil {
+		t.Errorf("Verify without the context: %v", err)
+	}
+	if rep, _ := buildPDF(plain, pdfOpts()); len(rep.Contexts) != 0 {
+		t.Errorf("PDF without a ficha has contexts: %+v", rep.Contexts)
 	}
 }
