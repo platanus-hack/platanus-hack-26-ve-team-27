@@ -146,6 +146,10 @@ type Report struct {
 	// GET /demo/latest and /demo/next (the newest incident's report). Blank
 	// leaves them off (404).
 	DemoKey string
+	// CentralKey is CENTRAL_KEY, optional: the secret of the central
+	// dashboard GET /central/ (#99), which sees every incident. Given once
+	// as ?key=, it becomes a cookie. Blank leaves the dashboard off (404).
+	CentralKey string
 }
 
 // Limits caps the calls the server places and the family messages it sends,
@@ -208,9 +212,10 @@ func LoadFrom(getenv func(string) string) Config {
 			X25519PrivateKey: get("EMERGENCY_X25519_PRIVATE_KEY"),
 		},
 		Report: Report{
-			Enabled: isOn(get("INCIDENT_REPORT_ENABLED")),
-			TTLDays: positiveInt(get("INCIDENT_REPORT_TTL_DAYS"), DefaultReportTTLDays),
-			DemoKey: get("DEMO_KEY"),
+			Enabled:    isOn(get("INCIDENT_REPORT_ENABLED")),
+			TTLDays:    positiveInt(get("INCIDENT_REPORT_TTL_DAYS"), DefaultReportTTLDays),
+			DemoKey:    get("DEMO_KEY"),
+			CentralKey: get("CENTRAL_KEY"),
 		},
 		Limits: Limits{
 			CallsPerNumber:    positiveInt(get("CALL_LIMIT_PER_NUMBER"), DefaultCallsPerNumber),

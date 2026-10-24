@@ -316,7 +316,20 @@ func newReports(cfg config.Config, pool *sql.DB, signing ed25519.PrivateKey) (*r
 		log.Print("report: demo shortcuts GET /demo/latest and /demo/next are on (DEMO_KEY is set)")
 		h.WithDemo(&report.Demo{Key: cfg.Report.DemoKey, Store: store, TTLDays: cfg.Report.TTLDays})
 	}
+	h.WithCentral(central(cfg, store))
 	return h, closer
+}
+
+// central is the central dashboard (#99), GET /central/: every incident,
+// live. It is on only with CENTRAL_KEY (and the report, which builds it);
+// nil otherwise, and every /central route answers 404.
+func central(cfg config.Config, store report.CentralStore) *report.Central {
+	if cfg.Report.CentralKey == "" {
+		log.Print("report: central dashboard GET /central/ is off (CENTRAL_KEY is not set)")
+		return nil
+	}
+	log.Print("report: central dashboard GET /central/ is on: open /central/?key=<CENTRAL_KEY> once on each screen")
+	return &report.Central{Key: cfg.Report.CentralKey, Store: store, TTLDays: cfg.Report.TTLDays}
 }
 
 // progressHook stores what the call engine sees polling Twilio (ringing,

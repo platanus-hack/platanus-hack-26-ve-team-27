@@ -272,3 +272,16 @@ func TestLimitsReadEachVar(t *testing.T) {
 		t.Errorf("Limits = %+v, want %+v", c.Limits, want)
 	}
 }
+
+func TestCentralKeyIsReadAndNeverPrinted(t *testing.T) {
+	c := LoadFrom(envFrom(map[string]string{"CENTRAL_KEY": " c3ntral-key "}))
+	if c.Report.CentralKey != "c3ntral-key" {
+		t.Errorf("CentralKey = %q", c.Report.CentralKey)
+	}
+	if strings.Contains(c.String(), "c3ntral") || strings.Contains(fmt.Sprintf("%v %#v", c, c), "c3ntral") {
+		t.Error("the central key leaks through String")
+	}
+	if LoadFrom(envFrom(nil)).Report.CentralKey != "" {
+		t.Error("CENTRAL_KEY unset should leave the dashboard off")
+	}
+}

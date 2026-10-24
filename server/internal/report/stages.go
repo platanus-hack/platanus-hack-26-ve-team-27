@@ -154,6 +154,7 @@ func familySummary(rec Record, channel string) string {
 type FamilyChip struct {
 	Key       string
 	Recipient string // masked
+	Channel   string // "WhatsApp" or "SMS"
 	Ticks     string // "✓", "✓✓" or "!"
 	Label     string // "enviado", "entregado", "leído", "no se envió"
 	Status    string // the delivery status, for the color
@@ -163,7 +164,7 @@ type FamilyChip struct {
 func familyChips(ds []Delivery) []FamilyChip {
 	var out []FamilyChip
 	for i, d := range ds {
-		c := FamilyChip{Key: "fam-" + strconv.Itoa(i) + "-" + d.Status, Recipient: d.Recipient, Status: d.Status, Time: clock(d.SentAt)}
+		c := FamilyChip{Key: "fam-" + strconv.Itoa(i) + "-" + d.Status, Recipient: d.Recipient, Channel: channelName(d.Channel), Status: d.Status, Time: clock(d.SentAt)}
 		switch d.Status {
 		case "read":
 			c.Ticks, c.Label = "✓✓", "leído"
@@ -183,6 +184,17 @@ func familyChips(ds []Delivery) []FamilyChip {
 		out = append(out, c)
 	}
 	return out
+}
+
+// channelName is a notify_deliveries channel as the page names it.
+func channelName(c string) string {
+	switch c {
+	case "whatsapp":
+		return "WhatsApp"
+	case "sms":
+		return "SMS"
+	}
+	return c
 }
 
 // familyNote is the family panel's line when there are no chips.

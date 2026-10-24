@@ -129,3 +129,21 @@ func TestShutdownClosesAStreamAfterTheDrain(t *testing.T) {
 		t.Error("the stream is still open after shutdown")
 	}
 }
+
+// The central dashboard is mounted only with CENTRAL_KEY (and, since
+// newReports builds it, only with the report on).
+func TestCentralNeedsItsKey(t *testing.T) {
+	if c := central(config.LoadFrom(func(string) string { return "" }), nil); c != nil {
+		t.Errorf("CENTRAL_KEY unset: %+v, want nil", c)
+	}
+	cfg := config.LoadFrom(func(k string) string {
+		return map[string]string{"CENTRAL_KEY": "k", "INCIDENT_REPORT_TTL_DAYS": "7"}[k]
+	})
+	if c := central(cfg, nil); c == nil || c.Key != "k" || c.TTLDays != 7 {
+		t.Errorf("CENTRAL_KEY set: %+v", c)
+	}
+	off := config.LoadFrom(func(k string) string { return map[string]string{"CENTRAL_KEY": "k"}[k] })
+	if h, _ := newReports(off, nil, nil); h != nil {
+		t.Error("the report is off, yet its handler (and the central) exists")
+	}
+}
