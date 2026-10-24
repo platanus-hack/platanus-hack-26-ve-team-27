@@ -8,6 +8,7 @@ set -euo pipefail
 
 # shellcheck source=release-apk.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release-apk.sh"
+unset MAMA_KEYSTORE_PASSWORD MAMA_KEY_PASSWORD
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/release-apk-test.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -65,6 +66,22 @@ check fail "contents: GitHub token"              contents "ghp_$(rep aB3 12)"
 check fail "contents: database URL"              contents "postgres""://mama:hunter2""@db.example/mama"
 check fail "contents: signing password"          contents "padding s3cret-Pw padding" "s3cret-Pw"
 check pass "contents: empty literal ignored"     contents "nothing here" ""
+check fail "contents: unreadable dir is not clean" check_apk_contents "$WORK/missing"
+
+# signing_passwords reads the same source Gradle uses: env, then ./keystore.properties, then ~/.mama-keys.
+passwords_are() { # passwords_are <want> <dir> <home>
+  local got
+  got="$(cd "$2" && HOME="$3" signing_passwords | tr '\n' ' ')"
+  [[ "$got" == "$1" ]]
+}
+mkdir -p "$WORK/repo" "$WORK/home/.mama-keys" "$WORK/empty"
+printf 'storeFile=/k.jks\r\nstorePassword = home-store\r\nkeyAlias=a\r\nkeyPassword=home-key\r\n' >"$WORK/home/.mama-keys/keystore.properties"
+check pass "passwords: ~/.mama-keys, CRLF"       passwords_are "home-store home-key " "$WORK/empty" "$WORK/home"
+printf 'storePassword=repo-store\nkeyPassword=repo-key\n' >"$WORK/repo/keystore.properties"
+check pass "passwords: keystore.properties wins" passwords_are "repo-store repo-key " "$WORK/repo" "$WORK/home"
+check pass "passwords: none configured"          passwords_are "" "$WORK/empty" "$WORK/empty"
+env_wins() { MAMA_KEYSTORE_PASSWORD=env-store MAMA_KEY_PASSWORD=env-key passwords_are "env-store env-key " "$WORK/repo" "$WORK/home"; }
+check pass "passwords: env vars win"             env_wins
 
 if [[ $fails -gt 0 ]]; then
   echo "release-apk self-test: $fails failed"

@@ -53,9 +53,11 @@ check_apk_entries() {
 # check_apk_contents <dir> [literal...]: fails on key-shaped strings, or any given literal
 # (the signing passwords), in the unpacked APK. Prints the offending file names only.
 check_apk_contents() {
-  local dir="$1" hits literal
+  local dir="$1" hits found rc literal
   shift
-  hits="$(grep -r -a -l -E \
+  # grep exits 1 on no match; 2 is an error, and an errored scan must not read as clean.
+  rc=0
+  hits="$(LC_ALL=C grep -r -a -l -E \
     -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' \
     -e 'sk_[0-9a-f]{40,}' \
     -e 'sk-(ant|proj)-[A-Za-z0-9_-]{20,}' \
@@ -63,14 +65,37 @@ check_apk_contents() {
     -e 'AKIA[0-9A-Z]{16}' \
     -e 'gh[pousr]_[A-Za-z0-9]{36}' \
     -e 'postgres(ql)?://[^:/@[:space:]]+:[^@[:space:]]+@' \
-    "$dir" || true)"
+    "$dir")" || rc=$?
+  if [[ $rc -gt 1 ]]; then echo "grep failed scanning $dir"; return 1; fi
   for literal in "$@"; do
     [[ -z "$literal" ]] && continue
-    hits+=$'\n'"$(grep -r -a -l -F -e "$literal" "$dir" || true)"
+    rc=0
+    found="$(LC_ALL=C grep -r -a -l -F -e "$literal" "$dir")" || rc=$?
+    if [[ $rc -gt 1 ]]; then echo "grep failed scanning $dir"; return 1; fi
+    hits+=$'\n'"$found"
   done
   hits="$(printf '%s\n' "$hits" | sed '/^$/d' | sort -u)"
   if [[ -n "$hits" ]]; then printf '%s\n' "$hits"; return 1; fi
 }
+
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+
+# signing_passwords: prints the store and key passwords from the source Gradle will use
+# (env vars, then keystore.properties, then ~/.mama-keys), so the APK can be checked for them.
+signing_passwords() {
+  local file=""
+  if [[ -n "${MAMA_KEYSTORE_PASSWORD:-}${MAMA_KEY_PASSWORD:-}" ]]; then
+    printf '%s\n' "${MAMA_KEYSTORE_PASSWORD:-}" "${MAMA_KEY_PASSWORD:-}"; return
+  fi
+  if [[ -f keystore.properties ]]; then file=keystore.properties
+  elif [[ -f "$HOME/.mama-keys/keystore.properties" ]]; then file="$HOME/.mama-keys/keystore.properties"
+  fi
+  [[ -n "$file" ]] || return 0
+  tr -d '\r' <"$file" | sed -n -E 's/^[[:space:]]*(storePassword|keyPassword)[[:space:]]*=[[:space:]]*//p' | sed -E 's/[[:space:]]+$//'
+}
+
+WORK=""
+cleanup() { if [[ -n "$WORK" ]]; then rm -rf "$WORK"; fi; }
 
 main() {
   local dry_run=0 arg
@@ -123,9 +148,12 @@ main() {
     [[ $dry_run -eq 1 ]] || die "HEAD ($sha) is not origin/main ($main_sha); check out main and pull"
     log "warning: HEAD $sha is not origin/main $main_sha (dry run)"
   fi
+  command -v unzip >/dev/null 2>&1 || die "unzip not found"
   if [[ $dry_run -eq 0 ]]; then
     command -v gh >/dev/null 2>&1 || die "gh (GitHub CLI) not found"
     gh auth status >/dev/null 2>&1 || die "gh is not logged in; run gh auth login"
+    [[ "$(gh repo view "$REPO" --json visibility --jq .visibility)" == "PUBLIC" ]] ||
+      die "$REPO is not public, so its Release link would not download"
   fi
 
   local apksigner=""
@@ -150,10 +178,9 @@ main() {
     log "warning: not signed with the team certificate (dry run)"
   fi
 
-  local work
-  work="$(mktemp -d "${TMPDIR:-/tmp}/release-apk.XXXXXX")"
-  # shellcheck disable=SC2064
-  trap "rm -rf '$work'" EXIT
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/release-apk.XXXXXX")"
+  trap cleanup EXIT
+  local work="$WORK"
   unzip -q -o "$apk" -d "$work/apk"
 
   # BuildConfig made it into the code.
@@ -161,13 +188,14 @@ main() {
   if ! grep -a -q -F -e "$twilio" "$work"/apk/classes*.dex; then die "TWILIO_NUMBER $twilio is not in the APK's code"; fi
 
   # Nothing secret inside.
-  local bad
+  local bad passwords=()
   bad="$(unzip -Z1 "$apk" | check_apk_entries)" || die "the APK contains signing material or env files:"$'\n'"$bad"
-  bad="$(check_apk_contents "$work/apk" "${MAMA_KEYSTORE_PASSWORD:-}" "${MAMA_KEY_PASSWORD:-}")" ||
+  mapfile -t passwords < <(signing_passwords)
+  bad="$(check_apk_contents "$work/apk" "${passwords[@]}")" ||
     die "the APK contains a key-shaped string or a signing password in:"$'\n'"$bad"
 
   local sum
-  sum="$(sha256sum "$apk" | cut -d' ' -f1)"
+  sum="$(sha256 "$apk")"
   log "checked $apk (sha256 $sum)"
 
   if [[ $dry_run -eq 1 ]]; then
@@ -183,7 +211,11 @@ main() {
 - sha256: \`$sum\`
 
 Stable download link: $STABLE_URL"
+  local assets
   if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
+    # Refuse before touching it if anything else was attached, so a stray file never goes latest.
+    assets="$(gh release view "$tag" --repo "$REPO" --json assets --jq '.assets[].name' | grep -v -x -F "$ASSET" || true)"
+    [[ -z "$assets" ]] || die "Release $tag already holds files other than $ASSET; remove them first: $assets"
     log "updating Release $tag"
     gh release upload "$tag" "$apk" --repo "$REPO" --clobber
     gh release edit "$tag" --repo "$REPO" --draft=false --prerelease=false --latest --notes "$notes"
@@ -192,7 +224,6 @@ Stable download link: $STABLE_URL"
     gh release create "$tag" "$apk" --repo "$REPO" --target "$sha" --title "MAMÁ APK ${sha:0:7}" --notes "$notes" --latest
   fi
 
-  local assets
   assets="$(gh release view "$tag" --repo "$REPO" --json assets --jq '.assets[].name')"
   [[ "$assets" == "$ASSET" ]] || die "Release $tag must hold only $ASSET, it holds: $assets"
 
@@ -200,7 +231,7 @@ Stable download link: $STABLE_URL"
   local try got=""
   for try in 1 2 3 4 5 6; do
     if curl -fsSL -o "$work/download.apk" "$STABLE_URL"; then
-      got="$(sha256sum "$work/download.apk" | cut -d' ' -f1)"
+      got="$(sha256 "$work/download.apk")"
       [[ "$got" == "$sum" ]] && break
     fi
     sleep 5
