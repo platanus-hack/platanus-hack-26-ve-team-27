@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.pm.PackageManager
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -47,6 +48,8 @@ data class SetupUiState(
     val formErrors: SetupFormErrors get() = form.errors()
     val anyTaskFailed: Boolean get() = contact.status == TaskStatus.FAILED || registration.status == TaskStatus.FAILED
 }
+
+private const val TAG = "MamaSetup"
 
 /**
  * First-run setup (#15): permissions in order, the form, then saving "Mamá"
@@ -194,8 +197,9 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
             SetupTask(TaskStatus.DONE)
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             // SecurityException, OperationApplicationException, RemoteException: the provider said no.
+            Log.w(TAG, "saving the Mamá contact failed", e)
             failed("No pudimos guardar a Mamá en tus contactos. Inténtalo de nuevo.")
         }
     }
