@@ -28,6 +28,7 @@ type Config struct {
 	ElevenLabs ElevenLabs
 	Twilio     Twilio
 	Kapso      Kapso
+	Anthropic  Anthropic
 }
 
 // ElevenLabs is the voice agent that places the "Mamá" call through its
@@ -50,6 +51,13 @@ type Twilio struct {
 type Kapso struct {
 	APIKey        string // KAPSO_API_KEY, sent as the X-API-Key header
 	PhoneNumberID string // KAPSO_PHONE_NUMBER_ID, the WhatsApp phone_number_id
+}
+
+// Anthropic is the LLM step of the duress detector (#22). Without a key the
+// detector runs rules only.
+type Anthropic struct {
+	APIKey      string // ANTHROPIC_API_KEY, sent as the x-api-key header
+	DuressModel string // DURESS_LLM_MODEL, optional; blank = duress.DefaultModel
 }
 
 // Load reads the config from the process environment.
@@ -80,6 +88,10 @@ func LoadFrom(getenv func(string) string) Config {
 			APIKey:        get("KAPSO_API_KEY"),
 			PhoneNumberID: get("KAPSO_PHONE_NUMBER_ID"),
 		},
+		Anthropic: Anthropic{
+			APIKey:      get("ANTHROPIC_API_KEY"),
+			DuressModel: get("DURESS_LLM_MODEL"),
+		},
 	}
 	if c.Port == "" {
 		c.Port = DefaultPort
@@ -91,7 +103,8 @@ func LoadFrom(getenv func(string) string) Config {
 }
 
 // vars lists every env var name with its value, in a fixed order. PORT and
-// NOTIFIER are left out because they always have a value.
+// NOTIFIER are left out because they always have a value, DURESS_LLM_MODEL
+// because it is optional.
 func (c Config) vars() []struct{ name, value string } {
 	return []struct{ name, value string }{
 		{"DATABASE_URL", c.DatabaseURL},
@@ -104,6 +117,7 @@ func (c Config) vars() []struct{ name, value string } {
 		{"TWILIO_PHONE_NUMBER", c.Twilio.PhoneNumber},
 		{"KAPSO_API_KEY", c.Kapso.APIKey},
 		{"KAPSO_PHONE_NUMBER_ID", c.Kapso.PhoneNumberID},
+		{"ANTHROPIC_API_KEY", c.Anthropic.APIKey},
 	}
 }
 
