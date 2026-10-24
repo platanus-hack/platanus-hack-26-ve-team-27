@@ -96,6 +96,11 @@ keeps the stored value, and the server trims both. Rules, answered `422`
 with an `error` that never quotes a phrase:
 
 - `user_name`: 1 to 30 characters.
+- `duress_phrase` and `safe_phrase`: at most 150 characters and 20 words each,
+  where a word is a run of letters or digits. Both are said aloud in a call
+  that has to sound ordinary, and the caps keep the duress detector fast: its
+  cost grows with the cube of the words when it compares the two phrases, on
+  a route with no auth.
 - `safe_phrase`: at least one word; different from `duress_phrase`; and not
   close to it. The server runs the duress detector's rules
   (`server/internal/duress`, same normalization: case, accents, stopwords,
