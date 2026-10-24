@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.WRITE_CONTACTS" />
     <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- Offline emergency (#58): RECEIVE_SMS for the server's ack SMS, only with
+         mama.offlineEmergency (see receiveSmsPermission in app/build.gradle.kts). -->
+    <uses-permission android:name="${receiveSmsPermission}" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- POST /devices and GET /config. -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -72,6 +75,16 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/trigger_widget" />
+        </receiver>
+        <!-- Offline emergency ack SMS (#58); disabled unless mama.offlineEmergency is on. -->
+        <receiver
+            android:name=".emergency.sms.SmsAckReceiver"
+            android:enabled="@bool/offline_emergency_enabled"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
         </receiver>
     </application>
 

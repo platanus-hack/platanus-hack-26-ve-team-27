@@ -57,11 +57,18 @@ type ElevenLabs struct {
 	ForceCallFailure bool
 }
 
-// Twilio owns the caller number and sends the SMS fallback.
+// Twilio owns the caller number, sends the SMS fallback and receives the
+// offline emergency texts (#58).
 type Twilio struct {
 	AccountSID  string // TWILIO_ACCOUNT_SID, AC...
-	AuthToken   string // TWILIO_AUTH_TOKEN
+	AuthToken   string // TWILIO_AUTH_TOKEN, also the key of X-Twilio-Signature
 	PhoneNumber string // TWILIO_PHONE_NUMBER, E.164, e.g. +1...
+	// WebhookBaseURL is TWILIO_WEBHOOK_BASE_URL, optional: the public origin
+	// Twilio posts the inbound SMS webhook to (e.g. https://mama.example.com),
+	// which the signature covers. Write it exactly as in the Twilio console,
+	// without a default port (:443): the signed URL must match byte for byte.
+	// Blank leaves POST /sms/inbound/twilio off.
+	WebhookBaseURL string
 }
 
 // Kapso sends the WhatsApp alert to the family.
@@ -112,9 +119,10 @@ func LoadFrom(getenv func(string) string) Config {
 			ForceCallFailure: isOn(get("CALL_FORCE_FAILURE")),
 		},
 		Twilio: Twilio{
-			AccountSID:  get("TWILIO_ACCOUNT_SID"),
-			AuthToken:   get("TWILIO_AUTH_TOKEN"),
-			PhoneNumber: get("TWILIO_PHONE_NUMBER"),
+			AccountSID:     get("TWILIO_ACCOUNT_SID"),
+			AuthToken:      get("TWILIO_AUTH_TOKEN"),
+			PhoneNumber:    get("TWILIO_PHONE_NUMBER"),
+			WebhookBaseURL: get("TWILIO_WEBHOOK_BASE_URL"),
 		},
 		Kapso: Kapso{
 			APIKey:        get("KAPSO_API_KEY"),
@@ -149,7 +157,8 @@ func isOn(v string) bool { return v == "1" || strings.EqualFold(v, "true") }
 
 // vars lists every env var name with its value, in a fixed order. PORT and
 // NOTIFIER are left out because they always have a value, DURESS_LLM_MODEL,
-// ELEVENLABS_VOICE_ID and CALL_SPIKE_TOKEN because they are optional.
+// ELEVENLABS_VOICE_ID, CALL_SPIKE_TOKEN and TWILIO_WEBHOOK_BASE_URL because
+// they are optional.
 func (c Config) vars() []struct{ name, value string } {
 	return append([]struct{ name, value string }{
 		{"DATABASE_URL", c.DatabaseURL},

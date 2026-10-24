@@ -2,6 +2,7 @@ package com.team27.mama.setup
 
 import android.Manifest
 import android.os.Build
+import com.team27.mama.BuildConfig
 
 /**
  * One step of the permission part of first-run setup. A step with
@@ -22,7 +23,11 @@ enum class SetupStep(
     BACKGROUND_LOCATION(listOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), minSdk = Build.VERSION_CODES.Q),
     MICROPHONE(listOf(Manifest.permission.RECORD_AUDIO)),
     CONTACTS(listOf(Manifest.permission.READ_CONTACTS, Manifest.permission.WRITE_CONTACTS)),
-    SMS(listOf(Manifest.permission.SEND_SMS)),
+    // The offline emergency (#58) also reads the server's ack SMS: same group, one dialog.
+    SMS(
+        listOf(Manifest.permission.SEND_SMS) +
+            if (BuildConfig.OFFLINE_EMERGENCY_ENABLED) listOf(Manifest.permission.RECEIVE_SMS) else emptyList(),
+    ),
     AUTOSTART(xiaomiOnly = true),
     BATTERY,
     POPUPS(xiaomiOnly = true),
