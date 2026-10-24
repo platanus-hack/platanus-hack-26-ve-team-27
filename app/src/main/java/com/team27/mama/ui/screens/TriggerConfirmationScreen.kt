@@ -114,10 +114,20 @@ private val placeholderSteps = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TriggerConfirmationScreen(onBack: () -> Unit, status: EmergencyStatus? = null) {
+fun TriggerConfirmationScreen(
+    onBack: () -> Unit,
+    onOpenProfile: () -> Unit,
+    status: EmergencyStatus? = null,
+) {
     val steps = if (status == null) placeholderSteps else listOf(status.toStep()) + placeholderSteps.drop(1)
     Scaffold(
-        topBar = { CenterAlignedTopAppBar(title = { MamaWordmark(compact = true) }) },
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { MamaWordmark(compact = true) },
+                // Discreet way into the read-only profile (#85).
+                actions = { TextButton(onClick = onOpenProfile) { Text("Perfil") } },
+            )
+        },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -264,13 +274,13 @@ private fun StepBadge(state: StepState) {
 @Preview(showBackground = true, heightDp = 900)
 @Composable
 private fun TriggerConfirmationScreenPreview() {
-    MamaTheme { TriggerConfirmationScreen(onBack = {}) }
+    MamaTheme { TriggerConfirmationScreen(onBack = {}, onOpenProfile = {}) }
 }
 
 @Preview(showBackground = true, heightDp = 900, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun TriggerConfirmationScreenDarkPreview() {
-    MamaTheme { TriggerConfirmationScreen(onBack = {}) }
+    MamaTheme { TriggerConfirmationScreen(onBack = {}, onOpenProfile = {}) }
 }
 
 @Preview(showBackground = true, heightDp = 900)
@@ -279,6 +289,7 @@ private fun TriggerConfirmationSearchingPreview() {
     MamaTheme {
         TriggerConfirmationScreen(
             onBack = {},
+            onOpenProfile = {},
             status = EmergencyState(
                 phase = EmergencyPhase.SEARCHING_NEARBY,
                 meshIssue = MeshIssue.UNAVAILABLE,
@@ -293,6 +304,7 @@ private fun TriggerConfirmationNotifiedPreview() {
     MamaTheme {
         TriggerConfirmationScreen(
             onBack = {},
+            onOpenProfile = {},
             status = EmergencyState(phase = EmergencyPhase.NOTIFIED).toStatus(),
         )
     }
