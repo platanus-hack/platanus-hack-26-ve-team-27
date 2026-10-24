@@ -13,6 +13,7 @@ import (
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/ratelimit"
 )
 
 // venezuela is the only destination the spike route dials: a +58 number with
@@ -39,7 +40,8 @@ const retryDelay = time.Second
 // goes into the fallback log line. store is nil when the server has no
 // database: the webhook then only logs, and Starter only logs the handoff.
 // With CALL_FORCE_FAILURE every call fails without dialing, to rehearse the
-// retry and the fallback.
+// retry and the fallback. CALL_LIMIT_PER_NUMBER and CALL_LIMIT_TOTAL cap the
+// calls placed (Engine.Limit), forced failures included.
 func NewRoutes(cfg config.Config, store Store) *Routes {
 	el := cfg.ElevenLabs
 	rt := &Routes{
@@ -56,6 +58,7 @@ func NewRoutes(cfg config.Config, store Store) *Routes {
 	}
 	if store != nil {
 		rt.engine = &Engine{Store: store, Placer: rt.client, Fallback: rt.fallback, RetryDelay: retryDelay}
+		rt.engine.Limit = &ratelimit.Limiter{PerNumber: cfg.Limits.CallsPerNumber, Total: cfg.Limits.CallsTotal, Window: config.LimitWindow}
 		if rt.forceFail {
 			rt.engine.Placer = forcedFailure{}
 		}
@@ -135,6 +138,9 @@ func (rt *Routes) Register(mux *http.ServeMux) {
 	}
 	if rt.engine != nil && rt.forceFail {
 		log.Print("call: WARNING: CALL_FORCE_FAILURE is on; every call fails and opens the fallback")
+	}
+	if rt.engine != nil {
+		log.Printf("call: placing at most %s (CALL_LIMIT_PER_NUMBER, CALL_LIMIT_TOTAL)", rt.engine.Limit)
 	}
 	if rt.engine != nil && rt.engine.Status == nil {
 		log.Print("call: WARNING: TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN are not set; no ring time, and only the call_initiation_failure webhook triggers the retry")

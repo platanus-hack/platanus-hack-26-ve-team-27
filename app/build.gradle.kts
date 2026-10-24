@@ -131,9 +131,9 @@ tasks.withType<Test>().configureEach {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -144,17 +144,33 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(project(":mesh"))
     implementation(libs.bouncycastle.bcprov)
+    implementation(libs.kotlinx.coroutines.android)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+}
+
+// A release APK runs on phones without `adb reverse`: Android 9+ blocks the plain-HTTP default
+// server URL there, and without Mamá's number the setup's contact step can never finish.
+val missingReleaseConfig: String? = when {
+    !mamaServerUrl.startsWith("https://") ->
+        "Release builds need an https:// server URL, got $mamaServerUrl (Android 9+ blocks plain HTTP). " +
+            "Pass -Pmama.serverUrl=https://... or set MAMA_SERVER_URL."
+    mamaTwilioNumber.isBlank() ->
+        "Release builds need Mamá's number, or setup never finishes. " +
+            "Pass -Pmama.twilioNumber=+... or set MAMA_TWILIO_NUMBER or TWILIO_PHONE_NUMBER."
+    else -> null
 }
 
 // Fail any build that packages or installs a release artifact without signing credentials,
-// instead of shipping an unsigned APK. Release unit tests and compiles still run without them.
+// instead of shipping an unsigned APK, or with the settings above missing. Release unit tests
+// and compiles still run without them.
 val releaseArtifactTask = Regex("^(assemble|bundle|package|install|sign).*Release.*")
 gradle.taskGraph.whenReady {
     val wantsRelease = allTasks.any { it.project.path == project.path && releaseArtifactTask.matches(it.name) }
-    if (wantsRelease && missingReleaseSigning != null) {
-        throw GradleException(missingReleaseSigning)
+    val problem = missingReleaseSigning ?: missingReleaseConfig
+    if (wantsRelease && problem != null) {
+        throw GradleException(problem)
     }
 }

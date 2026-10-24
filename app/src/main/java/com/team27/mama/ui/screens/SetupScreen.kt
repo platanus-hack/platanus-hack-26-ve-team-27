@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.ImeAction
@@ -135,6 +136,12 @@ private fun copyFor(step: SetupStep): StepCopy = when (step) {
         action = "Permitir SMS",
         denied = "Sin SMS no hay respaldo cuando te quedas sin datos.",
     )
+    SetupStep.NEARBY -> StepCopy(
+        title = "Dispositivos cercanos",
+        why = "Para pedir ayuda a teléfonos cercanos cuando no hay señal.",
+        action = "Permitir dispositivos cercanos",
+        denied = "Sin dispositivos cercanos no podemos buscar ayuda por Bluetooth cuando no hay señal.",
+    )
     SetupStep.AUTOSTART -> StepCopy(
         title = "Inicio automático",
         why = "Para que MAMÁ siga activa después de reiniciar.",
@@ -175,11 +182,12 @@ private class SetupActions(
 )
 
 @Composable
-fun SetupScreen(viewModel: SetupViewModel = viewModel()) {
+fun SetupScreen(viewModel: SetupViewModel = viewModel(), onOpenSettings: (() -> Unit)? = null) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = LocalActivity.current
     var requestedStep by rememberSaveable { mutableStateOf<SetupStep?>(null) }
+    val appLabel = stringResource(R.string.app_name)
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -208,7 +216,7 @@ fun SetupScreen(viewModel: SetupViewModel = viewModel()) {
                     val targets = SystemScreens.targetsFor(
                         step = step,
                         appPackage = context.packageName,
-                        appLabel = context.getString(R.string.app_name),
+                        appLabel = appLabel,
                         isXiaomi = SystemScreens.isXiaomi(),
                     )
                     if (context.openFirst(targets)) viewModel.onSystemScreenOpened(step) else viewModel.skip(step)
@@ -230,14 +238,26 @@ fun SetupScreen(viewModel: SetupViewModel = viewModel()) {
         onReviewPermissions = viewModel::reviewPermissions,
     )
     val mamaNumber = PhoneNumbers.normalize(BuildConfig.TWILIO_NUMBER)?.let(PhoneNumbers::display)
-    SetupContent(state = state, mamaNumber = mamaNumber, actions = actions)
+    SetupContent(state = state, mamaNumber = mamaNumber, actions = actions, onOpenSettings = onOpenSettings)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SetupContent(state: SetupUiState, mamaNumber: String?, actions: SetupActions) {
+private fun SetupContent(
+    state: SetupUiState,
+    mamaNumber: String?,
+    actions: SetupActions,
+    onOpenSettings: (() -> Unit)? = null,
+) {
     Scaffold(
-        topBar = { CenterAlignedTopAppBar(title = { MamaWordmark(compact = true) }) },
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { MamaWordmark(compact = true) },
+                actions = {
+                    if (onOpenSettings != null) TextButton(onClick = onOpenSettings) { Text("Ajustes") }
+                },
+            )
+        },
         bottomBar = { BottomActions(state, actions) },
     ) { padding ->
         Column(
@@ -264,8 +284,9 @@ private fun BottomActions(state: SetupUiState, actions: SetupActions) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                // Keyboard + navigation bar: the form's text fields sit above this bar.
-                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                // Keyboard + navigation bar: the form's text fields sit above this bar. Horizontal too,
+                // for the side navigation bar and cutouts in landscape.
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
                 .padding(horizontal = MamaSpacing.screen, vertical = MamaSpacing.m),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(MamaSpacing.xs),
@@ -537,7 +558,8 @@ private fun DonePhase(state: SetupUiState, mamaNumber: String?) {
         }
     }
     SectionLabel("El contacto Mamá")
-    MamaCard(supporting = listOfNotNull(mamaNumber, "Ya está en tus contactos.").joinToString(" · "))
+    val inContacts = if (state.mamaInContacts) "Ya está en tus contactos." else "No está en tus contactos: su llamada saldrá como un número desconocido."
+    MamaCard(supporting = listOfNotNull(mamaNumber, inContacts).joinToString(" · "))
 }
 
 @Composable

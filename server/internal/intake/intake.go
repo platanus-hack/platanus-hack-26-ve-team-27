@@ -34,6 +34,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -41,8 +42,17 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/duress"
 )
 
-// maxBodyBytes bounds a request body; an alert carries a handful of fixes.
-const maxBodyBytes = 1 << 20
+// maxBodyBytes bounds a request body. The app's alert, with its one fix, is
+// under 400 bytes and a registration under 2 KiB; 16 KiB still holds
+// maxPoints fixes indented. At 1 MiB one body held some 17,000 short fixes.
+const maxBodyBytes = 16 << 10
+
+// maxPoints bounds the fixes of one request. The app sends one per request:
+// the first fix with the alert, then one LocationUpdate at most every 10 s
+// for 2 minutes. 20 is ten times the contract's two-fix sample and more than
+// all 13 fixes of an incident at once. Each fix is a gps_points row, and
+// there is no auth: without the cap a few hundred requests filled the disk.
+const maxPoints = 20
 
 // Handler serves the intake routes. Create it with New.
 type Handler struct {
@@ -53,10 +63,38 @@ type Handler struct {
 	spawn func(func())
 }
 
+// handoffs counts the handoffs still running, across handlers, so main can
+// let them finish when Render stops the instance (WaitHandoffs).
+var handoffs sync.WaitGroup
+
 // New returns the intake handler. pool may be nil (no DATABASE_URL): every
 // route then answers 503.
 func New(pool *sql.DB, calls CallStarter, notifier Notifier) *Handler {
-	return &Handler{pool: pool, calls: calls, notifier: notifier, spawn: func(f func()) { go f() }}
+	return &Handler{pool: pool, calls: calls, notifier: notifier, spawn: func(f func()) {
+		handoffs.Add(1)
+		go func() {
+			defer handoffs.Done()
+			f()
+		}()
+	}}
+}
+
+// WaitHandoffs blocks until every running handoff has returned, or ctx ends.
+// On a deploy, a call being placed or an alert being sent then completes
+// instead of dying with the old instance: the phone's retry of that alert gets
+// 200 from the new one and would not hand it off again.
+func WaitHandoffs(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		handoffs.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Register mounts the intake routes on mux.
@@ -227,14 +265,29 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 
 var uuidRE = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
+// e164 is a phone number in E.164: + and 7 to 15 digits, as remoteconfig checks it.
+var e164 = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
+
+// maxFamilyNumbers is the app's limit (SetupForm.MAX_FAMILY_NUMBERS). Every
+// alert messages each of them, so an unbounded list would let one request
+// fan out to any number of strangers.
+const maxFamilyNumbers = 5
+
 func validateDevice(reg contract.DeviceRegistration) error {
 	switch {
 	case reg.DeviceID == "":
 		return errors.New("device_id is required")
 	case reg.PhoneNumber == "":
 		return errors.New("phone_number is required")
+	case len(reg.FamilyNumbers) > maxFamilyNumbers:
+		return fmt.Errorf("family_numbers has at most %d numbers", maxFamilyNumbers)
 	case len(reg.Ed25519PublicKey) != 0 && len(reg.Ed25519PublicKey) != ed25519.PublicKeySize:
 		return errors.New("ed25519_public_key must be 32 bytes of standard Base64")
+	}
+	for _, n := range reg.FamilyNumbers {
+		if !e164.MatchString(n) {
+			return errors.New("family_numbers must be E.164 (+ and 7 to 15 digits)")
+		}
 	}
 	return validateKeyProof(reg)
 }
@@ -370,6 +423,9 @@ func validateUpdate(up contract.LocationUpdate) error {
 func validatePoints(points []contract.Point) error {
 	if len(points) == 0 {
 		return errors.New("points needs at least one fix")
+	}
+	if len(points) > maxPoints {
+		return fmt.Errorf("points has %d fixes; send at most %d per request", len(points), maxPoints)
 	}
 	for i, p := range points {
 		switch {

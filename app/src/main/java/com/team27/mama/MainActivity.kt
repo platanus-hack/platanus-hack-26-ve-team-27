@@ -16,7 +16,8 @@ class MainActivity : ComponentActivity() {
         val start = Route.entries.firstOrNull { it.path == intent.getStringExtra("route") } ?: Route.Setup
         setContent {
             MamaTheme {
-                MamaNavHost(startRoute = start)
+                val graph = (application as MamaApp).graph
+                MamaNavHost(startRoute = start, emergency = graph.emergency, relay = graph.relayControls)
             }
         }
     }

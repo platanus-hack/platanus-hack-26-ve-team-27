@@ -41,6 +41,8 @@ data class SetupUiState(
     val showFormErrors: Boolean = false,
     val contact: SetupTask = SetupTask(),
     val registration: SetupTask = SetupTask(),
+    /** False when the person skipped contacts: Mamá then calls as a bare number. */
+    val mamaInContacts: Boolean = true,
 ) {
     val formErrors: SetupFormErrors get() = form.errors()
     val anyTaskFailed: Boolean get() = contact.status == TaskStatus.FAILED || registration.status == TaskStatus.FAILED
@@ -61,9 +63,6 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<SetupUiState> = _state.asStateFlow()
 
-    /** A system step whose settings screen is open; marked visited when the app resumes. */
-    private var openedSystemStep: SetupStep? = null
-
     /** True while the contact and registration tasks run, so a double tap does not start them twice. */
     private var running = false
 
@@ -77,33 +76,40 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
         val done = store.setupCompleted
         return SetupUiState(
             phase = if (done) SetupPhase.DONE else SetupPhase.PERMISSIONS,
-            permissions = PermissionFlow.start(steps).refreshed(::isGranted),
+            permissions = PermissionFlow.start(steps).restored(store.settledSteps).refreshed(::isGranted),
             form = saved,
             contact = if (done) SetupTask(TaskStatus.DONE) else SetupTask(),
             registration = if (done) SetupTask(TaskStatus.DONE) else SetupTask(),
+            mamaInContacts = !done || store.mamaRawContactId != null,
         )
     }
 
     /** Call on every resume: the person may have granted something in Settings meanwhile. */
     fun onResume() {
-        _state.update { state ->
-            var flow = state.permissions
-            openedSystemStep?.let { flow = flow.afterVisit(it) }
-            openedSystemStep = null
-            state.copy(permissions = flow.refreshed(::isGranted))
-        }
+        updatePermissions { it.refreshed(::isGranted) }
     }
 
     fun onPermissionResult(step: SetupStep, granted: Boolean, canAskAgain: Boolean) {
-        _state.update { it.copy(permissions = it.permissions.afterRequest(step, granted, canAskAgain)) }
+        updatePermissions { it.afterRequest(step, granted, canAskAgain) }
     }
 
+    /**
+     * Marked visited as it opens, not when the app resumes: MIUI often kills the
+     * process while its Security Center is in front, and the visit must survive that.
+     */
     fun onSystemScreenOpened(step: SetupStep) {
-        openedSystemStep = step
+        updatePermissions { it.afterVisit(step) }
     }
 
     fun skip(step: SetupStep) {
-        _state.update { it.copy(permissions = it.permissions.skip(step)) }
+        updatePermissions { it.skip(step) }
+    }
+
+    /** Applies [change] and saves the statuses the system cannot give back after a restart. */
+    private fun updatePermissions(change: (PermissionFlow) -> PermissionFlow) {
+        _state.update { it.copy(permissions = change(it.permissions)) }
+        val settled = _state.value.permissions.settled
+        if (settled != store.settledSteps) store.settledSteps = settled
     }
 
     fun continueToForm() {
@@ -174,11 +180,17 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
         val number = PhoneNumbers.normalize(BuildConfig.TWILIO_NUMBER)
             ?: return failed("Esta versión de la app no trae el número de Mamá. Pide una versión nueva al equipo.")
         if (!hasPermission(Manifest.permission.WRITE_CONTACTS) || !hasPermission(Manifest.permission.READ_CONTACTS)) {
+            // "Seguir sin este permiso" promised setup goes on: the call still works, as an unknown number.
+            if (_state.value.permissions.statusOf(SetupStep.CONTACTS) == StepStatus.SKIPPED) {
+                _state.update { it.copy(mamaInContacts = false) }
+                return SetupTask(TaskStatus.DONE)
+            }
             return failed("Necesitamos el permiso de contactos para guardar a Mamá.", needsAppSettings = true)
         }
         return try {
             val id = withContext(Dispatchers.IO) { contacts.upsert(number, store.mamaRawContactId) }
             store.mamaRawContactId = id
+            _state.update { it.copy(mamaInContacts = true) }
             SetupTask(TaskStatus.DONE)
         } catch (e: CancellationException) {
             throw e
@@ -191,7 +203,14 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun register(): SetupTask {
         val registration = store.registration(BuildConfig.VERSION_NAME)
             ?: return failed("Faltan tus datos. Vuelve al paso anterior.")
-        return when (val result = client.register(registration)) {
+        // With the offline flag, POST /devices also carries the device key (#59), so the server
+        // can verify this phone's offline emergencies.
+        val result = if (graph.offlineEmergency) {
+            KeyedRegistration.register(graph.deviceRegistrar(graph.deviceSigner), registration)
+        } else {
+            client.register(registration)
+        }
+        return when (result) {
             RegistrationResult.Registered -> if (graph.offlineEmergency) finishOnboarding() else SetupTask(TaskStatus.DONE)
             is RegistrationResult.Failed -> failed(result.message)
         }

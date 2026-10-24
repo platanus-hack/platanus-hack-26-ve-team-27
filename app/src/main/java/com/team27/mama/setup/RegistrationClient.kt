@@ -36,12 +36,15 @@ class RegistrationClient(baseUrl: String) {
                 connection.disconnect()
             }
         } catch (_: IOException) {
-            RegistrationResult.Failed("No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.")
+            RegistrationResult.Failed(NETWORK_ERROR)
         }
     }
 
     companion object {
         private const val TIMEOUT_MS = 15_000
+
+        /** Shown when the server cannot be reached. */
+        const val NETWORK_ERROR = "No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo."
 
         fun devicesUrl(baseUrl: String): String = baseUrl.trim().trimEnd('/') + "/devices"
 

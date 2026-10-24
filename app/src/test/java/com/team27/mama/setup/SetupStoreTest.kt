@@ -84,4 +84,16 @@ class SetupStoreTest {
         assertEquals(42L, again.mamaRawContactId)
         assertEquals(emptyList<String>(), again.familyNumbers)
     }
+
+    @Test
+    fun settledStepsPersistAndUnknownNamesAreDropped() {
+        val kv = MemoryStore()
+        assertEquals(emptyMap<SetupStep, StepStatus>(), SetupStore(kv).settledSteps)
+        val saved = mapOf(SetupStep.SMS to StepStatus.SKIPPED, SetupStep.AUTOSTART to StepStatus.VISITED)
+        SetupStore(kv).settledSteps = saved
+        assertEquals(saved, SetupStore(kv).settledSteps)
+
+        kv.putString("settled_steps", "SMS:SKIPPED,TELEPATHY:SKIPPED,BATTERY:LOST,garbage")
+        assertEquals(mapOf(SetupStep.SMS to StepStatus.SKIPPED), SetupStore(kv).settledSteps)
+    }
 }

@@ -10,6 +10,8 @@ import (
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/notify"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/ratelimit"
 )
 
 // placeTimeout bounds the outbound-call request. The phone must ring within
@@ -74,8 +76,9 @@ type Finished struct {
 // Engine places the "Mamá" call of a BranchCall incident and stores what
 // the webhook reports about it. A call that is not placed, or that Twilio
 // or ElevenLabs reports busy, unanswered or failed, is retried once; when
-// the retry fails too, Fallback opens the WebRTC page. Every incident logs
-// one "call timing:" line. Create it with a struct literal.
+// the retry fails too, Fallback opens the WebRTC page. A call over Limit is
+// neither placed nor retried. Every incident logs one "call timing:" line.
+// Create it with a struct literal.
 type Engine struct {
 	Store  Store
 	Placer Placer
@@ -97,6 +100,11 @@ type Engine struct {
 	// report shows when the phone rang and was answered (#76). It runs in
 	// the engine's goroutine, so it must be quick.
 	Progress func(ctx context.Context, callID int64, twilioStatus string, at time.Time)
+	// Limit, when set, caps the calls placed per number and in total,
+	// retries included. A call over it is not placed and opens no fallback:
+	// there is no auth on /incidents, and the fallback page is public too.
+	// nil places every call.
+	Limit *ratelimit.Limiter
 
 	RetryDelay     time.Duration    // pause before the retry; zero retries at once
 	OutcomeTimeout time.Duration    // defaultOutcomeTimeout when zero
@@ -123,6 +131,7 @@ const (
 	attemptConnected                      // rang/answered, or no failure seen: stop
 	attemptHopeless                       // not worth a retry (not a +58 number)
 	attemptNoCall                         // the incident is not stored: nothing to do
+	attemptLimited                        // over Limit: not placed, and no fallback either
 )
 
 // timing is what the "call timing:" line reports for one incident. Times
@@ -161,6 +170,10 @@ func (e *Engine) StartCall(ctx context.Context, inc intake.Incident) {
 		}
 		if res == attemptNoCall {
 			outcome = "not_called"
+			break
+		}
+		if res == attemptLimited {
+			outcome = "rate_limited"
 			break
 		}
 		if res == attemptFailed && t.attempts < maxAttempts {
@@ -204,6 +217,14 @@ func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) (a
 		log.Printf("call: incident %s call %d: the device number is not a +58 number; not calling", inc.ID, callID)
 		e.fail(ctx, inc.ID, callID)
 		return attemptHopeless, vars
+	}
+	if err := e.Limit.Allow(callee.Phone); err != nil {
+		// No auth on /incidents either: without the cap, a loop of fresh
+		// incident_ids places a paid call each and fills the agent's
+		// concurrency, so the real call gets 429.
+		log.Printf("call: incident %s call %d: call to %s %v; not calling", inc.ID, callID, notify.Mask(callee.Phone), err)
+		e.fail(ctx, inc.ID, callID)
+		return attemptLimited, vars
 	}
 
 	// Listen before placing: the failure webhook can beat the response.

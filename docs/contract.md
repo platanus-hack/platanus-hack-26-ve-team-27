@@ -238,11 +238,18 @@ SMS number.
 
 ### AlertEvent (phone → server, `POST /incidents`)
 
-The trigger. `points` has at least one fix, oldest first. `trigger` is one of
+The trigger. `points` has 1 to 20 fixes, oldest first (the server answers
+`400` to more, and to a body over 16 KiB). `trigger` is one of
 `volume_pattern`, `widget`, `tile`, `in_app`. The device must be registered
 first (`incidents.device_id` references `devices`): for an unknown
 `device_id` the server answers `422`, and the phone re-sends its
 DeviceRegistration and then the alert. Sample: `alert_event.json`.
+
+An offline emergency (`POST /emergencies`, the inbound SMS webhook or
+`POST /emergencies/relay`) also opens an incident, server-side only: its id is
+derived from the `emergency_id`, `trigger` is `offline` (migration 0007; a phone
+never sends it), the branch is `immediate_alert`, and each frame with a fix adds
+a GPS point. An emergency already cancelled opens nothing.
 
 ```json
 {
@@ -270,8 +277,9 @@ Sample: `alert_response.json`.
 
 ### LocationUpdate (phone → server, `POST /incidents/{incident_id}/points`)
 
-More fixes for an open incident, mainly in `silent_tracker` mode. A resent
-fix (same `recorded_at`) is ignored. Sample: `location_update.json`.
+More fixes for an open incident, mainly in `silent_tracker` mode, 1 to 20
+per request like the alert's. A resent fix (same `recorded_at`) is ignored.
+Sample: `location_update.json`.
 
 ```json
 {
@@ -488,7 +496,10 @@ default; then every route below answers `404`). Code:
   the newest recorded call. No recording: `404`, and the page says "Audio no
   disponible" and keeps the transcript.
 - **Seal.** After the recording, and after waiting up to 60 s for the
-  call's verdict and `notified_at`, the server seals a `call` report once:
+  call's verdict and `notified_at`, the server seals a `call` report once,
+  for its newest finished call and only when no call of it is still
+  requested or in progress (after a failed retry, the first page view 5 min
+  after the finished call ended seals it):
   pure Ed25519 by the `GET /config` key over `MAMA-incident-report-v1 ||
   ficha.json`. `GET /i/{token}/ficha.json` serves the exact signed bytes and
   `GET /i/{token}/ficha.sig` the signature in Base64 (both `404` until

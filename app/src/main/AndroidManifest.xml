@@ -25,9 +25,15 @@
     <!-- #16: hedge a slow Wi-Fi request on mobile data. -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
+    <!-- The hardware those permissions imply is optional: tablets and phones without it still install. -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
     <application
         android:name=".MamaApp"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -79,6 +85,11 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/trigger_widget" />
         </receiver>
+        <!-- Opt-in BLE relay (#60). Nothing starts it with the flag off; no boot receiver. -->
+        <service
+            android:name=".relay.RelayForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice|location" />
         <!-- Offline emergency ack SMS (#58); disabled unless mama.offlineEmergency is on. -->
         <receiver
             android:name=".emergency.sms.SmsAckReceiver"

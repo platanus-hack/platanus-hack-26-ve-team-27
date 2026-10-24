@@ -1,9 +1,12 @@
 package main
 
 import (
+	"net"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/config"
 )
@@ -87,5 +90,42 @@ func TestSMSProviders(t *testing.T) {
 				t.Fatalf("twilio registered = %v, want %v", ok, c.wantTwilio)
 			}
 		})
+	}
+}
+
+// An open stream never goes idle: shutdown closes it once the request drain is
+// over instead of letting it hold the whole budget the handoffs need.
+func TestShutdownClosesAStreamAfterTheDrain(t *testing.T) {
+	streaming := make(chan struct{})
+	closed := make(chan struct{})
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		http.NewResponseController(w).Flush()
+		close(streaming)
+		<-r.Context().Done()
+		close(closed)
+	})}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(ln)
+	resp, err := http.Get("http://" + ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	<-streaming
+
+	start := time.Now()
+	shutdown(srv, 5*time.Second, 100*time.Millisecond)
+	if took := time.Since(start); took > time.Second {
+		t.Errorf("shutdown took %v with a stream open, want about the 100ms drain", took)
+	}
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Error("the stream is still open after shutdown")
 	}
 }
