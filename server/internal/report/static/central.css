@@ -433,6 +433,15 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
 .tr-block { background: var(--surface-low); border-radius: var(--r-l); padding: 14px 18px 16px; }
 .tr-block h2 { font-weight: 500; font-size: 13px; line-height: 18px; letter-spacing: .4px; color: var(--primary); text-transform: uppercase; margin-bottom: 8px; }
 .tr-block h3 { font-weight: 700; font-size: 16px; line-height: 22px; margin: 12px 0 6px; }
+.tr-checks { display: flex; flex-direction: column; gap: 4px; }
+.tr-check { display: grid; grid-template-columns: 22px 190px minmax(0, 1fr); gap: 8px; align-items: baseline; font-size: 15px; line-height: 22px; }
+.tr-mark { font-weight: 700; text-align: center; }
+.tr-label { font-weight: 500; }
+.tr-value { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 14px; overflow-wrap: anywhere; }
+.tr-check.ok .tr-mark { color: var(--primary); }
+.tr-check.bad .tr-mark, .tr-check.bad .tr-value { color: var(--error); font-weight: 700; }
+.tr-check.wait { color: var(--on-surface-variant); }
+@media (max-width: 599px) { .tr-check { grid-template-columns: 22px minmax(0, 1fr); } .tr-value { grid-column: 2; } }
 .tr-call + .tr-call { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--outline-variant); }
 .tr-facts { display: grid; grid-template-columns: minmax(150px, max-content) minmax(0, 1fr); gap: 3px 16px; margin: 0; }
 .tr-facts dt { font-size: 13px; line-height: 20px; color: var(--on-surface-variant); }

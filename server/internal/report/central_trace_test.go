@@ -58,6 +58,8 @@ func TestTraceShowsEveryStep(t *testing.T) {
 	}
 	text := html.UnescapeString(s.Sections["t-trace"])
 	for _, want := range []string{
+		"Resumen", "conectó (1 intento(s))", `tr-check ok"><span class="tr-mark" aria-hidden="true">✓</span><span class="tr-label">Webhook de ElevenLabs</span><span class="tr-value">llegó`,
+		"encontrada en la llamada 1, turno 4 (0:15)", "duress · Coacción", "2 mensaje(s): 1 leído(s), 0 entregado(s), 0 enviado(s), 1 fallido(s)", "sellada",
 		"Incidente", testIncidentID, "Mariana Fes · +58 414 ···67", "volume_pattern", "call · Caminando (4 km/h): Mamá llama",
 		"09:10:00.253 VET · reloj del teléfono", "09:10:00.653 VET · reloj del servidor",
 		"Llamadas", "conv_01", "CA0123456789", "completed", "Llegó el webhook de ElevenLabs (post_call_transcription): 2 turnos de la persona, 3 de Mamá.",
@@ -123,7 +125,8 @@ func TestTraceSaysWhenTheWebhookNeverCame(t *testing.T) {
 	c.TwilioStatus = "completed"
 	v := buildTrace(rec, CaseExtras{}, opts)
 	s, _ := traceSnapshot(v)
-	if v.Calls[0].WebhookState != "missing" || !strings.Contains(html.UnescapeString(s.Sections["t-trace"]), `<p class="tr-webhook tr-missing">`+missing) {
+	if v.Calls[0].WebhookState != "missing" || !strings.Contains(html.UnescapeString(s.Sections["t-trace"]), `<p class="tr-webhook tr-missing">`+missing) ||
+		!strings.Contains(html.UnescapeString(s.Sections["t-trace"]), "NO llegó: revisa la URL y ELEVENLABS_WEBHOOK_SECRET") {
 		t.Errorf("Twilio completed, no webhook: %s %q", v.Calls[0].WebhookState, v.Calls[0].Webhook)
 	}
 	c.TwilioStatus = ""

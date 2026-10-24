@@ -32,6 +32,10 @@
 </html>{{end}}
 
 {{define "sec-t-trace" -}}
+<section class="tr-block tr-summary">
+  <h2>Resumen</h2>
+  <ul class="tr-checks">{{range .Summary}}<li class="tr-check {{.State}}"><span class="tr-mark" aria-hidden="true">{{if eq .State "ok"}}✓{{else if eq .State "bad"}}✗{{else}}…{{end}}</span><span class="tr-label">{{.Label}}</span><span class="tr-value">{{.Value}}</span></li>{{end}}</ul>
+</section>
 <section class="tr-block">
   <h2>Incidente</h2>
   <dl class="tr-facts">{{range .Incident}}<dt>{{index . 0}}</dt><dd>{{index . 1}}</dd>{{end}}</dl>

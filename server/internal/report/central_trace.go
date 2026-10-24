@@ -41,8 +41,16 @@ type traceView struct {
 	Notified []traceDelivery
 	Note     string // the notifications' line when there are none
 	Seal     [][2]string
+	Summary  []traceCheck // the answers first: did each step work?
 	at       time.Time
 	follow   bool
+}
+
+// traceCheck is one line of the summary at the top.
+type traceCheck struct {
+	Label string
+	Value string
+	State string // ok, bad or wait
 }
 
 // traceCall is one call attempt: its facts, whether ElevenLabs' post-call
@@ -176,6 +184,7 @@ func buildTrace(rec Record, x CaseExtras, opts Options) traceView {
 	if len(v.Notified) == 0 {
 		v.Note = page.FamilyNote
 	}
+	v.Summary = traceSummary(rec, v)
 	if s := rec.Seal; s != nil {
 		v.Seal = [][2]string{
 			{"Sellada", stampVET(s.SealedAt)},
@@ -266,4 +275,101 @@ func (h *Handler) centralTraceState(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("report: central: trace: %v", err)
 	http.Error(w, "No se pudo cargar la traza.", http.StatusInternalServerError)
+}
+
+// traceSummary answers, in order, what a test call needs checked: did the
+// call connect, did ElevenLabs' webhook arrive, was the phrase heard, what
+// was the verdict, did the family messages go out, is it sealed.
+func traceSummary(rec Record, v traceView) []traceCheck {
+	var out []traceCheck
+	add := func(label, value, state string) { out = append(out, traceCheck{label, value, state}) }
+	if len(rec.Calls) == 0 {
+		add("Llamada", "esta rama no llama ("+string(rec.Incident.Branch)+")", "wait")
+	} else {
+		connected := false
+		for _, c := range rec.Calls {
+			if c.DurationSecs != nil || c.PickedUpAt != nil {
+				connected = true
+			}
+		}
+		switch {
+		case connected:
+			add("Llamada", fmt.Sprintf("conectó (%d intento(s))", len(rec.Calls)), "ok")
+		case rec.Calls[len(rec.Calls)-1].Status == "failed":
+			add("Llamada", fmt.Sprintf("no conectó en %d intento(s)", len(rec.Calls)), "bad")
+		default:
+			add("Llamada", "en curso", "wait")
+		}
+		last := v.Calls[len(v.Calls)-1]
+		for _, c := range v.Calls { // the webhook that matters: any that arrived, else the newest
+			if c.WebhookState == "ok" {
+				last = c
+			}
+		}
+		switch last.WebhookState {
+		case "ok":
+			add("Webhook de ElevenLabs", "llegó", "ok")
+		case "missing":
+			add("Webhook de ElevenLabs", "NO llegó: revisa la URL y ELEVENLABS_WEBHOOK_SECRET", "bad")
+		default:
+			add("Webhook de ElevenLabs", "esperando", "wait")
+		}
+		found, transcript := "", false
+		for i, c := range rec.Calls {
+			if len(c.Transcript) > 0 {
+				transcript = true
+			}
+			if turns := trace.PhraseTurns(c.Transcript, rec.Device.DuressPhrase); len(turns) > 0 && found == "" {
+				t := c.Transcript[turns[0]]
+				found = fmt.Sprintf("encontrada en la llamada %d, turno %d (%s)", i+1, turns[0]+1, offset(t.TimeInCallSecs))
+			}
+		}
+		switch {
+		case found != "":
+			add("Frase de alerta", found, "ok")
+		case transcript:
+			add("Frase de alerta", "no aparece en lo que dijo la persona", "bad")
+		default:
+			add("Frase de alerta", "sin transcripción todavía", "wait")
+		}
+		verdict, kind := headline(rec)
+		if kind == "none" {
+			add("Veredicto", "todavía no hay", "wait")
+		} else {
+			add("Veredicto", kind+" · "+verdict, "ok")
+		}
+	}
+	sent, failed, delivered, read := 0, 0, 0, 0
+	for _, d := range rec.Deliveries {
+		switch d.Status {
+		case "failed":
+			failed++
+		case "read":
+			read++
+		case "delivered":
+			delivered++
+		default:
+			sent++
+		}
+	}
+	switch n := len(rec.Deliveries); {
+	case n == 0 && rec.Incident.NotifiedAt == nil:
+		add("Avisos", "ninguno todavía", "wait")
+	case n == 0:
+		add("Avisos", "reclamado sin envíos registrados", "wait")
+	case failed == n:
+		add("Avisos", fmt.Sprintf("los %d fallaron", n), "bad")
+	default:
+		state := "ok"
+		if failed > 0 {
+			state = "bad"
+		}
+		add("Avisos", fmt.Sprintf("%d mensaje(s): %d leído(s), %d entregado(s), %d enviado(s), %d fallido(s)", n, read, delivered, sent, failed), state)
+	}
+	if rec.Seal != nil {
+		add("Sello", "sellada", "ok")
+	} else {
+		add("Sello", "sin sellar todavía", "wait")
+	}
+	return out
 }
