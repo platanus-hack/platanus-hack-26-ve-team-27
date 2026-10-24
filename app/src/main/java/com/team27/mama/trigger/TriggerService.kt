@@ -136,6 +136,13 @@ class TriggerService : Service() {
         val deviceId = store.deviceId
         val triggeredAtMs = System.currentTimeMillis() - (SystemClock.elapsedRealtime() - detectedAt)
         val base = BuildConfig.SERVER_URL
+        val graph = (application as MamaApp).graph
+        val override = graph.channelOverride.value
+        if (OfflineFallback.skipsOnlineAlert(override, graph.emergency != null)) {
+            TriggerLog.log(this, "alert $incidentId skipped: channel override $override")
+            offlineFallback(null)
+            return
+        }
         val fixes = LocationFixes(this)
         fixes.start()
         // The AlertEvent's HTTP status for the offline fallback: null when nothing was sent.

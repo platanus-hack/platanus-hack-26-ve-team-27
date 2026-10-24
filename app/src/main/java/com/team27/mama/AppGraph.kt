@@ -77,7 +77,7 @@ class AppGraph(
 
     val onboardingGate: OnboardingGate = OnboardingGate(networkStatus, remoteConfig, background)
 
-    /** #61's hidden debug toggle sets `graph.channelOverride.value`. */
+    /** Set by #61's debug-only `CHANNEL_OVERRIDE` adb action (`debug.MeshDebugReceiver`). */
     val channelOverride: ChannelOverrideSetting = ChannelOverrideSetting()
 
     /**
