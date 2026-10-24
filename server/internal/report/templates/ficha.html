@@ -21,19 +21,19 @@
 <meta name="color-scheme" content="light dark">
 <meta property="og:title" content="Ficha del incidente · MAMÁ">
 <title>Ficha del incidente · MAMÁ</title>
-<link rel="icon" href="/ficha/static/mama_mark.webp" type="image/webp">
-<link rel="stylesheet" href="/ficha/static/ficha.css">
-<script src="/ficha/static/ficha.js" defer></script>
+<link rel="icon" href="{{static "mama_mark.webp"}}" type="image/webp">
+<link rel="stylesheet" href="{{static "ficha.css"}}">
+<script src="{{static "ficha.js"}}" defer></script>
 </head>
 {{end}}
 
-{{define "wordmark"}}<span class="wordmark" role="img" aria-label="MAMÁ"><img class="mark" src="/ficha/static/mama_mark.webp" alt="" width="28" height="28"><span aria-hidden="true">MAMÁ</span></span>{{end}}
+{{define "wordmark"}}<span class="wordmark" role="img" aria-label="MAMÁ"><img class="mark" src="{{static "mama_mark.webp"}}" alt="" width="28" height="28"><span aria-hidden="true">MAMÁ</span></span>{{end}}
 
 {{define "missing"}}{{template "head"}}
 <body class="plain">
 <header class="top">{{template "wordmark"}}</header>
 <main class="missing">
-  <img src="/ficha/static/mama_escuchando.webp" alt="" width="128" height="128">
+  <img src="{{static "mama_escuchando.webp"}}" alt="" width="128" height="128">
   <h1>Esta ficha no existe o ya venció</h1>
   <p>Revisa que el enlace esté completo. Los enlaces de MAMÁ vencen después de un tiempo.</p>
 </main>
@@ -44,7 +44,7 @@
 <body class="plain" data-demo-wait="{{.}}">
 <header class="top">{{template "wordmark"}}</header>
 <main class="missing demo-wait">
-  <img class="mama-wait" src="/ficha/static/mama_escuchando.webp" alt="" width="160" height="160">
+  <img class="mama-wait" src="{{static "mama_escuchando.webp"}}" alt="" width="160" height="160">
   <h1>Esperando la próxima alerta</h1>
   <p>Haz el gesto en el teléfono. La ficha se abre sola apenas llegue al servidor.</p>
   <p class="since-wait"><span class="live-dot" aria-hidden="true"></span> Escuchando</p>
@@ -101,7 +101,7 @@
 {{- end}}
 
 {{define "sec-header" -}}
-<img data-key="art-{{.Character}}" data-reveal class="mama" src="/ficha/static/mama_{{.Character}}.webp" alt="" width="80" height="80">
+<img data-key="art-{{.Character}}" data-reveal class="mama" src="{{static (print "mama_" .Character ".webp")}}" alt="" width="80" height="80">
 <div data-key="head-text" data-live-children class="head-text">
   <h1 data-key="title-{{.TitleKind}}-{{.Title}}" data-reveal class="title title-{{.TitleKind}}">{{.Title}}</h1>
   <p data-key="when-{{.UserName}}" class="when">{{if .UserName}}{{.UserName}} pidió ayuda{{else}}Pidió ayuda{{end}} · {{.TriggeredShort}}</p>

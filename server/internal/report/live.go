@@ -46,6 +46,11 @@ type Snapshot struct {
 	Sections  map[string]string `json:"sections"`
 }
 
+// Over reports whether nothing more will come for this snapshot's page: it
+// is sealed, or no longer followed live. The live loop then ends the stream
+// and the page stops polling estado.json.
+func (s Snapshot) Over() bool { return s.End || !s.Live }
+
 // snapshot renders the family page's sections of the record.
 func (h *Handler) snapshot(rec Record, token string) (Snapshot, error) {
 	opts := h.opts
@@ -61,14 +66,21 @@ func (h *Handler) snapshot(rec Record, token string) (Snapshot, error) {
 // containers, and ficha.js keeps them up to date.
 func RenderSections(rec Record, opts Options, names []string) (Snapshot, error) {
 	page := Build(rec, opts)
+	return renderSnapshot(page, page.State, page.Live, rec.Seal != nil, opts.Now, names)
+}
+
+// renderSnapshot executes the "sec-<name>" template of each name with data
+// into a Snapshot whose Version changes when any section does. Every live
+// page (the family page, the central list and detail) goes through it.
+func renderSnapshot(data any, state string, live, end bool, now time.Time, names []string) (Snapshot, error) {
 	s := Snapshot{
-		State: page.State, Live: page.Live, End: rec.Seal != nil,
-		ServerNow: iso(opts.Now), Sections: make(map[string]string, len(names)),
+		State: state, Live: live, End: end,
+		ServerNow: iso(now), Sections: make(map[string]string, len(names)),
 	}
 	sum := sha256.New()
 	for _, name := range names {
 		var buf bytes.Buffer
-		if err := tmpl.ExecuteTemplate(&buf, "sec-"+name, page); err != nil {
+		if err := tmpl.ExecuteTemplate(&buf, "sec-"+name, data); err != nil {
 			return Snapshot{}, fmt.Errorf("render %s: %w", name, err)
 		}
 		s.Sections[name] = buf.String()
@@ -133,6 +145,38 @@ func (h *Handler) Stream(w http.ResponseWriter, r *http.Request, load func(conte
 }
 
 func (h *Handler) stream(w http.ResponseWriter, r *http.Request, rec Record, load func(context.Context) (Record, error), opts Options, names []string) {
+	first := &rec // already loaded by the caller, for its 404
+	h.serveSnapshots(w, r, func(ctx context.Context) (Snapshot, error) {
+		var rec Record
+		if first != nil {
+			rec, first = *first, nil
+		} else {
+			var err error
+			if rec, err = load(ctx); err != nil {
+				return Snapshot{}, err
+			}
+		}
+		h.closer.Recover(rec)
+		o := opts
+		o.Now = h.now()
+		return RenderSections(rec, o, names)
+	})
+}
+
+// serveSnapshots is the one live loop every page shares (the family page,
+// Stream, the central list and detail): next runs at once and then every
+// LivePoll; an "update" event goes out each time its Version changes, a
+// ": keep-alive" comment every KeepAlive, and an "end" event once a
+// snapshot is over (Snapshot.Over: sealed, or no longer live) or next
+// answers ErrNotFound or ErrUnknownIncident ({"gone":true}), after which the
+// stream closes. The snapshot that is over still goes out first, so a late
+// viewer gets the page. Without that rule a report that is never sealed
+// (no call, no signing key, or simply quiet for 30 min) would poll the
+// database every second for as long as the page stays open. Any other error from next
+// is logged once and the loop keeps polling. It also stops when the client
+// goes away, and after MaxStream (EventSource reconnects by itself). The
+// caller sets its own access checks and privacy headers first.
+func (h *Handler) serveSnapshots(w http.ResponseWriter, r *http.Request, next func(context.Context) (Snapshot, error)) {
 	rc := http.NewResponseController(w)
 	_ = rc.SetWriteDeadline(time.Time{}) // a stream outlives any server write timeout
 	hdr := w.Header()
@@ -149,15 +193,20 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request, rec Record, loa
 		return rc.Flush() == nil
 	}
 	last := ""
-	// push sends the snapshot when it changed and reports whether the
-	// stream must stop (sealed, or the client is gone).
-	push := func(rec Record) (stop bool) {
-		h.closer.Recover(rec)
-		o := opts
-		o.Now = h.now()
-		s, err := RenderSections(rec, o, names)
-		if err != nil {
-			log.Printf("report: live: %v", err)
+	errLogged := false
+	// step sends the next snapshot when it changed and reports whether the
+	// stream must stop (the end, or the client is gone).
+	step := func() (stop bool) {
+		s, err := next(ctx)
+		switch {
+		case errors.Is(err, ErrNotFound) || errors.Is(err, ErrUnknownIncident):
+			write("event: end\ndata: {\"gone\":true}\n\n")
+			return true
+		case err != nil:
+			if !errLogged && !errors.Is(err, context.Canceled) {
+				log.Printf("report: live: %v", err)
+				errLogged = true
+			}
 			return false
 		}
 		if s.Version != last {
@@ -167,14 +216,14 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request, rec Record, loa
 			}
 			last = s.Version
 		}
-		if s.End {
+		if s.Over() {
 			write("event: end\ndata: {}\n\n")
 			return true
 		}
 		return false
 	}
 
-	if !write("retry: 3000\n\n") || push(rec) {
+	if !write("retry: 3000\n\n") || step() {
 		return
 	}
 	poll := time.NewTicker(orDefault(h.LivePoll, defaultLivePoll))
@@ -183,7 +232,6 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request, rec Record, loa
 	defer keep.Stop()
 	deadline := time.NewTimer(orDefault(h.MaxStream, defaultMaxStream))
 	defer deadline.Stop()
-	loadErrLogged := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -195,19 +243,7 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request, rec Record, loa
 				return
 			}
 		case <-poll.C:
-			rec, err := load(ctx)
-			if errors.Is(err, ErrNotFound) || errors.Is(err, ErrUnknownIncident) {
-				write("event: end\ndata: {\"gone\":true}\n\n")
-				return
-			}
-			if err != nil {
-				if !loadErrLogged && !errors.Is(err, context.Canceled) {
-					log.Printf("report: live: load: %v", err)
-					loadErrLogged = true
-				}
-				continue
-			}
-			if push(rec) {
+			if step() {
 				return
 			}
 		}
