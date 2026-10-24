@@ -137,6 +137,11 @@ func (n *Notifier) WithLimit(l *ratelimit.Limiter) *Notifier {
 	return n
 }
 
+// cancelsAlert reports whether the verdict cancels the alert, so Notify sends
+// nothing to anyone, the reporter included, on any channel. No verdict does
+// yet: the "todo bien" phrase of #106 hooks in here.
+func cancelsAlert(contract.NotifierMessage) bool { return false }
+
 // recipients is the family numbers plus, WithSelf, the device's own number
 // unless it is already one of them.
 func (n *Notifier) recipients(msg contract.NotifierMessage) []string {
@@ -166,12 +171,13 @@ func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 		log.Printf("notify: incident %s: load message: %v", inc.ID, err)
 		return
 	}
-	// A verdict that cancels the alert (#106, the "todo bien" phrase) must
-	// return here, before the recipients and channels: it then reaches no
-	// one, the reporter included.
+	if cancelsAlert(msg) {
+		log.Printf("notify: incident %s: the verdict cancels the alert; nothing sent", inc.ID)
+		return
+	}
 	to := n.recipients(msg)
 	if len(to) == 0 {
-		log.Printf("notify: incident %s: the device has no family numbers; nothing sent", inc.ID)
+		log.Printf("notify: incident %s: no recipients (no family numbers); nothing sent", inc.ID)
 		return
 	}
 
