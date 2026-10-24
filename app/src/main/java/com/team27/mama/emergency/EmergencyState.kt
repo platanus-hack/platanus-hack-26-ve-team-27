@@ -12,7 +12,7 @@ enum class EmergencyPhase {
     CANCELLED,
     ;
 
-    /** An emergency is in progress: a new one cannot be declared. */
+    /** An emergency is in progress, its cancel included. A new one is refused only before CANCELLING. */
     val isActive: Boolean get() = this != IDLE && this != CANCELLED
 }
 
@@ -40,7 +40,10 @@ data class EmergencyState(
 interface EmergencyControls {
     val state: StateFlow<EmergencyState>
 
-    /** Starts an emergency; false while one is active (phase not IDLE/CANCELLED). */
+    /**
+     * Starts an emergency; false while one is still alerting (SENDING, SEARCHING_NEARBY, NOTIFIED,
+     * NO_CHANNEL). During CANCELLING it starts a new emergency with a new id.
+     */
     fun declare(): Boolean
 
     /** No-op when IDLE, CANCELLING or CANCELLED. */

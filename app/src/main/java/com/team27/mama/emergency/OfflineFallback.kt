@@ -15,12 +15,17 @@ object OfflineFallback {
     /** Upper bound on holding the trigger's foreground service for one emergency. */
     const val HOLD_MAX_MS = 10 * 60_000L
 
-    /** Phases still emitting a frame. NO_CHANNEL keeps ticking until a channel comes back. */
+    /**
+     * Phases still emitting the alert. NO_CHANNEL keeps ticking until a channel comes back.
+     * CANCELLING releases the hold: TriggerService ignores a trigger while its incident runs, so
+     * holding through the cancel window (up to 120 s offline) would drop a real alert right after
+     * a false one. The cancel is tapped in the app, which is then in the foreground, and #60's
+     * relay service keeps the mesh on while the cancel goes out (`keepsMeshOn`).
+     */
     private val DELIVERING = setOf(
         EmergencyPhase.SENDING,
         EmergencyPhase.SEARCHING_NEARBY,
         EmergencyPhase.NO_CHANNEL,
-        EmergencyPhase.CANCELLING,
     )
 
     /** [alertStatus] is the AlertEvent's HTTP status, -1 on a network error, null when no alert was sent. */

@@ -103,6 +103,7 @@ class EmergencyTestKit {
         override: ChannelOverride = ChannelOverride.AUTO,
         signer: PayloadSigner = DEVICE,
         sms: SmsEmergencyChannel = this@EmergencyTestKit.sms,
+        newEmergencyId: () -> Long = { 42L },
     ) = EmergencyOrchestrator(
         signer = signer,
         config = { config },
@@ -114,7 +115,7 @@ class EmergencyTestKit {
         channelOverride = { override },
         scope = backgroundScope,
         nowMs = { NOW + testScheduler.currentTime },
-        newEmergencyId = { 42L },
+        newEmergencyId = newEmergencyId,
         onError = { message, error -> errors += message to error },
     )
 
