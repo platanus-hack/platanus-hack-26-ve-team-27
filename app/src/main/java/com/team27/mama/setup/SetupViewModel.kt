@@ -191,7 +191,14 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun register(): SetupTask {
         val registration = store.registration(BuildConfig.VERSION_NAME)
             ?: return failed("Faltan tus datos. Vuelve al paso anterior.")
-        return when (val result = client.register(registration)) {
+        // With the offline flag, POST /devices also carries the device key (#59), so the server
+        // can verify this phone's offline emergencies.
+        val result = if (graph.offlineEmergency) {
+            KeyedRegistration.register(graph.deviceRegistrar(graph.deviceSigner), registration)
+        } else {
+            client.register(registration)
+        }
+        return when (result) {
             RegistrationResult.Registered -> if (graph.offlineEmergency) finishOnboarding() else SetupTask(TaskStatus.DONE)
             is RegistrationResult.Failed -> failed(result.message)
         }

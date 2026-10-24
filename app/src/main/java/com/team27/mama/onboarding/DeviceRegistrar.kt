@@ -17,8 +17,8 @@ sealed interface RegisterResult {
  * Registers the device with its Ed25519 public key and the proof it holds the
  * private half (a signature over [DeviceRegistration.signedMessage]). Blocking.
  *
- * Nobody calls it yet: #59 does, once it has the [PayloadSigner] over :mesh's
- * identity key, with the real setup data that #15 collects.
+ * With the offline emergency flag on, setup (#15) calls it through
+ * `setup.KeyedRegistration` (#59), with the [PayloadSigner] over :mesh's identity key.
  */
 class DeviceRegistrar(
     private val api: ServerApi,

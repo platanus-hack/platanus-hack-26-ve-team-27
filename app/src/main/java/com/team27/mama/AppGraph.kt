@@ -37,10 +37,9 @@ import kotlinx.coroutines.SupervisorJob
 /**
  * Composition root. #60 extends it with the relay.
  *
- * Handoff: nothing calls [deviceRegistrar] yet. #59 owns that call: it passes [deviceSigner]
- * and calls `deviceRegistrar(deviceSigner).register(...)` after [OnboardingGate.finish] returns
- * Done, with the real DeviceRegistration (phone, family numbers, duress phrase)
- * that #15's setup collects. #58/#59 read `remoteConfig.current()`.
+ * With the flag on, setup (#15) registers through `deviceRegistrar(deviceSigner)` (#59's
+ * `setup.KeyedRegistration`), so the registered key is the one that signs emergencies.
+ * #58/#59 read `remoteConfig.current()`.
  *
  * #59's orchestrator reaches [smsChannel] through `SmsChannelAdapter` when HTTP fails;
  * the adapter also forwards the verified ack bodies from [smsAcks]. Both are null with
@@ -72,8 +71,8 @@ class AppGraph(
     val channelOverride: ChannelOverrideSetting = ChannelOverrideSetting()
 
     /**
-     * The device key (the bitchat identity). #15 passes it to [deviceRegistrar] so the registered key
-     * is the one that signs. Building it never throws: a broken key store surfaces on use.
+     * The device key (the bitchat identity). Setup passes it to [deviceRegistrar] so the registered
+     * key is the one that signs. Building it never throws: a broken key store surfaces on use.
      */
     val deviceSigner: PayloadSigner by lazy { MeshIdentitySigner.deferred(MeshGateway.getInstance(app)) }
 
