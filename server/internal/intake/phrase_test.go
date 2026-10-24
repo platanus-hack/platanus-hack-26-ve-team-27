@@ -135,7 +135,7 @@ func BenchmarkDetectAtTheCaps(b *testing.B) {
 	b.Run("3000-word call", func(b *testing.B) {
 		call := []contract.TranscriptTurn{{Role: duress.RoleUser, Message: strings.Repeat("xyzwzz ", 3000)}}
 		for b.Loop() {
-			_, _ = duress.Rules{}.Detect(context.Background(), call, duressAtCaps)
+			_, _ = duress.Rules{}.Detect(context.Background(), call, duress.Phrases{Duress: duressAtCaps})
 		}
 	})
 }

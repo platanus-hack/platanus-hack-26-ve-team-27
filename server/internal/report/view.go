@@ -623,7 +623,7 @@ func phraseTurns(transcript []contract.TranscriptTurn, phrase string) map[int]bo
 		if t.Role != duress.RoleUser || !spoken(t.Message) {
 			continue
 		}
-		r, err := duress.Rules{}.Detect(context.Background(), []contract.TranscriptTurn{t}, phrase)
+		r, err := duress.Rules{}.Detect(context.Background(), []contract.TranscriptTurn{t}, duress.Phrases{Duress: phrase})
 		if err == nil && r.Verdict == contract.VerdictDuress {
 			marked[i] = true
 		}

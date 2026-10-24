@@ -162,7 +162,7 @@ func buildTrace(rec Record, x CaseExtras, opts Options) traceView {
 			tc.Turns = append(tc.Turns, traceTurn{Who: who, Agent: agent, Offset: offset(t.TimeInCallSecs), Text: t.Message, Match: match[j]})
 		}
 		if len(c.Transcript) > 0 && len(keys) > 0 {
-			if r, err := (duress.Rules{}).Detect(context.Background(), c.Transcript, rec.Device.DuressPhrase); err == nil {
+			if r, err := (duress.Rules{}).Detect(context.Background(), c.Transcript, duress.Phrases{Duress: rec.Device.DuressPhrase, Safe: x.SafePhrase}); err == nil {
 				tc.Rules = string(r.Verdict) + " · " + verdictLine(r.Verdict, r.Reason) + " (" + r.Reason + ")"
 			}
 		}

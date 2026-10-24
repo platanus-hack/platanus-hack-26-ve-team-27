@@ -187,3 +187,21 @@ func TestNotifyOnDatabaseReleasesAfterFailedSend(t *testing.T) {
 		t.Fatalf("notified_at = %v, %v; want NULL so a retry can send", notified, err)
 	}
 }
+
+// #106: the message carries the context of the call behind the verdict.
+func TestDBStoreMessageReadsTheCallContext(t *testing.T) {
+	pool := newDB(t, contract.BranchCall)
+	store := NewDBStore(pool)
+	exec(t, pool, `INSERT INTO calls (incident_id, requested_at, verdict, verdict_reason, ficha)
+		VALUES ($1, '2026-10-24T13:10:00Z', 'duress', 'said it',
+		'{"lugar": "la autopista", "personas": "dos panas", "vehiculo": "un carro", "rumbo": "no se sabe", "situacion": "va en carro", "confianza": "media"}')`, incidentID)
+	exec(t, pool, `INSERT INTO calls (incident_id, requested_at, verdict, verdict_reason)
+		VALUES ($1, '2026-10-24T13:12:00Z', 'unclear', 'newer, no ficha')`, incidentID)
+	msg, err := store.Message(context.Background(), incident(contract.BranchCall))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Verdict != contract.VerdictDuress || msg.Ficha == nil || msg.Ficha.Personas != "dos panas" || msg.Ficha.Rumbo != contract.CallContextUnknown {
+		t.Fatalf("msg verdict %s ficha %+v, want the duress call's ficha", msg.Verdict, msg.Ficha)
+	}
+}

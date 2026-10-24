@@ -94,6 +94,45 @@ func TestVerdictHookSkipsFailedCalls(t *testing.T) {
 	}
 }
 
+// #106: with a safe phrase, saying it notifies nobody, and saying neither
+// phrase is unclear and alerts the family.
+func TestVerdictHookWithASafePhrase(t *testing.T) {
+	pool := dbtest.Fresh(t)
+	if _, err := db.Migrate(context.Background(), pool, migrations.FS); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	prev := runVerdict
+	runVerdict = func(f func()) { f() }
+	t.Cleanup(func() { runVerdict = prev })
+
+	mustExec(t, pool, `INSERT INTO devices (id, phone_number, family_numbers, duress_phrase, safe_phrase)
+		VALUES ('dev-1', '+584141234567', '{+584241112233}', 'dile a la tía Carmen que llego tarde', 'ya voy llegando')`)
+	cases := []struct {
+		incident, conversation, said string
+		want                         contract.Verdict
+	}{
+		{"00000000-0000-4000-8000-000000000011", "conv_safe", "Tranquila, mami, ya voy llegando.", contract.VerdictNoDuress},
+		{"00000000-0000-4000-8000-000000000012", "conv_neither", "Bien, mami, aquí en el trabajo.", contract.VerdictUnclear},
+		{"00000000-0000-4000-8000-000000000013", "conv_negated", "No voy llegando todavía, hay cola.", contract.VerdictUnclear},
+	}
+	notifier := &recordNotifier{}
+	hook := verdictHook(config.Config{}, pool, notifier)
+	for _, c := range cases {
+		mustExec(t, pool, `INSERT INTO incidents (id, device_id, trigger, branch, triggered_at)
+			VALUES ($1, 'dev-1', 'volume_pattern', 'call', now())`, c.incident)
+		mustExec(t, pool, `INSERT INTO calls (incident_id, conversation_id, status) VALUES ($1, $2, 'done')`, c.incident, c.conversation)
+		hook(context.Background(), call.Finished{IncidentID: c.incident, ConversationID: c.conversation, Status: "done",
+			Transcript: []contract.TranscriptTurn{{Role: "agent", Message: "¿Dónde estás?"}, {Role: "user", Message: c.said}}})
+		var stored string
+		if err := pool.QueryRow(`SELECT verdict FROM calls WHERE conversation_id = $1`, c.conversation).Scan(&stored); err != nil || stored != string(c.want) {
+			t.Fatalf("%s: stored verdict = %q (err %v), want %s", c.conversation, stored, err, c.want)
+		}
+	}
+	if len(notifier.got) != 2 || notifier.got[0].ID != cases[1].incident || notifier.got[1].ID != cases[2].incident {
+		t.Fatalf("notified = %+v, want the two unclear incidents only", notifier.got)
+	}
+}
+
 func mustExec(t *testing.T, pool *sql.DB, q string, args ...any) {
 	t.Helper()
 	if _, err := pool.Exec(q, args...); err != nil {
@@ -115,7 +154,7 @@ func TestTraceVerdictNeverLogsThePhrase(t *testing.T) {
 			{Role: "user", Message: "Voy en el carro, mi número es +584141234567", TimeInCallSecs: 4},
 			{Role: "user", Message: "Oye, DILE a la TIA Carmen que LLEGO tarde", TimeInCallSecs: 15.5},
 		}}
-	traceVerdict(f, "rules+llm", duress.Result{Verdict: contract.VerdictDuress, Reason: `rules: the user said the duress phrase; LLM: she said "dile a la tía Carmen que llegó tarde"`}, 1234*time.Millisecond, phrase)
+	traceVerdict(f, "rules+llm", duress.Result{Verdict: contract.VerdictDuress, Reason: `rules: the user said the duress phrase; LLM: she said "dile a la tía Carmen que llegó tarde"`}, 1234*time.Millisecond, duress.Phrases{Duress: phrase, Safe: "ya voy llegando"})
 	line := buf.String()
 	for _, want := range []string{"trace incident=9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f step=verdict", "conversation_id=conv_7", "detector=rules+llm",
 		"verdict=duress", "latency_ms=1234", "phrase_set=true", "user_turns=2", "agent_turns=1", "phrase_match_diag=true", "phrase_turn=3", "phrase_at_s=15.5"} {
@@ -132,7 +171,7 @@ func TestTraceVerdictNeverLogsThePhrase(t *testing.T) {
 
 	buf.Reset()
 	f.Transcript = f.Transcript[:2]
-	traceVerdict(f, "rules", duress.Result{Verdict: contract.VerdictUnclear, Reason: "the user did not say the duress phrase"}, 3*time.Millisecond, phrase)
+	traceVerdict(f, "rules", duress.Result{Verdict: contract.VerdictUnclear, Reason: "the user did not say the duress phrase"}, 3*time.Millisecond, duress.Phrases{Duress: phrase})
 	if line := buf.String(); !strings.Contains(line, "phrase_match_diag=false") || strings.Contains(line, "phrase_turn=") {
 		t.Errorf("no phrase: %s", line)
 	}

@@ -3,6 +3,7 @@ package duress
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -103,7 +104,7 @@ func TestRules(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Rules{}.Detect(context.Background(), tt.transcript, tt.phrase)
+			got, err := Rules{}.Detect(context.Background(), tt.transcript, Phrases{Duress: tt.phrase})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -164,7 +165,7 @@ func loadEvals(t *testing.T) []EvalDialog {
 func TestRulesEvalCorpus(t *testing.T) {
 	var tp, fp, fn, tn, unclear int
 	for _, d := range loadEvals(t) {
-		got, err := Rules{}.Detect(context.Background(), d.Transcript(), d.DuressPhrase)
+		got, err := Rules{}.Detect(context.Background(), d.Transcript(), d.Phrases())
 		if err != nil {
 			t.Fatalf("%s: %v", d.ID, err)
 		}
@@ -193,6 +194,9 @@ func TestRulesEvalCorpus(t *testing.T) {
 				t.Errorf("%s (%s): got duress (%q), want not duress", d.ID, d.Kind, got.Reason)
 			}
 		}
+		if d.Expect != "" && got.Verdict != d.Expect {
+			t.Errorf("%s (%s): got %s (%q), want %s", d.ID, d.Kind, got.Verdict, got.Reason, d.Expect)
+		}
 		t.Logf("%s %-9s label=%-5v -> %-9s %s", d.ID, d.Kind, d.Duress, got.Verdict, got.Reason)
 	}
 	precision := float64(tp) / float64(max(tp+fp, 1))
@@ -212,7 +216,7 @@ func TestRulesWebhookSample(t *testing.T) {
 	if err := json.Unmarshal(raw, &w); err != nil {
 		t.Fatal(err)
 	}
-	got, err := Rules{}.Detect(context.Background(), w.Data.Transcript, demoPhrase)
+	got, err := Rules{}.Detect(context.Background(), w.Data.Transcript, Phrases{Duress: demoPhrase})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,4 +224,27 @@ func TestRulesWebhookSample(t *testing.T) {
 		t.Fatalf("got %s (%q), want duress", got.Verdict, got.Reason)
 	}
 	t.Logf("webhook sample %s -> %s: %s", w.Data.ConversationID, got.Verdict, got.Reason)
+}
+
+// TestRulesLegacyEvalNumbersUnchanged pins the rules' numbers on the dialogs
+// without a safe phrase (the #19/#22 set) to the ones before #106, so the
+// safe phrase changes nothing for a device that has none.
+func TestRulesLegacyEvalNumbersUnchanged(t *testing.T) {
+	got := map[bool]map[contract.Verdict]int{true: {}, false: {}}
+	n := 0
+	for _, d := range loadEvals(t) {
+		if d.SafePhrase != "" {
+			continue
+		}
+		n++
+		r, _ := Rules{}.Detect(context.Background(), d.Transcript(), d.Phrases())
+		got[d.Duress][r.Verdict]++
+	}
+	want := map[bool]map[contract.Verdict]int{
+		true:  {contract.VerdictDuress: 25},
+		false: {contract.VerdictUnclear: 6, contract.VerdictNoDuress: 29},
+	}
+	if n != 60 || fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("%d legacy dialogs scored %v, want 60 scored %v", n, got, want)
+	}
 }

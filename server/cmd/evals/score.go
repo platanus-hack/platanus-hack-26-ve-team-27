@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/duress"
 )
 
 // predError is the prediction column for a detector call that errored
@@ -140,4 +141,81 @@ func (s score) markdown(name string) string {
 		fmt.Fprintf(&b, "- %s: %s\n", l.name, ids)
 	}
 	return b.String()
+}
+
+// fichaFields are the call-context fields the ficha eval checks: the facts.
+// situacion and confianza are shown, not scored.
+var fichaFields = []string{"lugar", "personas", "vehiculo", "rumbo"}
+
+// fichaRow is one call-context dialog and what the extraction returned.
+type fichaRow struct {
+	dialog duress.EvalFichaDialog
+	ctx    contract.CallContext
+	err    error
+}
+
+func fichaField(c contract.CallContext, name string) string {
+	switch name {
+	case "lugar":
+		return c.Lugar
+	case "personas":
+		return c.Personas
+	case "vehiculo":
+		return c.Vehiculo
+	case "rumbo":
+		return c.Rumbo
+	}
+	return ""
+}
+
+// fichaMarkdown renders the call-context section: per dialog, the extracted
+// fields, and over all dialogs how many labeled-unknown fields were filled
+// anyway (invented) and how many labeled-known fields were missed. An
+// extraction error counts as every field unknown.
+func fichaMarkdown(rows []fichaRow) string {
+	var b strings.Builder
+	b.WriteString("| id | lugar | personas | vehiculo | rumbo | situacion | confianza | invented | missed |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | --- | --- | ---: | ---: |\n")
+	invented, missed, checks, errs := 0, 0, 0, 0
+	for _, r := range rows {
+		known := map[string]bool{}
+		for _, k := range r.dialog.Known {
+			known[k] = true
+		}
+		var inv, mis []string
+		for _, f := range fichaFields {
+			checks++
+			got := r.err == nil && duress.ContextKnown(fichaField(r.ctx, f))
+			switch {
+			case got && !known[f]:
+				inv = append(inv, f)
+			case !got && known[f]:
+				mis = append(mis, f)
+			}
+		}
+		invented += len(inv)
+		missed += len(mis)
+		cell := func(s string) string { return strings.ReplaceAll(s, "|", `\|`) }
+		if r.err != nil {
+			errs++
+			fmt.Fprintf(&b, "| %s | error: %s | | | | | | %d | %d |\n", r.dialog.ID, cell(r.err.Error()), len(inv), len(mis))
+			continue
+		}
+		c := r.ctx
+		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", r.dialog.ID,
+			cell(c.Lugar), cell(c.Personas), cell(c.Vehiculo), cell(c.Rumbo), cell(c.Situacion), c.Confianza,
+			countList(inv), countList(mis))
+	}
+	fmt.Fprintf(&b, "\n- Field checks: %d (%s over %d dialogs)\n", checks, strings.Join(fichaFields, ", "), len(rows))
+	fmt.Fprintf(&b, "- Invented (labeled unknown, extracted anyway): %d\n", invented)
+	fmt.Fprintf(&b, "- Missed (labeled known, extracted as no se sabe): %d\n", missed)
+	fmt.Fprintf(&b, "- Extraction errors: %d\n", errs)
+	return b.String()
+}
+
+func countList(fields []string) string {
+	if len(fields) == 0 {
+		return "0"
+	}
+	return fmt.Sprintf("%d (%s)", len(fields), strings.Join(fields, ", "))
 }

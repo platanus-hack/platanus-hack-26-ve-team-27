@@ -1,5 +1,6 @@
-// Package duress judges a "Mamá" call transcript against the user's duress
-// phrase. Detector is the seam: Rules is the first, deterministic step; LLM
+// Package duress judges a "Mamá" call transcript against the user's two
+// phrases: the duress phrase (alert) and the safe phrase ("todo bien", #106).
+// Detector is the seam: Rules is the first, deterministic step; LLM
 // (#22) is the second, behind the same interface; Chain runs Rules and asks
 // the LLM only about the calls Rules marks unclear, falling back to the rules
 // verdict when the LLM fails. Production uses Chain.
@@ -21,11 +22,17 @@ type Result struct {
 	Reason  string
 }
 
+// Phrases are the two phrases of the device's setup (devices.duress_phrase
+// and devices.safe_phrase, #104).
+type Phrases struct {
+	Duress string // the alert phrase
+	Safe   string // the "todo bien" phrase; "" when unset
+}
+
 // Detector judges one call. transcript is in call order, Role "agent" or
-// "user"; any third party heard on the line arrives as "user". phrase is the
-// duress phrase from the device's setup.
+// "user"; any third party heard on the line arrives as "user".
 type Detector interface {
-	Detect(ctx context.Context, transcript []contract.TranscriptTurn, phrase string) (Result, error)
+	Detect(ctx context.Context, transcript []contract.TranscriptTurn, phrases Phrases) (Result, error)
 }
 
 // Role values in contract.TranscriptTurn.
@@ -48,17 +55,21 @@ const (
 )
 
 // Rules is the rules-only detector. It never errors and never calls out.
+// It applies these in order:
 //
-//   - No user word in the whole call (only tags like [silencio]) is duress:
+//  1. The duress phrase, or most of its key words close together in what the
+//     user said, is duress, unless a negation sits inside or just before it
+//     ("no se me quemaron"). Saying both phrases is duress: the alert wins.
+//  2. No user word in the whole call (only tags like [silencio]) is duress:
 //     the family is alerted when the person stays silent.
-//   - The phrase, or most of its key words close together in what the user
-//     said, is duress, unless a negation sits inside or just before it
-//     ("no se me quemaron").
-//   - Half of the key words, or most of them negated or out of order, is
-//     unclear.
-//   - Anything else is no duress.
+//  3. The safe phrase or a close variant, not negated, is no duress: the
+//     person confirmed they are fine. "no voy llegando" is not "voy llegando".
+//  4. With a safe phrase configured, anything else is unclear: the person did
+//     not confirm they are fine.
+//  5. With no safe phrase, half of the duress phrase's key words, or most of
+//     them negated or out of order, is unclear; anything else is no duress.
 //
-// Only user turns count: "Mamá" saying the phrase is not the user saying it.
+// Only user turns count: "Mamá" saying a phrase is not the user saying it.
 // A third party is heard on the user's channel, so a call where only the
 // robber talks is not silence. Chain keeps that no duress for now (see its
 // override policy).
@@ -66,7 +77,11 @@ type Rules struct{}
 
 var _ Detector = Rules{}
 
-func (Rules) Detect(_ context.Context, transcript []contract.TranscriptTurn, phrase string) (Result, error) {
+// reasonNotConfirmed ends the reason of an unclear verdict when a safe phrase
+// is configured and the user did not say it.
+const reasonNotConfirmed = "so they did not confirm they are fine"
+
+func (Rules) Detect(_ context.Context, transcript []contract.TranscriptTurn, phrases Phrases) (Result, error) {
 	if len(transcript) == 0 {
 		return Result{contract.VerdictUnclear, "the transcript is empty"}, nil
 	}
@@ -75,21 +90,13 @@ func (Rules) Detect(_ context.Context, transcript []contract.TranscriptTurn, phr
 		return Result{contract.VerdictDuress, "the user stayed silent the whole call"}, nil
 	}
 
-	p := newPattern(phrase)
+	p := newPattern(phrases.Duress)
 	if len(p.words) == 0 {
 		return Result{contract.VerdictUnclear, "no duress phrase is configured"}, nil
 	}
-
-	best := hit{}
-	for _, run := range runs {
-		h := p.bestHit(run)
-		h.exact = containsSeq(run, p.words)
-		if p.better(h, best) {
-			best = h
-		}
-	}
-
+	best := p.bestOf(runs)
 	n, total := best.matched, len(p.keys)
+	var duressSaid Result
 	switch p.level(best) {
 	case levelExact:
 		return Result{contract.VerdictDuress, "the user said the duress phrase"}, nil
@@ -101,14 +108,60 @@ func (Rules) Detect(_ context.Context, transcript []contract.TranscriptTurn, phr
 		if !best.negated {
 			how = "out of order or without its first word"
 		}
-		return Result{contract.VerdictUnclear, fmt.Sprintf(
-			"the user said the duress phrase's words %s (%d of %d key words)", how, n, total)}, nil
+		duressSaid = Result{contract.VerdictUnclear, fmt.Sprintf(
+			"the user said the duress phrase's words %s (%d of %d key words)", how, n, total)}
 	case levelPartial:
-		return Result{contract.VerdictUnclear, fmt.Sprintf(
-			"the user said part of the duress phrase (%d of %d key words)", n, total)}, nil
+		duressSaid = Result{contract.VerdictUnclear, fmt.Sprintf(
+			"the user said part of the duress phrase (%d of %d key words)", n, total)}
 	default:
-		return Result{contract.VerdictNoDuress, "the user did not say the duress phrase"}, nil
+		duressSaid = Result{contract.VerdictNoDuress, "the user did not say the duress phrase"}
 	}
+
+	s := newPattern(phrases.Safe)
+	if len(s.words) == 0 {
+		return duressSaid, nil
+	}
+	safe := s.bestOf(runs)
+	sn, stotal := safe.matched, len(s.keys)
+	var why string
+	switch s.level(safe) {
+	case levelExact:
+		return Result{contract.VerdictNoDuress, "the user said the safe phrase"}, nil
+	case levelVariant:
+		return Result{contract.VerdictNoDuress, fmt.Sprintf(
+			"the user said a close variant of the safe phrase (%d of %d key words)", sn, stotal)}, nil
+	case levelNegated:
+		how := "with a negation"
+		if !safe.negated {
+			how = "out of order or without its first word"
+		}
+		why = fmt.Sprintf("the user said the safe phrase's words %s (%d of %d key words), ", how, sn, stotal)
+	case levelPartial:
+		why = fmt.Sprintf("the user said only part of the safe phrase (%d of %d key words), ", sn, stotal)
+	default:
+		why = "the user said neither phrase, "
+	}
+	if duressSaid.Verdict == contract.VerdictUnclear {
+		why = duressSaid.Reason + "; " + why
+	}
+	return Result{contract.VerdictUnclear, why + reasonNotConfirmed}, nil
+}
+
+// hasSafe reports whether p has a safe phrase with at least one word, the
+// same test the rules use.
+func (p Phrases) hasSafe() bool { return len(newPattern(p.Safe).words) > 0 }
+
+// bestOf is the most alarming hit of p over every run.
+func (p pattern) bestOf(runs [][]token) hit {
+	best := hit{}
+	for _, run := range runs {
+		h := p.bestHit(run)
+		h.exact = containsSeq(run, p.words)
+		if p.better(h, best) {
+			best = h
+		}
+	}
+	return best
 }
 
 // token is one normalized word. cut marks a word the line cut off ("Car-"),
@@ -208,7 +261,7 @@ var stopwords = set("a", "al", "con", "de", "del", "el", "en", "la", "las", "le"
 	"me", "mi", "mis", "o", "para", "por", "que", "se", "su", "te", "tu", "un", "una", "unas", "unos", "y", "ya", "yo")
 
 // negations flip a phrase's meaning when they appear around it and the
-// phrase itself has none ("no se me olvidó la cédula").
+// phrase itself has none ("no se me olvidó la cédula", "no voy llegando").
 var negations = set("no", "nunca", "jamas", "tampoco", "ni")
 
 func set(words ...string) map[string]bool {
@@ -219,7 +272,7 @@ func set(words ...string) map[string]bool {
 	return m
 }
 
-// pattern is a duress phrase ready to match.
+// pattern is a duress or safe phrase ready to match.
 type pattern struct {
 	words   []string        // every normalized word, in order
 	keys    []string        // distinct non-stopwords; all words if none
