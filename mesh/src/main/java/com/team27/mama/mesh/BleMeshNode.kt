@@ -8,12 +8,16 @@
 // broadcast; public messages handed to a listener. Also: no debug logging, nickname resolver, mesh
 // graph, authenticated peer state, TransportBridgeService or MeshServiceHolder; direct peers are
 // published to AppStateStore from onPeerListUpdated; the broadcast ANNOUNCE is awaited into the BLE
-// send queue before its MESSAGE so the two cannot be reordered.
+// send queue before its MESSAGE so the two cannot be reordered. A device without BLE is rejected before
+// any component is built, and the connection manager is built first so a failure leaks no loops. Public
+// VOICE_FRAME packets are accepted (upstream checks, no playback) so they are relayed.
 
 package com.team27.mama.mesh
 
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Log
 import com.team27.mama.mesh.crypto.EncryptionService
 import com.team27.mama.mesh.mesh.AnnounceHandlingResult
@@ -67,6 +71,23 @@ internal class BleMeshNode(
         private const val TAG = "BleMeshNode"
         private val MAX_TTL: UByte = AppConstants.MESSAGE_TTL_HOPS
         private const val PEER_DISCONNECT_GRACE_MS = AppConstants.Mesh.PEER_DISCONNECT_GRACE_MS
+
+        /**
+         * Fails before any component exists. Most components start periodic loops when constructed, so a
+         * device without BLE must be rejected here or every retried start() would leak those loops.
+         */
+        internal fun requireBleHardware(hasBleFeature: Boolean, bluetoothService: Any?) {
+            check(hasBleFeature) { "Bluetooth LE is not supported on this device" }
+            check(bluetoothService is BluetoothManager) { "Bluetooth service is unavailable" }
+        }
+    }
+
+    init {
+        val app = context.applicationContext
+        requireBleHardware(
+            app.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE),
+            app.getSystemService(Context.BLUETOOTH_SERVICE)
+        )
     }
 
     override val myPeerId: String = crypto.myPeerID
@@ -76,13 +97,19 @@ internal class BleMeshNode(
             CoroutineExceptionHandler { _, e -> Log.e(TAG, "Uncaught mesh coroutine error: ${e.message}", e) }
     )
     private val factory = MeshPacketFactory(crypto)
-    private val peerManager = PeerManager()
+    // Built first (it needs only fragmentManager): if it still throws, nothing else has started a loop.
     private val fragmentManager = FragmentManager()
+    private val connectionManager = try {
+        BluetoothConnectionManager(context.applicationContext, myPeerId, fragmentManager)
+    } catch (e: Exception) {
+        fragmentManager.shutdown()
+        throw e
+    }
+    private val peerManager = PeerManager()
     private val securityManager = SecurityManager(crypto, myPeerId)
     private val storeForwardManager = StoreForwardManager()
     private val messageHandler = MessageHandler(myPeerId)
     private val packetProcessor = PacketProcessor(myPeerId)
-    private val connectionManager = BluetoothConnectionManager(context.applicationContext, myPeerId, fragmentManager)
     private val powerManager = PowerManager.getInstance(context.applicationContext)
     private val gossipSyncManager = GossipSyncManager(
         myPeerID = myPeerId,
@@ -151,7 +178,6 @@ internal class BleMeshNode(
             packetProcessor.shutdown()
 
             scope.cancel()
-            AppStateStore.setDirectPeers(emptySet())
             Log.i(TAG, "BLE mesh stopped and scope cancelled")
         }
     }
@@ -345,6 +371,10 @@ internal class BleMeshNode(
                     }
                 } catch (_: Exception) { }
             }
+
+            // Accepted (not played) so the core relays bitchat users' public voice frames.
+            override fun handleVoiceFrame(routed: RoutedPacket): Boolean =
+                messageHandler.handlePublicVoiceFrame(routed)
 
             override suspend fun handleLeave(routed: RoutedPacket) {
                 messageHandler.handleLeave(routed)

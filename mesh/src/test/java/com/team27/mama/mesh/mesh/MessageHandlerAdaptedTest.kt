@@ -8,6 +8,7 @@ import com.team27.mama.mesh.protocol.SpecialRecipients
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -91,11 +92,44 @@ class MessageHandlerAdaptedTest {
         assertEquals(listOf(peerId), delegate.removed)
     }
 
-    private fun packet(type: MessageType, recipient: ByteArray?, text: String) = BitchatPacket(
+    @Test
+    fun publicVoiceFrame_fromVerifiedPeer_isAcceptedForRelay() {
+        delegate.peer = peerInfo(verified = true)
+        val pkt = packet(MessageType.VOICE_FRAME, SpecialRecipients.BROADCAST, "audio")
+        assertTrue(handler.handlePublicVoiceFrame(RoutedPacket(pkt, peerId)))
+        assertTrue(handler.handlePublicVoiceFrame(RoutedPacket(packet(MessageType.VOICE_FRAME, null, "a"), peerId)))
+        assertTrue(handler.handlePublicVoiceFrame(RoutedPacket(pkt, myId)))
+        assertTrue(delegate.received.isEmpty())
+    }
+
+    @Test
+    fun publicVoiceFrame_failingUpstreamChecks_isRejected() {
+        delegate.peer = peerInfo(verified = true)
+        val now = System.currentTimeMillis()
+        val directed = packet(MessageType.VOICE_FRAME, ByteArray(8) { 0x11 }, "a")
+        val old = packet(MessageType.VOICE_FRAME, SpecialRecipients.BROADCAST, "a", now - 31_000)
+        val future = packet(MessageType.VOICE_FRAME, SpecialRecipients.BROADCAST, "a", now + 31_000)
+        assertFalse(handler.handlePublicVoiceFrame(RoutedPacket(directed, peerId)))
+        assertFalse(handler.handlePublicVoiceFrame(RoutedPacket(old, peerId)))
+        assertFalse(handler.handlePublicVoiceFrame(RoutedPacket(future, peerId)))
+        val ok = packet(MessageType.VOICE_FRAME, SpecialRecipients.BROADCAST, "a")
+        assertFalse(handler.handlePublicVoiceFrame(RoutedPacket(ok, null)))
+        delegate.peer = peerInfo(verified = false)
+        assertFalse(handler.handlePublicVoiceFrame(RoutedPacket(ok, peerId)))
+        delegate.peer = null
+        assertFalse(handler.handlePublicVoiceFrame(RoutedPacket(ok, peerId)))
+    }
+
+    private fun packet(
+        type: MessageType,
+        recipient: ByteArray?,
+        text: String,
+        timestampMs: Long = System.currentTimeMillis()
+    ) = BitchatPacket(
         type = type.value,
         senderID = ByteArray(8),
         recipientID = recipient,
-        timestamp = System.currentTimeMillis().toULong(),
+        timestamp = timestampMs.toULong(),
         payload = text.toByteArray(Charsets.UTF_8),
         ttl = 7u
     )

@@ -2,13 +2,15 @@
 // commit dfc67dad41691128bc6e7425bd69f2f409cb5bbf, file app/src/main/java/com/bitchat/android/mesh/MessageHandler.kt.
 // GPL-3.0: see LICENSE and mesh/NOTICE.md. MAMÁ changes: package renamed to com.team27.mama.mesh;
 // removed the Context parameter, packetProcessor, consecutiveDecryptFailures, handleNoiseEncrypted,
-// registerDecryptFailure, sendDeliveryAck, handleNoiseHandshake, handlePublicVoiceFrame,
+// registerDecryptFailure, sendDeliveryAck, handleNoiseHandshake,
 // handlePrivateMessage, handleFavoriteNotificationFromMesh, the now-unused hexStringToByteArray, the
 // meshgraph block in handleAnnounceWithResult and every voice, file and favorites branch.
 // handleMessage drops updatePeerNickname and ignores directed messages. handleBroadcastMessage keeps
 // the verified-peer guard and hands MESSAGE text to onPublicMessageReceived(peerID, text, packet)
 // instead of building a BitchatMessage. handleLeave keeps peer removal and drops the channel callback
-// (a '#channel' LEAVE is ignored). MessageHandlerDelegate trimmed to the members still called.
+// (a '#channel' LEAVE is ignored). handlePublicVoiceFrame keeps upstream's acceptance checks and returns
+// true instead of calling LiveVoiceManager, so public voice frames are relayed but never decoded or
+// played. MessageHandlerDelegate trimmed to the members still called.
 
 package com.team27.mama.mesh.mesh
 
@@ -144,6 +146,24 @@ class MessageHandler(private val myPeerID: String) {
             handleBroadcastMessage(routed)
         }
         // Message relay is now handled by centralized PacketRelayManager
+    }
+
+    /**
+     * Upstream's acceptance checks for a public VOICE_FRAME; true lets PacketProcessor relay it.
+     * MAMÁ does not decode or play the audio.
+     */
+    fun handlePublicVoiceFrame(routed: RoutedPacket): Boolean {
+        val packet = routed.packet
+        val peerID = routed.peerID ?: return false
+        if (peerID == myPeerID) return true
+        val recipient = packet.recipientID
+        if (recipient != null && !recipient.contentEquals(delegate?.getBroadcastRecipient())) return false
+        if (packet.timestamp > Long.MAX_VALUE.toULong()) return false
+        val ageMs = System.currentTimeMillis() - packet.timestamp.toLong()
+        if (ageMs !in -30_000L..30_000L) return false
+        val peerInfo = delegate?.getPeerInfo(peerID)
+        if (peerInfo == null || !peerInfo.isVerifiedNickname) return false
+        return true
     }
 
     /**
