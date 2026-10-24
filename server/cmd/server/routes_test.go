@@ -80,7 +80,7 @@ func TestEmergencyRoutesAreMounted(t *testing.T) {
 func TestSMSWebhookIsMounted(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/sms/inbound/twilio", strings.NewReader("Body=MAMA1+x"))
-	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testOffline(t)).ServeHTTP(rec, req)
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}, nil), testOffline(t)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("POST /sms/inbound/twilio with no database = %d, want 503", rec.Code)
