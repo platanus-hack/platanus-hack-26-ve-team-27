@@ -77,21 +77,33 @@ func main() {
 		}
 	}()
 	<-stop.Done()
-	shutdown(srv)
+	shutdown(srv, shutdownTimeout, requestDrain)
 }
 
-// shutdownTimeout leaves a margin inside Render's 30 s between SIGTERM and SIGKILL.
-const shutdownTimeout = 25 * time.Second
+const (
+	// shutdownTimeout leaves a margin inside Render's 30 s between SIGTERM and SIGKILL.
+	shutdownTimeout = 25 * time.Second
+	// requestDrain is the part of it in-flight requests get. Every request
+	// answers well within it; what is still open after it is a stream
+	// (Server-Sent Events), which never goes idle on its own and would
+	// otherwise spend the handoffs' time.
+	requestDrain = 10 * time.Second
+)
 
-// shutdown stops taking requests, lets the in-flight ones answer, then waits
-// for the handoffs they started: a call being placed or an alert being sent
-// finishes instead of being cut by a deploy.
-func shutdown(srv *http.Server) {
+// shutdown stops taking requests, lets the in-flight ones answer within drain
+// and closes what is still open, then waits for the handoffs they started
+// until total: a call being placed or an alert being sent finishes instead of
+// being cut by a deploy.
+func shutdown(srv *http.Server, total, drain time.Duration) {
 	log.Print("shutting down: draining requests and handoffs")
-	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), total)
 	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf("shutdown: requests still open: %v", err)
+	drainCtx, cancelDrain := context.WithTimeout(ctx, drain)
+	defer cancelDrain()
+	if err := srv.Shutdown(drainCtx); err != nil {
+		// A closed stream makes the browser reconnect, to the new instance.
+		log.Printf("shutdown: closing connections still open: %v", err)
+		_ = srv.Close()
 	}
 	if err := intake.WaitHandoffs(ctx); err != nil {
 		log.Printf("shutdown: handoffs still running: %v", err)
