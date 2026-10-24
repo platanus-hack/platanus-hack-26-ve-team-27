@@ -41,8 +41,17 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/duress"
 )
 
-// maxBodyBytes bounds a request body; an alert carries a handful of fixes.
-const maxBodyBytes = 1 << 20
+// maxBodyBytes bounds a request body. The app's alert, with its one fix, is
+// under 400 bytes and a registration under 2 KiB; 16 KiB still holds
+// maxPoints fixes indented. At 1 MiB one body held some 17,000 short fixes.
+const maxBodyBytes = 16 << 10
+
+// maxPoints bounds the fixes of one request. The app sends one per request:
+// the first fix with the alert, then one LocationUpdate at most every 10 s
+// for 2 minutes. 20 is ten times the contract's two-fix sample and more than
+// all 13 fixes of an incident at once. Each fix is a gps_points row, and
+// there is no auth: without the cap a few hundred requests filled the disk.
+const maxPoints = 20
 
 // Handler serves the intake routes. Create it with New.
 type Handler struct {
@@ -370,6 +379,9 @@ func validateUpdate(up contract.LocationUpdate) error {
 func validatePoints(points []contract.Point) error {
 	if len(points) == 0 {
 		return errors.New("points needs at least one fix")
+	}
+	if len(points) > maxPoints {
+		return fmt.Errorf("points has %d fixes; send at most %d per request", len(points), maxPoints)
 	}
 	for i, p := range points {
 		switch {

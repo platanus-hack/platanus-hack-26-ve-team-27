@@ -21,6 +21,7 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/sms"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/notify"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/ratelimit"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/report"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/migrations"
 )
@@ -186,6 +187,9 @@ func newNotifier(cfg config.Config, pool *sql.DB, links notify.ReportLinks, deli
 		log.Printf("notifier: WARNING: %s credentials are not set; every family alert will fail", cfg.Notifier)
 	}
 	n := notify.New(notify.NewDBStore(pool), sender)
+	limit := &ratelimit.Limiter{PerNumber: cfg.Limits.MessagesPerNumber, Total: cfg.Limits.MessagesTotal, Window: config.LimitWindow}
+	log.Printf("notifier: sending at most %s (NOTIFY_LIMIT_PER_NUMBER, NOTIFY_LIMIT_TOTAL)", limit)
+	n.WithLimit(limit)
 	if links != nil {
 		log.Print("notifier: family messages carry the incident report link")
 		n.WithReportLinks(links)

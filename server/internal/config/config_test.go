@@ -246,3 +246,29 @@ func TestDemoKeyIsReadAndNeverPrinted(t *testing.T) {
 		t.Error("the demo key leaks through String")
 	}
 }
+
+func TestLimitsDefaultWhenUnsetOrInvalid(t *testing.T) {
+	want := Limits{CallsPerNumber: 6, CallsTotal: 40, MessagesPerNumber: 10, MessagesTotal: 60}
+	if got := LoadFrom(envFrom(nil)).Limits; got != want {
+		t.Errorf("unset: Limits = %+v, want %+v", got, want)
+	}
+	bad := map[string]string{"CALL_LIMIT_PER_NUMBER": "0", "CALL_LIMIT_TOTAL": "-1", "NOTIFY_LIMIT_PER_NUMBER": "ten", "NOTIFY_LIMIT_TOTAL": " "}
+	if got := LoadFrom(envFrom(bad)).Limits; got != want {
+		t.Errorf("invalid: Limits = %+v, want the defaults %+v", got, want)
+	}
+	for _, name := range LoadFrom(envFrom(nil)).Missing() {
+		if strings.Contains(name, "_LIMIT_") {
+			t.Errorf("Missing() lists the optional %s", name)
+		}
+	}
+}
+
+func TestLimitsReadEachVar(t *testing.T) {
+	c := LoadFrom(envFrom(map[string]string{
+		"CALL_LIMIT_PER_NUMBER": "12", "CALL_LIMIT_TOTAL": " 80 ",
+		"NOTIFY_LIMIT_PER_NUMBER": "20", "NOTIFY_LIMIT_TOTAL": "100",
+	}))
+	if want := (Limits{CallsPerNumber: 12, CallsTotal: 80, MessagesPerNumber: 20, MessagesTotal: 100}); c.Limits != want {
+		t.Errorf("Limits = %+v, want %+v", c.Limits, want)
+	}
+}
