@@ -175,7 +175,7 @@ private class SetupActions(
 )
 
 @Composable
-fun SetupScreen(viewModel: SetupViewModel = viewModel()) {
+fun SetupScreen(viewModel: SetupViewModel = viewModel(), onOpenSettings: (() -> Unit)? = null) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = LocalActivity.current
@@ -230,14 +230,26 @@ fun SetupScreen(viewModel: SetupViewModel = viewModel()) {
         onReviewPermissions = viewModel::reviewPermissions,
     )
     val mamaNumber = PhoneNumbers.normalize(BuildConfig.TWILIO_NUMBER)?.let(PhoneNumbers::display)
-    SetupContent(state = state, mamaNumber = mamaNumber, actions = actions)
+    SetupContent(state = state, mamaNumber = mamaNumber, actions = actions, onOpenSettings = onOpenSettings)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SetupContent(state: SetupUiState, mamaNumber: String?, actions: SetupActions) {
+private fun SetupContent(
+    state: SetupUiState,
+    mamaNumber: String?,
+    actions: SetupActions,
+    onOpenSettings: (() -> Unit)? = null,
+) {
     Scaffold(
-        topBar = { CenterAlignedTopAppBar(title = { MamaWordmark(compact = true) }) },
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { MamaWordmark(compact = true) },
+                actions = {
+                    if (onOpenSettings != null) TextButton(onClick = onOpenSettings) { Text("Ajustes") }
+                },
+            )
+        },
         bottomBar = { BottomActions(state, actions) },
     ) { padding ->
         Column(

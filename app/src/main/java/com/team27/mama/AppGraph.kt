@@ -26,7 +26,9 @@ import com.team27.mama.onboarding.DeviceRegistrar
 import com.team27.mama.onboarding.OnboardingGate
 import com.team27.mama.relay.GatewayRelayMesh
 import com.team27.mama.relay.MeshRelay
+import com.team27.mama.relay.DelegatingRelayControls
 import com.team27.mama.relay.OwnTextMeshChannel
+import com.team27.mama.relay.RelayControls
 import com.team27.mama.relay.RelaySettings
 import com.team27.mama.relay.ServerRelayUploader
 import com.team27.mama.relay.SharedPreferencesRelayStore
@@ -146,6 +148,13 @@ class AppGraph(
             CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1)),
             log = { Log.w("MamaRelay", it) },
         )
+    }
+
+    /** The settings screen's view of the relay. Null with the flag off, so no Settings route exists. */
+    val relayControls: RelayControls? by lazy {
+        val settings = relaySettings ?: return@lazy null
+        val mesh = relay ?: return@lazy null
+        DelegatingRelayControls(settings, mesh)
     }
 
     fun deviceRegistrar(signer: PayloadSigner): DeviceRegistrar = DeviceRegistrar(serverApi, signer)
