@@ -22,6 +22,16 @@ class MeshIdentitySigner(private val identity: MeshIdentity) : PayloadSigner {
         fun of(gateway: MeshGateway): MeshIdentitySigner =
             MeshIdentitySigner(guard { gateway.identity })
 
+        /**
+         * A signer that reads [MeshGateway.identity] on every use, so building it never throws:
+         * a broken key store surfaces as [MeshUnavailableException] from `publicKey`/`sign`.
+         */
+        fun deferred(gateway: MeshGateway): PayloadSigner = object : PayloadSigner {
+            override val publicKey: ByteArray get() = of(gateway).publicKey
+
+            override fun sign(message: ByteArray): ByteArray = of(gateway).sign(message)
+        }
+
         private inline fun <T> guard(block: () -> T): T =
             try {
                 block()

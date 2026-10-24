@@ -34,4 +34,19 @@ class MeshIdentitySignerTest {
         assertThrows(MeshUnavailableException::class.java) { signer.publicKey }
         assertThrows(MeshUnavailableException::class.java) { signer.sign(ByteArray(1)) }
     }
+
+    @Test
+    fun deferredSignerNeverThrowsOnConstruction() {
+        val gateway = object : com.team27.mama.mesh.MeshGateway {
+            override val isRunning = false
+            override val broadcasts = kotlinx.coroutines.flow.emptyFlow<com.team27.mama.mesh.MeshBroadcast>()
+            override val identity: MeshIdentity get() = error("keystore")
+            override fun start() = false
+            override fun stop() = Unit
+            override fun broadcast(text: String) = false
+        }
+        val signer = MeshIdentitySigner.deferred(gateway)
+        assertThrows(MeshUnavailableException::class.java) { signer.publicKey }
+        assertThrows(MeshUnavailableException::class.java) { signer.sign(ByteArray(1)) }
+    }
 }
