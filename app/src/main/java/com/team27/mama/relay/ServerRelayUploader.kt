@@ -14,8 +14,8 @@ import kotlinx.serialization.json.Json
 data class RelayUpload(val text: String, val hops: Int)
 
 /**
- * `POST {base}/emergencies/relay` (#57). 200 with a valid 76-byte ack is [UploadResult.Acked], any 4xx is
- * permanent ([UploadResult.Rejected]), everything else is [UploadResult.Failed]. Only the caller's own
+ * `POST {base}/emergencies/relay` (#57). 200 with a valid 76-byte ack is [UploadResult.Acked], any 4xx but
+ * 408 and 429 is permanent ([UploadResult.Rejected]), everything else is [UploadResult.Failed]. Only the caller's own
  * cancellation escapes. Nothing is logged: a text never leaves this class except in the request.
  *
  * The transport's own timeouts bound the call, so there is no `withTimeout` here.
@@ -32,6 +32,9 @@ class ServerRelayUploader(
             val res = runInterruptible(Dispatchers.IO) { transport.execute("POST", url, body) }
             when (res.code) {
                 200 -> ackOrFailed(res.body)
+                // #57 never sends these: they come from the proxy/CDN infrastructure in front of it
+                // (a timeout or throttling), so the text was not judged and is retried.
+                408, 429 -> UploadResult.Failed
                 in 400..499 -> UploadResult.Rejected
                 else -> UploadResult.Failed
             }
