@@ -48,7 +48,9 @@ Each trigger sends `POST /incidents` (AlertEvent with the best fix it has at
 once), `POST /incidents/{id}/points` (a fresh fix) and `POST /spike/note` (a
 spike-only line with the mic and camera results and fix ages), then
 `POST /spike/video?incident_id=…` with the camera clip, which the receiver
-saves next to its log. The first press of a possible pattern also sends
+saves next to its log. That route exists only on this receiver: never build
+this spike against the real server, which would get every alert's clip
+(and answer 404). The first press of a possible pattern also sends
 `GET /` to open the connection early. The phone adds
 `X-Spike-Since-Trigger-Ms`, the time from the detected pattern to the request,
 so latency does not depend on the phone and laptop clocks agreeing.
