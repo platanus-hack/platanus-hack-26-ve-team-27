@@ -18,7 +18,35 @@ const placeTimeout = 15 * time.Second
 
 // Placer places one outbound call. *Client is the real one.
 type Placer interface {
-	Place(ctx context.Context, to, incidentID string) (Placed, error)
+	Place(ctx context.Context, call Call) (Placed, error)
+}
+
+// Callee is the device a call goes to, as its setup stored it.
+type Callee struct {
+	Phone        string // E.164
+	UserName     string // "" when unset
+	DuressPhrase string
+	SafePhrase   string // "" when unset
+	VoiceID      string // the device's cloned voice; "" uses the global one
+}
+
+// DefaultUserName is what "Mamá" calls a person who set no name.
+const DefaultUserName = "mi amor"
+
+// CallVariables returns the dynamic variables of a call about the incident.
+// It always holds every one, with "" for a phrase that is not set, because
+// ElevenLabs refuses a conversation whose prompt names a missing variable.
+func CallVariables(incidentID string, c Callee) map[string]string {
+	name := c.UserName
+	if name == "" {
+		name = DefaultUserName
+	}
+	return map[string]string{
+		contract.DynamicVarIncidentID:   incidentID,
+		contract.DynamicVarName:         name,
+		contract.DynamicVarDuressPhrase: c.DuressPhrase,
+		contract.DynamicVarSafePhrase:   c.SafePhrase,
+	}
 }
 
 // Defaults for the Engine fields left zero.
@@ -117,9 +145,14 @@ type timing struct {
 func (e *Engine) StartCall(ctx context.Context, inc intake.Incident) {
 	t := timing{start: e.now(), trigger: inc.TriggeredAt}
 	outcome := "connected"
+	// The fallback's variables: the device's once an attempt read it.
+	vars := CallVariables(inc.ID, Callee{})
 	for {
 		t.attempts++
-		res := e.attempt(ctx, inc, &t)
+		res, read := e.attempt(ctx, inc, &t)
+		if read != nil {
+			vars = read
+		}
 		if res == attemptConnected {
 			if t.unconfirmed {
 				outcome = "unconfirmed" // nothing said it failed; not called again
@@ -140,7 +173,7 @@ func (e *Engine) StartCall(ctx context.Context, inc intake.Incident) {
 		}
 		outcome = "fallback"
 		if e.Fallback != nil {
-			e.Fallback.Open(inc.ID, t.attempts)
+			e.Fallback.Open(inc.ID, vars, t.attempts)
 		} else {
 			log.Printf("call fallback: incident %s: the call failed; no fallback page configured", inc.ID)
 		}
@@ -149,26 +182,28 @@ func (e *Engine) StartCall(ctx context.Context, inc intake.Incident) {
 	e.logTiming(inc.ID, outcome, t)
 }
 
-// attempt stores a requested call, places it with incident_id as a dynamic
-// variable, stores the conversation_id and waits for the outcome. Inserting
-// first lets a webhook that beats the response find the row.
-func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) attemptResult {
+// attempt stores a requested call, places it with the device's dynamic
+// variables and voice, stores the conversation_id and waits for the outcome.
+// Inserting first lets a webhook that beats the response find the row. It
+// also returns the call's variables, nil when the device was not read.
+func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) (attemptResult, map[string]string) {
 	start := e.now()
-	callID, to, err := e.Store.Begin(ctx, inc.ID)
+	callID, callee, err := e.Store.Begin(ctx, inc.ID)
 	if errors.Is(err, ErrUnknownIncident) {
 		log.Printf("call: incident %s: not stored; not calling", inc.ID)
-		return attemptNoCall
+		return attemptNoCall, nil
 	}
 	if err != nil {
 		log.Printf("call: incident %s: store call: %v", inc.ID, err)
-		return attemptFailed
+		return attemptFailed, nil
 	}
-	if !venezuela.MatchString(to) {
+	vars := CallVariables(inc.ID, callee)
+	if !venezuela.MatchString(callee.Phone) {
 		// No auth on /devices: refusing other numbers keeps a stranger from
 		// running up international calls on the Twilio account.
 		log.Printf("call: incident %s call %d: the device number is not a +58 number; not calling", inc.ID, callID)
 		e.fail(ctx, inc.ID, callID)
-		return attemptHopeless
+		return attemptHopeless, vars
 	}
 
 	// Listen before placing: the failure webhook can beat the response.
@@ -176,12 +211,12 @@ func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) at
 	defer e.unlisten(inc.ID, outcomes)
 
 	pctx, cancel := context.WithTimeout(ctx, placeTimeout)
-	placed, err := e.Placer.Place(pctx, to, inc.ID)
+	placed, err := e.Placer.Place(pctx, Call{To: callee.Phone, Variables: vars, VoiceID: callee.VoiceID})
 	cancel()
 	if err != nil {
 		log.Printf("call: incident %s call %d: place: %v", inc.ID, callID, err)
 		e.fail(ctx, inc.ID, callID)
-		return attemptFailed
+		return attemptFailed, vars
 	}
 	if t.placed.IsZero() {
 		t.placed = e.now()
@@ -192,10 +227,10 @@ func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) at
 	}
 
 	if e.await(ctx, inc.ID, callID, placed, outcomes, t) {
-		return attemptConnected
+		return attemptConnected, vars
 	}
 	e.fail(ctx, inc.ID, callID)
-	return attemptFailed
+	return attemptFailed, vars
 }
 
 // await waits for the outcome of a placed call: Twilio's status when Status

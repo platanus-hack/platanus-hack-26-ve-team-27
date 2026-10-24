@@ -50,7 +50,7 @@ func NewRoutes(cfg config.Config, store Store) *Routes {
 			PhoneNumberID: el.PhoneNumberID,
 			VoiceID:       el.VoiceID,
 		},
-		fallback:   NewFallback(el.AgentID, cfg.PublicURL),
+		fallback:   NewFallback(el.AgentID, cfg.PublicURL, el.FallbackToken),
 		spikeToken: el.CallSpikeToken,
 		forceFail:  el.ForceCallFailure,
 	}
@@ -74,7 +74,7 @@ var errForcedFailure = errors.New("call: forced failure (CALL_FORCE_FAILURE)")
 // forcedFailure is the Placer under CALL_FORCE_FAILURE: it never dials.
 type forcedFailure struct{}
 
-func (forcedFailure) Place(context.Context, string, string) (Placed, error) {
+func (forcedFailure) Place(context.Context, Call) (Placed, error) {
 	return Placed{}, errForcedFailure
 }
 
@@ -142,6 +142,9 @@ func (rt *Routes) Register(mux *http.ServeMux) {
 	if rt.engine != nil && (rt.client.APIKey == "" || rt.client.AgentID == "" || rt.client.PhoneNumberID == "") {
 		log.Print("call: WARNING: ElevenLabs credentials are not set; every call will fail")
 	}
+	if rt.fallback.token == "" {
+		log.Print("call: WARNING: FALLBACK_TOKEN is not set; the fallback page sends the browser call without the duress and safe phrases")
+	}
 	mux.Handle("POST /webhooks/elevenlabs", rt.webhook)
 	mux.Handle("GET "+FallbackPath, rt.fallback)
 	if rt.spikeToken != "" {
@@ -183,7 +186,9 @@ func (rt *Routes) handleSpikeCall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
-	placed, err := rt.client.Place(r.Context(), in.To, in.IncidentID)
+	// The spike has no device: the defaults keep every variable the prompt
+	// names set.
+	placed, err := rt.client.Place(r.Context(), Call{To: in.To, Variables: CallVariables(in.IncidentID, Callee{})})
 	elapsed := time.Since(start)
 	if err != nil {
 		log.Printf("call spike: place: %v", err)

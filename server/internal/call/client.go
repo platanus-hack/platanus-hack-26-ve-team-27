@@ -43,8 +43,9 @@ type Client struct {
 	APIKey        string // sent as xi-api-key
 	AgentID       string // agent_id of the "Mamá" agent
 	PhoneNumberID string // agent_phone_number_id of the imported Twilio number
-	// VoiceID, when set, overrides the agent's voice for the call. The agent
-	// must allow the TTS voice override (Agent > Security > Overrides).
+	// VoiceID, when set, overrides the agent's voice for a call whose
+	// Call.VoiceID is blank: the global ELEVENLABS_VOICE_ID. The agent must
+	// allow the TTS voice override (Agent > Security > Overrides).
 	VoiceID string
 	Client  *http.Client
 }
@@ -55,6 +56,18 @@ type Placed struct {
 	CallSID        string // the Twilio Call SID, for Twilio's call logs
 }
 
+// Call is one outbound call.
+type Call struct {
+	To string // E.164
+	// Variables are the agent's dynamic variables. The engine always sends
+	// every one CallVariables returns: ElevenLabs refuses a conversation
+	// whose prompt names a missing one.
+	Variables map[string]string
+	// VoiceID is the device's own voice; blank falls back to Client.VoiceID,
+	// and with both blank the agent's own voice speaks.
+	VoiceID string
+}
+
 type outboundCall struct {
 	AgentID            string      `json:"agent_id"`
 	AgentPhoneNumberID string      `json:"agent_phone_number_id"`
@@ -63,8 +76,8 @@ type outboundCall struct {
 }
 
 type clientData struct {
-	DynamicVariables map[string]any  `json:"dynamic_variables,omitempty"`
-	ConfigOverride   *configOverride `json:"conversation_config_override,omitempty"`
+	DynamicVariables map[string]string `json:"dynamic_variables,omitempty"`
+	ConfigOverride   *configOverride   `json:"conversation_config_override,omitempty"`
 }
 
 type configOverride struct {
@@ -82,22 +95,26 @@ type outboundCallResponse struct {
 	CallSID        string `json:"callSid"`
 }
 
-// Place asks ElevenLabs to call to (E.164). incidentID, when not blank, is
-// sent as the incident_id dynamic variable so the webhook can find the
-// incident again. A 2xx answer with success=false is an error too: that is
-// how ElevenLabs reports a call Twilio refused.
-func (c *Client) Place(ctx context.Context, to, incidentID string) (Placed, error) {
+// Place asks ElevenLabs to make the call, with its dynamic variables (the
+// incident_id among them lets the webhook find the incident again) and its
+// voice. A 2xx answer with success=false is an error too: that is how
+// ElevenLabs reports a call Twilio refused. Errors never quote the phrases.
+func (c *Client) Place(ctx context.Context, call Call) (Placed, error) {
 	if c.APIKey == "" || c.AgentID == "" || c.PhoneNumberID == "" {
 		return Placed{}, fmt.Errorf("%w: ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID and ELEVENLABS_PHONE_NUMBER_ID are required", ErrMissingConfig)
 	}
-	body := outboundCall{AgentID: c.AgentID, AgentPhoneNumberID: c.PhoneNumberID, ToNumber: to}
-	if incidentID != "" || c.VoiceID != "" {
+	body := outboundCall{AgentID: c.AgentID, AgentPhoneNumberID: c.PhoneNumberID, ToNumber: call.To}
+	voice := call.VoiceID
+	if voice == "" {
+		voice = c.VoiceID
+	}
+	if len(call.Variables) > 0 || voice != "" {
 		body.ClientData = &clientData{}
-		if incidentID != "" {
-			body.ClientData.DynamicVariables = map[string]any{contract.DynamicVarIncidentID: incidentID}
+		if len(call.Variables) > 0 {
+			body.ClientData.DynamicVariables = call.Variables
 		}
-		if c.VoiceID != "" {
-			body.ClientData.ConfigOverride = &configOverride{TTS: ttsOverride{VoiceID: c.VoiceID}}
+		if voice != "" {
+			body.ClientData.ConfigOverride = &configOverride{TTS: ttsOverride{VoiceID: voice}}
 		}
 	}
 	payload, err := json.Marshal(body)
@@ -126,17 +143,34 @@ func (c *Client) Place(ctx context.Context, to, incidentID string) (Placed, erro
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// Provider errors never echo our key, so the body is safe to show.
-		return Placed{}, fmt.Errorf("elevenlabs: %s: %s", resp.Status, snippet(raw))
+		// Provider errors never echo our key; a validation error may echo the
+		// request, so the phrases are cut out.
+		return Placed{}, fmt.Errorf("elevenlabs: %s: %s", resp.Status, redactPhrases(snippet(raw), call.Variables))
 	}
 	var out outboundCallResponse
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return Placed{}, fmt.Errorf("elevenlabs: decode response: %w", err)
 	}
 	if !out.Success {
-		return Placed{}, fmt.Errorf("elevenlabs: call not placed: %s", out.Message)
+		return Placed{}, fmt.Errorf("elevenlabs: call not placed: %s", redactPhrases(out.Message, call.Variables))
 	}
 	return Placed{ConversationID: out.ConversationID, CallSID: out.CallSID}, nil
+}
+
+// redactPhrases replaces the duress and safe phrases in s, raw or JSON
+// escaped, so a provider error that echoes the request never logs them.
+func redactPhrases(s string, vars map[string]string) string {
+	for _, k := range []string{contract.DynamicVarDuressPhrase, contract.DynamicVarSafePhrase} {
+		v := vars[k]
+		if v == "" {
+			continue
+		}
+		s = strings.ReplaceAll(s, v, "[redacted]")
+		if quoted, err := json.Marshal(v); err == nil {
+			s = strings.ReplaceAll(s, strings.Trim(string(quoted), `"`), "[redacted]")
+		}
+	}
+	return s
 }
 
 // snippet trims a provider body to something short enough to log.

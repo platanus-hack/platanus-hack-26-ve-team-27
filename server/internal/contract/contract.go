@@ -84,6 +84,13 @@ type DeviceRegistration struct {
 	FamilyNumbers []string `json:"family_numbers"` // E.164; the notifier writes to these
 	DuressPhrase  string   `json:"duress_phrase"`
 	AppVersion    string   `json:"app_version,omitempty"`
+	// UserName is how "Mamá" greets the person, 1 to 30 characters.
+	// Optional: omitted keeps the stored name (#104).
+	UserName string `json:"user_name,omitempty"`
+	// SafePhrase is the "todo bien" phrase: what the person says when they
+	// are safe. It must differ from DuressPhrase and not share most of its
+	// key words. Optional: omitted keeps the stored phrase (#104).
+	SafePhrase string `json:"safe_phrase,omitempty"`
 	// Ed25519PublicKey is the device's Ed25519 identity public key (bitchat's,
 	// #56), std Base64 of 32 bytes in JSON; the server derives key_id from it
 	// to verify offline payloads (#57). Optional: omitted keeps the stored key.
@@ -200,9 +207,20 @@ type ConversationInitiationClientData struct {
 	DynamicVariables map[string]any `json:"dynamic_variables"`
 }
 
-// DynamicVarIncidentID is the dynamic variable that ties a call to its
-// incident. The call engine sets it; the webhook handler reads it back.
-const DynamicVarIncidentID = "incident_id"
+// Dynamic variables the call engine sends with every "Mamá" call, the
+// phone call and the WebRTC fallback alike. Every one always has a value,
+// since ElevenLabs refuses a conversation whose prompt names a missing one.
+const (
+	// DynamicVarIncidentID ties a call to its incident; the webhook handler
+	// reads it back.
+	DynamicVarIncidentID = "incident_id"
+	// DynamicVarName is the person's user_name, or "mi amor" when unset.
+	DynamicVarName = "nombre"
+	// DynamicVarDuressPhrase is the device's duress_phrase.
+	DynamicVarDuressPhrase = "frase_alerta"
+	// DynamicVarSafePhrase is the device's safe_phrase, or "" when unset.
+	DynamicVarSafePhrase = "frase_segura"
+)
 
 // IncidentID returns the incident the call belongs to, or "" when missing or
 // not a string.

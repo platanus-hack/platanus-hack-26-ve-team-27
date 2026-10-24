@@ -177,6 +177,7 @@ the ones that are unset, never the values.
 | `ELEVENLABS_WEBHOOK_SECRET` | HMAC secret that signs the post-call webhook | ElevenLabs > Agents > Settings > Post-call webhook (shown when the webhook is created) |
 | `ELEVENLABS_VOICE_ID` | Optional. Voice that overrides the agent's on each call; the agent must allow the voice override. Set it to Mariana's cloned voice, `SnLK0h3jnPTd3J6pYcO3` (#35), a voice ID, not a secret | ElevenLabs > Voices > the voice > ID |
 | `CALL_SPIKE_TOKEN` | Optional, spike #11 only. Bearer token that turns on `POST /spike/call`; unset keeps the route off | Any random string, e.g. `openssl rand -hex 16` |
+| `FALLBACK_TOKEN` | Optional but set it in production. Secret that opens the WebRTC fallback page: open `/call/fallback?token=<value>`; any other request gets `401`. The page's browser call then carries the duress and safe phrases. Unset: the page is open to anyone but sends the phrases empty, so "Mamá" can't use them (the server warns at boot) | Any random string, e.g. `openssl rand -hex 16`; keep it in the vault |
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID (`AC...`) | console.twilio.com > Account Info |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token | console.twilio.com > Account Info |
 | `TWILIO_PHONE_NUMBER` | Our Twilio number, E.164 (`+1...`); also saved as the "Mamá" contact | console.twilio.com > Phone Numbers > Active numbers |

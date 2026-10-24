@@ -7,7 +7,9 @@
 //
 //	POST /devices                          204 stored; 400 bad body, malformed ed25519_public_key,
 //	                                       or missing/invalid ed25519_signature; 409
-//	                                       ed25519_public_key registered to another device
+//	                                       ed25519_public_key registered to another device; 422
+//	                                       user_name not 1 to 30 characters, or safe_phrase
+//	                                       without a word or too close to duress_phrase
 //	POST /incidents                        201 new incident, 200 retried incident_id (stored decision);
 //	                                       400 bad body; 409 incident_id taken by another device;
 //	                                       422 device not registered
@@ -30,8 +32,12 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/duress"
 )
 
 // maxBodyBytes bounds a request body; an alert carries a handful of fixes.
@@ -69,6 +75,11 @@ func (h *Handler) handleDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := validateDevice(reg); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	reg.UserName, reg.SafePhrase = strings.TrimSpace(reg.UserName), strings.TrimSpace(reg.SafePhrase)
+	if err := validateSetup(reg); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	switch err := upsertDevice(r.Context(), h.pool, reg); {
@@ -245,6 +256,46 @@ func validateKeyProof(reg contract.DeviceRegistration) error {
 		return errors.New("ed25519_signature does not verify for this device_id")
 	}
 	return nil
+}
+
+// maxUserNameRunes bounds user_name: "Mamá" says it, so it is a name, not a
+// paragraph.
+const maxUserNameRunes = 30
+
+// validateSetup checks the optional setup fields of a registration whose
+// user_name and safe_phrase are already trimmed. Absent ("") is fine: the
+// stored value is kept. The errors never quote a phrase.
+func validateSetup(reg contract.DeviceRegistration) error {
+	if n := utf8.RuneCountInString(reg.UserName); n > maxUserNameRunes {
+		return fmt.Errorf("user_name must be 1 to %d characters", maxUserNameRunes)
+	}
+	switch {
+	case reg.SafePhrase == "":
+		return nil
+	case !hasWord(reg.SafePhrase):
+		return errors.New("safe_phrase needs at least one word")
+	case tooCloseToDuress(reg.SafePhrase, reg.DuressPhrase):
+		return errors.New("safe_phrase is too close to duress_phrase: pick one that does not share most of its key words")
+	}
+	return nil
+}
+
+// tooCloseToDuress reports whether the duress detector would hear the safe
+// phrase as the duress phrase: said alone, it is the phrase, a close variant,
+// or half or more of its key words (an unclear call). It uses duress.Rules
+// itself, so both share one normalization (accents, case, stopwords, typos).
+func tooCloseToDuress(safe, duressPhrase string) bool {
+	if !hasWord(duressPhrase) {
+		return false // nothing to compare with
+	}
+	said := []contract.TranscriptTurn{{Role: duress.RoleUser, Message: safe}}
+	res, err := duress.Rules{}.Detect(context.Background(), said, duressPhrase)
+	return err != nil || res.Verdict != contract.VerdictNoDuress
+}
+
+// hasWord reports whether s has a letter or a digit.
+func hasWord(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) >= 0
 }
 
 func validateAlert(ev contract.AlertEvent) error {
