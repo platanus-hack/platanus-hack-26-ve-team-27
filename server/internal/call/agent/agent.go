@@ -1,13 +1,17 @@
 // Package agent holds the "Mamá" ElevenLabs agent: its prompt
-// (prompt.md) and first message (first_message.txt), and the PATCH body that
-// go run ./cmd/pushagent sends to the agent. See README.md.
+// (prompt.md), first message (first_message.txt) and TTS settings
+// (tts.json), and the PATCH body that go run ./cmd/pushagent sends to the
+// agent. See README.md.
 //
 // Both texts use the dynamic variables {{nombre}}, {{frase_alerta}} and
 // {{frase_segura}}, which the call engine sends when it places the call.
 package agent
 
 import (
+	"bytes"
 	_ "embed"
+	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -16,6 +20,9 @@ var prompt string
 
 //go:embed first_message.txt
 var firstMessage string
+
+//go:embed tts.json
+var ttsJSON []byte
 
 // Language is the agent language (ASR and TTS).
 const Language = "es"
@@ -27,6 +34,51 @@ func Prompt() string { return strings.ReplaceAll(prompt, "\r\n", "\n") }
 // FirstMessage is what the agent says when the call is answered.
 func FirstMessage() string { return strings.TrimSpace(firstMessage) }
 
+// TTS is conversation_config.tts without voice_id: the voice stays the
+// agent's own, and the call engine overrides it per call. The agent schema
+// has no style or use_speaker_boost (see README.md).
+type TTS struct {
+	ModelID         string  `json:"model_id"`
+	Stability       float64 `json:"stability"`
+	SimilarityBoost float64 `json:"similarity_boost"`
+	Speed           float64 `json:"speed"`
+}
+
+// ttsModels are the agent TTS models that speak Spanish (eleven_turbo_v2
+// and eleven_flash_v2 are English only).
+var ttsModels = map[string]bool{
+	"eleven_turbo_v2_5":        true,
+	"eleven_flash_v2_5":        true,
+	"eleven_multilingual_v2":   true,
+	"eleven_v3_conversational": true,
+	"eleven_v4":                true,
+	"eleven_v4_turbo":          true,
+}
+
+// LoadTTS parses tts.json. Unknown keys and out-of-range values are errors,
+// so a setting the agent API does not take never goes unnoticed.
+func LoadTTS() (TTS, error) { return parseTTS(ttsJSON) }
+
+func parseTTS(raw []byte) (TTS, error) {
+	var t TTS
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&t); err != nil {
+		return TTS{}, fmt.Errorf("agent: tts.json: %w", err)
+	}
+	switch {
+	case !ttsModels[t.ModelID]:
+		return TTS{}, fmt.Errorf("agent: tts.json: model_id %q is not a Spanish agent model", t.ModelID)
+	case t.Stability < 0 || t.Stability > 1:
+		return TTS{}, fmt.Errorf("agent: tts.json: stability %v is outside 0..1", t.Stability)
+	case t.SimilarityBoost < 0 || t.SimilarityBoost > 1:
+		return TTS{}, fmt.Errorf("agent: tts.json: similarity_boost %v is outside 0..1", t.SimilarityBoost)
+	case t.Speed < 0.7 || t.Speed > 1.2:
+		return TTS{}, fmt.Errorf("agent: tts.json: speed %v is outside 0.7..1.2", t.Speed)
+	}
+	return t, nil
+}
+
 // Update is the body of PATCH /v1/convai/agents/{agent_id}. Field names
 // follow https://elevenlabs.io/docs/api-reference/agents/update and
 // https://elevenlabs.io/docs/agents-platform/customization/tools/system-tools/end-call
@@ -37,6 +89,7 @@ type Update struct {
 
 type ConversationConfig struct {
 	Agent AgentConfig `json:"agent"`
+	TTS   TTS         `json:"tts"`
 }
 
 type AgentConfig struct {
@@ -67,18 +120,25 @@ type SystemToolParams struct {
 }
 
 // NewUpdate builds the PATCH body with the prompt, the first message, the
-// language and the end_call system tool.
-func NewUpdate() Update {
-	return Update{ConversationConfig: ConversationConfig{Agent: AgentConfig{
-		FirstMessage: FirstMessage(),
-		Language:     Language,
-		Prompt: PromptConfig{
-			Prompt: Prompt(),
-			BuiltInTools: BuiltInTools{EndCall: SystemTool{
-				Type:   "system",
-				Name:   "end_call",
-				Params: SystemToolParams{SystemToolType: "end_call"},
-			}},
+// language, the end_call system tool and the TTS settings.
+func NewUpdate() (Update, error) {
+	tts, err := LoadTTS()
+	if err != nil {
+		return Update{}, err
+	}
+	return Update{ConversationConfig: ConversationConfig{
+		Agent: AgentConfig{
+			FirstMessage: FirstMessage(),
+			Language:     Language,
+			Prompt: PromptConfig{
+				Prompt: Prompt(),
+				BuiltInTools: BuiltInTools{EndCall: SystemTool{
+					Type:   "system",
+					Name:   "end_call",
+					Params: SystemToolParams{SystemToolType: "end_call"},
+				}},
+			},
 		},
-	}}}
+		TTS: tts,
+	}}, nil
 }

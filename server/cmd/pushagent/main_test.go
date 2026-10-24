@@ -16,7 +16,7 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/call/agent"
 )
 
-const current = `{"agent_id":"agent_x","conversation_config":{"agent":{"first_message":"old","prompt":{"prompt":"old prompt"}}}}`
+const current = `{"agent_id":"agent_x","conversation_config":{"agent":{"first_message":"old","prompt":{"prompt":"old prompt"}},"tts":{"voice_id":"v1","model_id":"eleven_turbo_v2_5"},"asr":{"quality":"high"}}}`
 
 // fakeAgent serves GET and PATCH on /v1/convai/agents/agent_x and records
 // the order of the calls and the PATCH body.
@@ -46,6 +46,15 @@ func (f *fakeAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func mustUpdate(t *testing.T) agent.Update {
+	t.Helper()
+	u, err := agent.NewUpdate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
+}
+
 func newPusher(t *testing.T, f *fakeAgent) *pusher {
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
@@ -59,7 +68,7 @@ func newPusher(t *testing.T, f *fakeAgent) *pusher {
 func TestPushBacksUpBeforeWriting(t *testing.T) {
 	f := &fakeAgent{patchStatus: http.StatusOK}
 	p := newPusher(t, f)
-	body, _ := json.Marshal(agent.NewUpdate())
+	body, _ := json.Marshal(mustUpdate(t))
 
 	path, err := p.Push(context.Background(), body)
 	if err != nil {
@@ -108,7 +117,7 @@ func TestPushNeedsConfig(t *testing.T) {
 }
 
 func TestDryRunPrintsBody(t *testing.T) {
-	body, _ := json.Marshal(agent.NewUpdate())
+	body, _ := json.Marshal(mustUpdate(t))
 	var out bytes.Buffer
 	if err := printBody(&out, body); err != nil {
 		t.Fatal(err)
@@ -118,10 +127,18 @@ func TestDryRunPrintsBody(t *testing.T) {
 		`"first_message": "¡Hola, {{nombre}}! ¿Cómo vas, mi amor?"`,
 		`"language": "es"`,
 		`"system_tool_type": "end_call"`,
+		`"tts": {`,
+		`"model_id": "eleven_flash_v2_5"`,
+		`"stability": 0.45`,
+		`"similarity_boost": 0.85`,
+		`"speed": 1`,
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("dry run output misses %s", want)
 		}
+	}
+	if strings.Contains(out.String(), "voice_id") {
+		t.Error("dry run sends voice_id; the agent voice must stay as it is")
 	}
 }
 
@@ -134,7 +151,7 @@ func TestRestoreBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"conversation_config":{"agent":{"first_message":"old","prompt":{"prompt":"old prompt"}}}}`
+	want := `{"conversation_config":{"agent":{"first_message":"old","prompt":{"prompt":"old prompt"}},"tts":{"voice_id":"v1","model_id":"eleven_turbo_v2_5"}}}`
 	if string(got) != want {
 		t.Errorf("restore body = %s, want %s", got, want)
 	}

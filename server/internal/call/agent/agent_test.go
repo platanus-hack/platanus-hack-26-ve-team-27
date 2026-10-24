@@ -71,7 +71,11 @@ func TestPromptListsForbiddenWords(t *testing.T) {
 }
 
 func TestUpdateBody(t *testing.T) {
-	raw, err := json.Marshal(NewUpdate())
+	u, err := NewUpdate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(u)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,6 +97,7 @@ func TestUpdateBody(t *testing.T) {
 					} `json:"built_in_tools"`
 				} `json:"prompt"`
 			} `json:"agent"`
+			TTS map[string]any `json:"tts"`
 		} `json:"conversation_config"`
 	}
 	if err := json.Unmarshal(raw, &got); err != nil {
@@ -105,5 +110,29 @@ func TestUpdateBody(t *testing.T) {
 	ec := a.Prompt.BuiltInTools.EndCall
 	if ec.Type != "system" || ec.Name != "end_call" || ec.Params.SystemToolType != "end_call" {
 		t.Errorf("end_call = %+v", ec)
+	}
+	wantTTS := map[string]any{"model_id": "eleven_flash_v2_5", "stability": 0.45, "similarity_boost": 0.85, "speed": 1.0}
+	if len(got.ConversationConfig.TTS) != len(wantTTS) {
+		t.Errorf("tts = %v, want exactly %v (no voice_id)", got.ConversationConfig.TTS, wantTTS)
+	}
+	for k, v := range wantTTS {
+		if got.ConversationConfig.TTS[k] != v {
+			t.Errorf("tts.%s = %v, want %v", k, got.ConversationConfig.TTS[k], v)
+		}
+	}
+}
+
+func TestParseTTSRejects(t *testing.T) {
+	for name, raw := range map[string]string{
+		"style (not in the agent API)": `{"model_id":"eleven_flash_v2_5","stability":0.45,"similarity_boost":0.85,"speed":1,"style":0}`,
+		"voice_id":                     `{"model_id":"eleven_flash_v2_5","stability":0.45,"similarity_boost":0.85,"speed":1,"voice_id":"v"}`,
+		"English-only model":           `{"model_id":"eleven_flash_v2","stability":0.45,"similarity_boost":0.85,"speed":1}`,
+		"stability > 1":                `{"model_id":"eleven_flash_v2_5","stability":1.5,"similarity_boost":0.85,"speed":1}`,
+		"similarity_boost < 0":         `{"model_id":"eleven_flash_v2_5","stability":0.45,"similarity_boost":-0.1,"speed":1}`,
+		"speed too fast":               `{"model_id":"eleven_flash_v2_5","stability":0.45,"similarity_boost":0.85,"speed":2}`,
+	} {
+		if _, err := parseTTS([]byte(raw)); err == nil {
+			t.Errorf("%s: parseTTS accepted %s", name, raw)
+		}
 	}
 }

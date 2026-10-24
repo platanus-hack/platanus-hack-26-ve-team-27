@@ -7,7 +7,7 @@
 //
 // It reads ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID. Before writing, it
 // saves the agent's current configuration (GET) under --backup-dir
-// (gitignored), so --restore can put its agent section back.
+// (gitignored), so --restore can put its agent and tts sections back.
 package main
 
 import (
@@ -42,7 +42,7 @@ type pusher struct {
 func main() {
 	dryRun := flag.Bool("dry-run", false, "print the PATCH body without sending it")
 	backupDir := flag.String("backup-dir", "cmd/pushagent/backup", "where to save the current agent configuration before writing")
-	restore := flag.String("restore", "", "backup file whose agent section is sent back instead of the prompt")
+	restore := flag.String("restore", "", "backup file whose agent and tts sections are sent back instead of the repo config")
 	flag.Parse()
 
 	var body []byte
@@ -50,7 +50,10 @@ func main() {
 	if *restore != "" {
 		body, err = restoreBody(*restore)
 	} else {
-		body, err = json.Marshal(agent.NewUpdate())
+		var u agent.Update
+		if u, err = agent.NewUpdate(); err == nil {
+			body, err = json.Marshal(u)
+		}
 	}
 	if err != nil {
 		log.Fatal(err)
@@ -143,7 +146,8 @@ func (p *pusher) do(ctx context.Context, method string, body []byte) ([]byte, er
 }
 
 // restoreBody reads a backup written by Push and returns a PATCH body with
-// its conversation_config.agent, the only section pushagent changes.
+// its conversation_config.agent and conversation_config.tts, the sections
+// pushagent changes.
 func restoreBody(path string) ([]byte, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -152,13 +156,19 @@ func restoreBody(path string) ([]byte, error) {
 	var backup struct {
 		ConversationConfig struct {
 			Agent json.RawMessage `json:"agent"`
+			TTS   json.RawMessage `json:"tts"`
 		} `json:"conversation_config"`
 	}
 	if err := json.Unmarshal(raw, &backup); err != nil {
 		return nil, fmt.Errorf("pushagent: read backup %s: %w", path, err)
 	}
-	if len(backup.ConversationConfig.Agent) == 0 {
+	cc := backup.ConversationConfig
+	if len(cc.Agent) == 0 {
 		return nil, fmt.Errorf("pushagent: backup %s has no conversation_config.agent", path)
 	}
-	return json.Marshal(map[string]any{"conversation_config": map[string]any{"agent": backup.ConversationConfig.Agent}})
+	out := map[string]json.RawMessage{"agent": cc.Agent}
+	if len(cc.TTS) > 0 {
+		out["tts"] = cc.TTS
+	}
+	return json.Marshal(map[string]any{"conversation_config": out})
 }
