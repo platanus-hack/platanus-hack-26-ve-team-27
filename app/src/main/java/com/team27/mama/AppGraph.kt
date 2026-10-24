@@ -1,13 +1,15 @@
 package com.team27.mama
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.team27.mama.emergency.AndroidLocationSource
 import com.team27.mama.emergency.ChannelOverrideSetting
 import com.team27.mama.emergency.EmergencyOrchestrator
 import com.team27.mama.emergency.GatewayMeshChannel
 import com.team27.mama.emergency.MeshIdentitySigner
-import com.team27.mama.emergency.NoSmsChannel
 import com.team27.mama.emergency.ServerEmergencyChannel
 import com.team27.mama.emergency.config.RemoteConfigRepository
 import com.team27.mama.emergency.config.SharedPreferencesConfigStore
@@ -17,6 +19,7 @@ import com.team27.mama.emergency.sms.ExecutorSmsScheduler
 import com.team27.mama.emergency.sms.SmsAckBus
 import com.team27.mama.emergency.sms.SmsAckFilter
 import com.team27.mama.emergency.sms.SmsChannel
+import com.team27.mama.emergency.sms.SmsChannelAdapter
 import com.team27.mama.mesh.MeshGateway
 import com.team27.mama.onboarding.ConnectivityNetworkStatus
 import com.team27.mama.onboarding.DeviceRegistrar
@@ -39,8 +42,9 @@ import kotlinx.coroutines.SupervisorJob
  * Done, with the real DeviceRegistration (phone, family numbers, duress phrase)
  * that #15's setup collects. #58/#59 read `remoteConfig.current()`.
  *
- * #59's orchestrator calls [smsChannel] when HTTP fails and there is cellular
- * signal. It and the ack plumbing are null with the flag off.
+ * #59's orchestrator reaches [smsChannel] through `SmsChannelAdapter` when HTTP fails;
+ * the adapter also forwards the verified ack bodies from [smsAcks]. Both are null with
+ * the flag off.
  *
  * [offlineEmergency] is the build flag OFFLINE_EMERGENCY_ENABLED (default off):
  * off, setup skips the config gate and the app never refreshes the config.
@@ -96,8 +100,14 @@ class AppGraph(
                 UrlConnectionTransport(5_000, 5_000),
                 log = { Log.w(LOG_TAG, it) },
             ),
-            // Merge of main: #58's SmsChannel replaces the old `smsChannel` seam; adapted in the next commit.
-            sms = NoSmsChannel,
+            sms = SmsChannelAdapter(
+                smsChannel,
+                smsAcks,
+                centralNumber = { remoteConfig.current().smsNumber },
+                sendPermitted = {
+                    ContextCompat.checkSelfPermission(app, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+                },
+            ),
             mesh = GatewayMeshChannel(gateway),
             location = AndroidLocationSource(app),
             network = networkStatus,

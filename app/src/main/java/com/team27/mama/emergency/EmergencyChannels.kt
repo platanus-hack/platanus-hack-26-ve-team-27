@@ -12,37 +12,25 @@ interface HttpEmergencyChannel {
     suspend fun post(smsText: String): String
 }
 
-/** Seam for #58. Retries/backoff (#62 §2.4: up to 3) belong to the implementation. */
+/** Seam for #58 (`sms.SmsChannelAdapter`). Retries/backoff (#62 §2.4: up to 3) belong to the implementation. */
 interface SmsEmergencyChannel {
-    /** Permission granted and cellular service present. */
+    /** A sender exists, SEND_SMS is granted and a central number is configured. */
     fun canSend(): Boolean
 
+    /** Suspends while the SMS goes out; true when at least one was sent (or the server acked it). */
     suspend fun send(number: String, text: String): Boolean
 
-    /** Raw SMS bodies from the central number. */
+    /** Ack SMS bodies from the central number; the orchestrator still verifies each one. */
     val incoming: Flow<String>
 }
 
-/** No SMS sender yet (#58): SMS is never available. */
+/** SMS is never available. */
 object NoSmsChannel : SmsEmergencyChannel {
     override fun canSend(): Boolean = false
 
     override suspend fun send(number: String, text: String): Boolean = false
 
     override val incoming: Flow<String> = emptyFlow()
-}
-
-/**
- * Forwards every call to the channel [current] returns at that moment, so a sender set after the
- * orchestrator was built (#58 assigning `graph.smsChannel`) still serves later emergencies. The
- * orchestrator reads [incoming] once per emergency, when it begins.
- */
-internal class ForwardingSmsChannel(private val current: () -> SmsEmergencyChannel) : SmsEmergencyChannel {
-    override fun canSend(): Boolean = current().canSend()
-
-    override suspend fun send(number: String, text: String): Boolean = current().send(number, text)
-
-    override val incoming: Flow<String> get() = current().incoming
 }
 
 /** The bitchat mesh. `broadcast() == true` means queued, not delivered: only an ack confirms. */
