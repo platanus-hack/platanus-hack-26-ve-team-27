@@ -82,6 +82,16 @@ class AlertEventsTest {
     }
 
     @Test
+    fun aStaleFixSpeedIsUnknownNotItsOldValue() {
+        assertEquals(2.06f, AlertEvents.currentSpeed(2.06f, ageMs = 1_000))
+        assertEquals(0f, AlertEvents.currentSpeed(0f, ageMs = 30_000))
+        // Seen on the emulator: the only fix at send time was 6 min old and still said 2 m/s.
+        assertNull(AlertEvents.currentSpeed(2.06f, ageMs = 357_288))
+        assertNull(AlertEvents.currentSpeed(2.06f, ageMs = -1))
+        assertNull(AlertEvents.currentSpeed(null, ageMs = 0))
+    }
+
+    @Test
     fun onlyAGpsGradeFixIsPrecise() {
         assertTrue(AlertEvents.isPrecise(1.0f))
         assertTrue(AlertEvents.isPrecise(20f))

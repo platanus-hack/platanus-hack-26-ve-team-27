@@ -25,6 +25,14 @@ object AlertEvents {
     fun isFreshEnough(ageMs: Long, accuracyM: Float?, maxAgeMs: Long = 30_000, maxAccuracyM: Float = USABLE_ACCURACY_M): Boolean =
         ageMs in 0..maxAgeMs && accuracyM != null && accuracyM <= maxAccuracyM
 
+    /**
+     * The fix's speed if it still says how the person moves now: a fix older
+     * than [maxAgeMs] gives null (unknown), so a minutes-old speed never picks
+     * the branch. Unknown picks `call`, the branch that asks the person.
+     */
+    fun currentSpeed(speedMps: Float?, ageMs: Long, maxAgeMs: Long = 30_000): Float? =
+        speedMps?.takeIf { ageMs in 0..maxAgeMs }
+
     /** Precise enough to place the person: GPS-grade, within [maxAccuracyM]. */
     fun isPrecise(accuracyM: Float, maxAccuracyM: Float = 20f): Boolean = accuracyM in 0f..maxAccuracyM
 

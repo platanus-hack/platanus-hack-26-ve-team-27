@@ -105,11 +105,14 @@ fun Location.accuracyOrNull(): Float? = if (hasAccuracy()) accuracy else null
 
 fun Location.stamp() = FixStamp(elapsedRealtimeNanos, accuracyOrNull())
 
-/** The contract Point; speed only when the fix has one (never 0 for unknown). */
+/**
+ * The contract Point; speed only when the fix has one and it is recent
+ * ([AlertEvents.currentSpeed]), never 0 for unknown.
+ */
 fun Location.toPoint(): Point = AlertEvents.point(
     lat = latitude,
     lng = longitude,
     accuracyM = accuracyOrNull(),
-    speedMps = if (hasSpeed()) speed else null,
+    speedMps = AlertEvents.currentSpeed(if (hasSpeed()) speed else null, ageMs()),
     timeMs = time,
 )
