@@ -33,6 +33,9 @@ scan_test_out="$(scripts/secret-scan-test.sh 2>&1)" || { printf '%s\n' "$scan_te
 echo "secret scan self-test: passed"
 # --------------------------------------------------------------------------
 
+step "release-apk checks self-test"
+scripts/release-apk-test.sh | tail -n 1
+
 step "server: go vet"
 (cd server && go vet ./...)
 
