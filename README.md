@@ -245,3 +245,7 @@ change; re-check the source before relying on one in the demo. Cells marked
 | 24-hour window | An inbound message or call from the user opens a 24 h window for free-form messages (text, location, media). Outside it, only pre-approved templates | https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-messages |
 | Meta throughput | 80 messages/s per number by default (auto-upgraded to 1,000 when eligible); messaging one user too often hits a pair rate limit | https://developers.facebook.com/docs/whatsapp/throughput |
 | Meta messaging limit | Unique users reached outside the window per rolling 24 h, per business portfolio: starts at 250, then 2,000, 10k, 100k, unlimited | https://developers.facebook.com/docs/whatsapp/messaging-limits |
+
+## License
+
+MAMÁ is licensed under GPL-3.0 (see LICENSE). The `mesh/` module contains code from bitchat-android; see mesh/NOTICE.md.
