@@ -1,13 +1,16 @@
 package main
 
-import "net/http"
+import (
+	"database/sql"
+	"net/http"
+)
 
 // newMux registers every HTTP route. Add new routes here so there is one
-// place to see the whole API surface.
-func newMux() *http.ServeMux {
+// place to see the whole API surface. pool is nil when DATABASE_URL is unset.
+func newMux(pool *sql.DB) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleRoot)
-	registerDeployRoutes(mux)
+	registerDeployRoutes(mux, pool)
 	return mux
 }
 

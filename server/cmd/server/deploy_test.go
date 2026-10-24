@@ -7,12 +7,11 @@ import (
 	"testing"
 )
 
-// Wires the real db.Open path with no DATABASE_URL: /health must answer 503,
-// not panic on a nil *sql.DB.
+// Wires the real boot path with no DATABASE_URL: migrations are skipped and
+// /health must answer 503, not panic on a nil *sql.DB.
 func TestDeployRoutesWithoutDatabase(t *testing.T) {
-	t.Setenv("DATABASE_URL", "")
 	t.Setenv("RENDER_GIT_COMMIT", "abc123")
-	mux := newMux()
+	mux := newMux(openAndMigrate(""))
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
