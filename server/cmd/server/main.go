@@ -61,8 +61,8 @@ func main() {
 		Addr:              ":" + cfg.Port,
 		Handler:           newMux(pool, notifier, calls, offline, reports),
 		ReadHeaderTimeout: 10 * time.Second,
-		// A phone on a weak signal still uploads a 1 MiB body in this time; a
-		// client trickling bytes cannot hold a connection forever.
+		// A phone on a weak signal still uploads any request body in this time;
+		// a client trickling bytes cannot hold a connection forever.
 		ReadTimeout: 60 * time.Second,
 		IdleTimeout: 120 * time.Second,
 	}
