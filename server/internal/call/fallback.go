@@ -1,6 +1,7 @@
 package call
 
 import (
+	"encoding/json"
 	"html/template"
 	"log"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
 )
 
 // FallbackPath is the WebRTC fallback page (spikes/call/webrtc.html, #11).
@@ -83,7 +86,11 @@ type fallbackIncident struct {
 type fallbackPage struct {
 	Incidents []fallbackIncident
 	AgentID   string // blank: no widget
-	NoAgent   bool   // incidents are open but ELEVENLABS_AGENT_ID is unusable
+	// DynamicVars is the widget's dynamic-variables JSON: the incident_id
+	// when exactly one incident is open, so the browser call's post-call
+	// webhook lands on that incident like the phone call's would.
+	DynamicVars string
+	NoAgent     bool // incidents are open but ELEVENLABS_AGENT_ID is unusable
 }
 
 // ServeHTTP renders the page. It reloads itself every 5 s while nothing is
@@ -94,6 +101,10 @@ func (f *Fallback) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	if len(p.Incidents) > 0 {
 		if agentIDRE.MatchString(f.agentID) {
 			p.AgentID = f.agentID
+			if len(p.Incidents) == 1 {
+				vars, _ := json.Marshal(map[string]string{contract.DynamicVarIncidentID: p.Incidents[0].ID})
+				p.DynamicVars = string(vars)
+			}
 		} else {
 			p.NoAgent = true
 		}
@@ -144,7 +155,7 @@ var fallbackTmpl = template.Must(template.New("fallback").Parse(`<!doctype html>
   {{- end}}
 </main>
 {{- if .AgentID}}
-<elevenlabs-convai agent-id="{{.AgentID}}"></elevenlabs-convai>
+<elevenlabs-convai agent-id="{{.AgentID}}"{{if .DynamicVars}} dynamic-variables="{{.DynamicVars}}"{{end}}></elevenlabs-convai>
 <script src="https://unpkg.com/@elevenlabs/convai-widget-embed@0.19.0" async type="text/javascript"></script>
 {{- end}}
 </body>

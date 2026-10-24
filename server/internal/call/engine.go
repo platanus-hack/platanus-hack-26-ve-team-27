@@ -101,6 +101,8 @@ type timing struct {
 	attempts int
 	placed   time.Time // first call accepted by ElevenLabs
 	ringing  time.Time // first time Twilio said ringing (or later)
+	// unconfirmed: the last attempt had no outcome before OutcomeTimeout.
+	unconfirmed bool
 }
 
 // StartCall calls the device's phone, retries once if that fails, and opens
@@ -114,6 +116,9 @@ func (e *Engine) StartCall(ctx context.Context, inc intake.Incident) {
 		t.attempts++
 		res := e.attempt(ctx, inc, &t)
 		if res == attemptConnected {
+			if t.unconfirmed {
+				outcome = "unconfirmed" // nothing said it failed; not called again
+			}
 			break
 		}
 		if res == attemptNoCall {
@@ -218,6 +223,7 @@ func (e *Engine) await(ctx context.Context, incidentID string, callID int64, pla
 			return true
 		case <-deadline.C:
 			log.Printf("call: incident %s call %d: no outcome after %s; not retrying", incidentID, callID, timeout)
+			t.unconfirmed = true
 			return true
 		case o := <-outcomes:
 			if o.conversationID != "" && placed.ConversationID != "" && o.conversationID != placed.ConversationID {
@@ -226,6 +232,14 @@ func (e *Engine) await(ctx context.Context, incidentID string, callID int64, pla
 			if o.failed {
 				log.Printf("call: incident %s call %d: ElevenLabs reports the call never connected", incidentID, callID)
 				return false
+			}
+			// The call ended. A post-call webhook can also come for a phone
+			// that rang out, so ask Twilio once more when it can tell.
+			if e.Status != nil && placed.CallSID != "" {
+				if status, err := e.Status.Status(ctx, placed.CallSID); err == nil && unanswered(status) {
+					log.Printf("call: incident %s call %d: twilio %s", incidentID, callID, status)
+					return false
+				}
 			}
 			return true
 		case <-poll:
@@ -246,12 +260,25 @@ func (e *Engine) await(ctx context.Context, incidentID string, callID int64, pla
 				if status != TwilioRinging {
 					return true
 				}
-			case TwilioBusy, TwilioNoAnswer, TwilioFailed, TwilioCanceled:
+			default:
+				if !unanswered(status) {
+					continue // queued, initiated
+				}
 				log.Printf("call: incident %s call %d: twilio %s", incidentID, callID, status)
 				return false
 			}
 		}
 	}
+}
+
+// unanswered reports whether a Twilio status means the call never
+// connected.
+func unanswered(status string) bool {
+	switch status {
+	case TwilioBusy, TwilioNoAnswer, TwilioFailed, TwilioCanceled:
+		return true
+	}
+	return false
 }
 
 // listen registers the current attempt of the incident for webhook

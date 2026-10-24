@@ -407,6 +407,49 @@ func TestLateFailureOfAnEarlierCallIsIgnored(t *testing.T) {
 	}
 }
 
+func TestPostCallWebhookForARungOutCallStillRetries(t *testing.T) {
+	captureLog(t)
+	store := &memStore{phone: victimPhone}
+	var e *Engine
+	placer := &scriptPlacer{}
+	placer.onPlace = func(n int, p Placed) {
+		if n == 1 {
+			// The post-call webhook comes before a poll sees no-answer.
+			go func() {
+				var hook contract.CallWebhook
+				hook.Type = TypeTranscription
+				hook.Data.ConversationID = p.ConversationID
+				hook.Data.ClientData.DynamicVariables = map[string]any{contract.DynamicVarIncidentID: sampleIncident}
+				_ = e.Received(context.Background(), hook)
+			}()
+		}
+	}
+	status := &scriptStatus{bySID: map[string][]string{
+		"CA1": {TwilioNoAnswer},
+		"CA2": {TwilioRinging, TwilioInProgress},
+	}}
+	e = testEngine(store, placer, status, nil)
+	e.PollEvery = time.Hour // only the webhook path reads Twilio
+
+	done := make(chan struct{})
+	go func() { e.StartCall(context.Background(), sampleIncidentInput()); close(done) }()
+	// Attempt 2 ends with a webhook while Twilio says ringing: connected.
+	waitFor(t, func() bool { return placer.count() == 2 && e.waitingOn(sampleIncident) })
+	var hook contract.CallWebhook
+	hook.Type = TypeTranscription
+	hook.Data.ConversationID = "conv_2"
+	hook.Data.ClientData.DynamicVariables = map[string]any{contract.DynamicVarIncidentID: sampleIncident}
+	_ = e.Received(context.Background(), hook)
+	<-done
+
+	if got := store.snapshot(); len(got) != 2 || got[0] != StatusFailed {
+		t.Errorf("calls = %v, want the rung-out call failed and a retry", got)
+	}
+	if len(e.Fallback.pending()) != 0 {
+		t.Error("fallback opened although the retry connected")
+	}
+}
+
 func TestNoOutcomeIsNotRetried(t *testing.T) {
 	out := captureLog(t)
 	placer := &scriptPlacer{}
@@ -418,8 +461,8 @@ func TestNoOutcomeIsNotRetried(t *testing.T) {
 	if placer.calls != 1 {
 		t.Errorf("Place calls = %d, want 1: a call that may be live is not placed again", placer.calls)
 	}
-	if line := timingLine(t, out.String()); !strings.Contains(line, "ring_within_15s=unknown") {
-		t.Errorf("timing line %q, want an unknown ring", line)
+	if line := timingLine(t, out.String()); !strings.Contains(line, "outcome=unconfirmed") || !strings.Contains(line, "ring_within_15s=unknown") {
+		t.Errorf("timing line %q, want an unconfirmed outcome and an unknown ring", line)
 	}
 }
 
@@ -484,8 +527,17 @@ func TestFallbackPageShowsTheAgentOnlyWhileAnIncidentIsOpen(t *testing.T) {
 		t.Errorf("idle page exposes the agent or does not reload:\n%s", body)
 	}
 	f.Open(sampleIncident, 2)
-	if body := get(); !strings.Contains(body, `agent-id="agent_stage1"`) || !strings.Contains(body, sampleIncident) || strings.Contains(body, `http-equiv="refresh"`) {
+	body := get()
+	if !strings.Contains(body, `agent-id="agent_stage1"`) || !strings.Contains(body, sampleIncident) || strings.Contains(body, `http-equiv="refresh"`) {
 		t.Errorf("open page:\n%s", body)
+	}
+	// One open incident: the browser call carries its incident_id.
+	if want := `dynamic-variables="{&#34;incident_id&#34;:&#34;` + sampleIncident + `&#34;}"`; !strings.Contains(body, want) {
+		t.Errorf("open page lacks %s:\n%s", want, body)
+	}
+	f.Open("1b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f", 2)
+	if body := get(); strings.Contains(body, "dynamic-variables") {
+		t.Errorf("two open incidents: the widget must not pick one:\n%s", body)
 	}
 	clock.advance(fallbackWindow + time.Second)
 	if body := get(); strings.Contains(body, "agent_stage1") {
