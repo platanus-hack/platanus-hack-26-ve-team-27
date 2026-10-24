@@ -7,6 +7,7 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/call"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/inboundsms"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/ingest"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/panel"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/remoteconfig"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/emergency/serverkeys"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
@@ -19,7 +20,8 @@ import (
 // offline is the offline emergency channel (#55, #57), an extra behind
 // EMERGENCY_OFFLINE_ENABLED: nil leaves GET /config and POST /emergencies*
 // unmounted (404). With it, and without a pool, the emergency routes answer 503.
-// POST /sms/inbound/{provider} (#58) is part of the extra.
+// POST /sms/inbound/{provider} (#58) is part of the extra, and so is the live
+// panel GET /demo/emergencies (#61), which also needs DEMO_PANEL_TOKEN.
 func newMux(pool *sql.DB, notifier intake.Notifier, calls *call.Routes, offline *offlineEmergency) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleRoot)
@@ -41,6 +43,8 @@ type offlineEmergency struct {
 	smsNumber       string
 	twilioAuthToken string
 	publicBaseURL   string
+	// demoPanelToken is DEMO_PANEL_TOKEN; empty leaves the panel unmounted.
+	demoPanelToken string
 }
 
 func (o *offlineEmergency) register(mux *http.ServeMux, pool *sql.DB) {
@@ -48,8 +52,14 @@ func (o *offlineEmergency) register(mux *http.ServeMux, pool *sql.DB) {
 	// The Kapso module replaces LogPublisher. emergencies is nil without a
 	// database, so both handlers answer 503 then.
 	var emergencies *ingest.Service
+	var lister panel.Lister // nil without a database: the panel answers 503
 	if pool != nil {
-		emergencies = ingest.New(ingest.NewDBStore(pool), o.keys, ingest.LogPublisher{})
+		store := ingest.NewDBStore(pool)
+		emergencies = ingest.New(store, o.keys, ingest.LogPublisher{})
+		lister = store
+	}
+	if o.demoPanelToken != "" {
+		panel.New(lister, o.demoPanelToken).Register(mux)
 	}
 	ingest.NewHandler(emergencies).Register(mux)
 	inboundsms.New(emergencies, inboundsms.NewTwilio(o.twilioAuthToken, o.publicBaseURL)).Register(mux)

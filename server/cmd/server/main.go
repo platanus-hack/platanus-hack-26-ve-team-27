@@ -66,11 +66,15 @@ func loadOfflineEmergency(cfg config.Config, onRender bool) *offlineEmergency {
 	if !inboundsms.NewTwilio(cfg.Twilio.AuthToken, cfg.PublicBaseURL).Configured() {
 		log.Print("emergency: POST /sms/inbound/twilio answers 503 until TWILIO_AUTH_TOKEN and PUBLIC_BASE_URL are set")
 	}
+	if cfg.Emergency.DemoPanelToken == "" {
+		log.Print("emergency: GET /demo/emergencies is off until DEMO_PANEL_TOKEN is set")
+	}
 	return &offlineEmergency{
 		keys:            keys,
 		smsNumber:       cfg.Emergency.SMSNumber,
 		twilioAuthToken: cfg.Twilio.AuthToken,
 		publicBaseURL:   cfg.PublicBaseURL,
+		demoPanelToken:  cfg.Emergency.DemoPanelToken,
 	}
 }
 
