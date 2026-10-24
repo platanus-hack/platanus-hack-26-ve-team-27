@@ -96,3 +96,18 @@ func TestFormattingNeverPrintsValues(t *testing.T) {
 		}
 	}
 }
+
+func TestNotifierDefaultsToKapsoAndIsLowercased(t *testing.T) {
+	if got := LoadFrom(envFrom(nil)).Notifier; got != NotifierKapso {
+		t.Errorf("unset NOTIFIER = %q, want %q", got, NotifierKapso)
+	}
+	if got := LoadFrom(envFrom(map[string]string{"NOTIFIER": " SMS "})).Notifier; got != NotifierSMS {
+		t.Errorf("NOTIFIER=\" SMS \" = %q, want %q", got, NotifierSMS)
+	}
+	// NOTIFIER always has a value, so it is never reported missing.
+	for _, name := range LoadFrom(envFrom(nil)).Missing() {
+		if name == "NOTIFIER" {
+			t.Error("Missing() lists NOTIFIER")
+		}
+	}
+}
