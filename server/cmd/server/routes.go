@@ -14,16 +14,15 @@ import (
 // newMux registers every HTTP route. Add new routes here so there is one
 // place to see the whole API surface. pool is nil when DATABASE_URL is unset;
 // notifier alerts the family for the incidents that skip the call; calls
-// holds the ElevenLabs webhook and the #11 spike route. offline is the offline
-// emergency channel (#55, #57), an extra behind EMERGENCY_OFFLINE_ENABLED: nil
-// leaves GET /config and POST /emergencies* unmounted (404). With it, and
-// without a pool, the emergency routes answer 503.
+// holds the call engine, the ElevenLabs webhook and the #11 spike route.
+// offline is the offline emergency channel (#55, #57), an extra behind
+// EMERGENCY_OFFLINE_ENABLED: nil leaves GET /config and POST /emergencies*
+// unmounted (404). With it, and without a pool, the emergency routes answer 503.
 func newMux(pool *sql.DB, notifier intake.Notifier, calls *call.Routes, offline *offlineEmergency) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleRoot)
 	registerDeployRoutes(mux, pool)
-	// The call engine (#18) replaces LogHandoff.
-	intake.New(pool, intake.LogHandoff{}, notifier).Register(mux)
+	intake.New(pool, calls.Starter(), notifier).Register(mux)
 	calls.Register(mux)
 	if offline != nil {
 		offline.register(mux, pool)
