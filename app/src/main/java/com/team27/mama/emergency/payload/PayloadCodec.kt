@@ -36,6 +36,10 @@ object PayloadCodec {
         return roundHalfAwayFromZero(deg * 1e5).toInt()
     }
 
+    /** loc_age_s for a fix that is [fixAgeSeconds] old: null means no fix (65535), else clamped to 0..65534. */
+    fun locAgeOf(fixAgeSeconds: Long?): Int =
+        if (fixAgeSeconds == null) 65535 else fixAgeSeconds.coerceIn(0L, 65534L).toInt()
+
     fun newEmergencyId(random: SecureRandom = SecureRandom()): Long {
         val b = ByteArray(8)
         random.nextBytes(b)
