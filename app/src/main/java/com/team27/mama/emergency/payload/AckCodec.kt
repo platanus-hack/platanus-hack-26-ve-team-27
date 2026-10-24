@@ -23,9 +23,6 @@ object AckCodec {
     }
 
     fun verify(bytes: ByteArray, serverPublicKey: ByteArray): AckInfo {
-        if (serverPublicKey.size != 32) {
-            throw PayloadException(PayloadException.Reason.SIGNATURE, "public key must be 32 bytes")
-        }
         if (bytes.size != PayloadFormat.ACK_SIZE) {
             throw PayloadException(
                 PayloadException.Reason.FORMAT,
@@ -40,6 +37,9 @@ object AckCodec {
         val kind = b.get().toInt() and 0xFF
         if (kind != PayloadFormat.KIND_ACK) {
             throw PayloadException(PayloadException.Reason.FORMAT, "not an ack: kind $kind")
+        }
+        if (serverPublicKey.size != 32) {
+            throw PayloadException(PayloadException.Reason.SIGNATURE, "public key must be 32 bytes")
         }
         val emergencyId = b.long
         val seq = b.short.toInt() and 0xFFFF

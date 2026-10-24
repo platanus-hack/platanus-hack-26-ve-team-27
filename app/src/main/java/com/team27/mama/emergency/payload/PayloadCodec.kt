@@ -95,9 +95,6 @@ object PayloadCodec {
     }
 
     fun verify(signed: ByteArray, publicKey: ByteArray): EmergencyPayload {
-        if (publicKey.size != 32) {
-            throw PayloadException(PayloadException.Reason.SIGNATURE, "public key must be 32 bytes")
-        }
         if (signed.size != PayloadFormat.SIGNED_SIZE) {
             throw PayloadException(
                 PayloadException.Reason.FORMAT,
@@ -106,6 +103,9 @@ object PayloadCodec {
         }
         val body = signed.copyOfRange(0, PayloadFormat.BODY_SIZE)
         val p = decodeBody(body)
+        if (publicKey.size != 32) {
+            throw PayloadException(PayloadException.Reason.SIGNATURE, "public key must be 32 bytes")
+        }
         if (p.deviceId != deviceIdOf(publicKey)) {
             throw PayloadException(PayloadException.Reason.SIGNATURE, "device id does not match public key")
         }

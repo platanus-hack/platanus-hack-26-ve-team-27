@@ -101,10 +101,25 @@ class PayloadCodecTest {
 
     @Test
     fun verifyRejectsWrongKeyLength() {
-        val e = assertThrows(PayloadException::class.java) {
+        val s = Ed25519SeedSigner(ByteArray(32) { 1 })
+        val signed = PayloadCodec.sign(ok().copy(deviceId = PayloadCodec.deviceIdOf(s.publicKey)), s)
+        val e = assertThrows(PayloadException::class.java) { PayloadCodec.verify(signed, ByteArray(0)) }
+        assertEquals(PayloadException.Reason.SIGNATURE, e.reason)
+        val ack = AckCodec.sign(AckInfo(5L, 1), s)
+        val e2 = assertThrows(PayloadException::class.java) { AckCodec.verify(ack, ByteArray(0)) }
+        assertEquals(PayloadException.Reason.SIGNATURE, e2.reason)
+    }
+
+    @Test
+    fun structuralErrorsComeBeforeKeyLength() {
+        val e = assertThrows(PayloadException::class.java) { PayloadCodec.verify(ByteArray(10), ByteArray(0)) }
+        assertEquals(PayloadException.Reason.FORMAT, e.reason)
+        val e2 = assertThrows(PayloadException::class.java) { AckCodec.verify(ByteArray(10), ByteArray(0)) }
+        assertEquals(PayloadException.Reason.FORMAT, e2.reason)
+        val e3 = assertThrows(PayloadException::class.java) {
             PayloadCodec.verify(ByteArray(PayloadFormat.SIGNED_SIZE), ByteArray(0))
         }
-        assertEquals(PayloadException.Reason.SIGNATURE, e.reason)
+        assertEquals(PayloadException.Reason.FORMAT, e3.reason)
     }
 
     @Test
