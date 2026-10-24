@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 )
 
 // Wire sizes and limits. All multi-byte integers are big-endian.
@@ -38,6 +39,22 @@ const (
 	// packet, which is signed with the same Ed25519 identity key.
 	SignatureContext = "MAMA-offline-emergency-v1"
 )
+
+// LocAgeOf returns the loc_age_s for a fix that is age old: NoLocation when
+// there is no fix, otherwise the whole seconds clamped to 0..65534.
+func LocAgeOf(age time.Duration, ok bool) uint16 {
+	if !ok {
+		return NoLocation
+	}
+	s := age / time.Second
+	if s < 0 {
+		return 0
+	}
+	if s > 65534 {
+		return 65534
+	}
+	return uint16(s)
+}
 
 // Kind is the message type in byte 1.
 type Kind uint8

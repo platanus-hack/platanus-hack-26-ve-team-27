@@ -2,6 +2,7 @@ package com.team27.mama.contract
 
 import java.io.File
 import java.math.BigDecimal
+import java.util.Base64
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -9,7 +10,10 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import org.bouncycastle.crypto.params.Ed25519PublicKeyParameters
+import org.bouncycastle.crypto.signers.Ed25519Signer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
@@ -88,6 +92,25 @@ class ContractRoundTripTest {
         if (files.size != 7) {
             fail("testdata has ${files.size} samples, ContractRoundTripTest covers 7: add the new one here")
         }
+    }
+
+    /** Mirrors Go's TestDeviceRegistrationSampleSignatureVerifies and TestRegistrationSignedMessage. */
+    @Test
+    fun deviceRegistrationSampleSignatureVerifies() {
+        assertEquals(
+            "MAMA-device-registration-v1abc",
+            String(DeviceRegistration.signedMessage("abc"), Charsets.UTF_8),
+        )
+        val reg = ContractJson.decodeFromString(
+            DeviceRegistration.serializer(),
+            File(testdataDir, "device_registration.json").readText(),
+        )
+        val message = DeviceRegistration.signedMessage(reg.deviceId)
+        val signature = Base64.getDecoder().decode(reg.ed25519Signature)
+        val verifier = Ed25519Signer()
+        verifier.init(false, Ed25519PublicKeyParameters(Base64.getDecoder().decode(reg.ed25519PublicKey), 0))
+        verifier.update(message, 0, message.size)
+        assertTrue("sample signature does not verify", verifier.verifySignature(signature))
     }
 
     @Test

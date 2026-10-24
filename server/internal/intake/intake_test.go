@@ -2,9 +2,9 @@ package intake
 
 import (
 	"bytes"
-	"encoding/base64"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -248,9 +248,18 @@ func TestAlertUnknownDeviceIs422(t *testing.T) {
 
 func TestAlertIncidentOfAnotherDeviceIs409(t *testing.T) {
 	e := newEnv(t)
-	other := bytes.Replace(sample(t, "device_registration.json"), []byte(deviceID), []byte("other-device"), 1)
+	// Without the sample's key: deviceID already holds it, and its
+	// signature covers deviceID only.
+	var m map[string]any
+	if err := json.Unmarshal(sample(t, "device_registration.json"), &m); err != nil {
+		t.Fatal(err)
+	}
+	m["device_id"] = "other-device"
+	delete(m, "ed25519_public_key")
+	delete(m, "ed25519_signature")
+	other, _ := json.Marshal(m)
 	if rec := e.post("/devices", other); rec.Code != http.StatusNoContent {
-		t.Fatalf("register other = %d", rec.Code)
+		t.Fatalf("register other = %d %s", rec.Code, rec.Body)
 	}
 	if rec := e.post("/incidents", alert(incidentID, ptr(0.4))); rec.Code != http.StatusCreated {
 		t.Fatalf("first = %d", rec.Code)

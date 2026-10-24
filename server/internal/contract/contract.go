@@ -88,6 +88,22 @@ type DeviceRegistration struct {
 	// #56), std Base64 of 32 bytes in JSON; the server derives key_id from it
 	// to verify offline payloads (#57). Optional: omitted keeps the stored key.
 	Ed25519PublicKey []byte `json:"ed25519_public_key,omitempty"`
+	// Ed25519Signature proves the phone holds the key's private half: the
+	// 64-byte Ed25519 signature of RegistrationSignedMessage(DeviceID), std
+	// Base64 in JSON. Required with Ed25519PublicKey and only with it, since
+	// bitchat broadcasts public keys on the mesh and anyone could otherwise
+	// register a victim's key first.
+	Ed25519Signature []byte `json:"ed25519_signature,omitempty"`
+}
+
+// RegistrationSignatureContext prefixes the bytes a DeviceRegistration's
+// Ed25519Signature covers, so the signature means nothing anywhere else.
+const RegistrationSignatureContext = "MAMA-device-registration-v1"
+
+// RegistrationSignedMessage is what DeviceRegistration.Ed25519Signature
+// signs: the ASCII context, then the UTF-8 bytes of deviceID, no separator.
+func RegistrationSignedMessage(deviceID string) []byte {
+	return append([]byte(RegistrationSignatureContext), deviceID...)
 }
 
 // RemoteConfig is server -> phone, the reply to GET /config; the phone caches

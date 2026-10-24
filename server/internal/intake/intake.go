@@ -5,8 +5,9 @@
 //
 // Status codes:
 //
-//	POST /devices                          204 stored; 400 bad body or malformed ed25519_public_key;
-//	                                       409 ed25519_public_key registered to another device
+//	POST /devices                          204 stored; 400 bad body, malformed ed25519_public_key,
+//	                                       or missing/invalid ed25519_signature; 409
+//	                                       ed25519_public_key registered to another device
 //	POST /incidents                        201 new incident, 200 retried incident_id (stored decision);
 //	                                       400 bad body; 409 incident_id taken by another device;
 //	                                       422 device not registered
@@ -219,6 +220,26 @@ func validateDevice(reg contract.DeviceRegistration) error {
 		return errors.New("phone_number is required")
 	case len(reg.Ed25519PublicKey) != 0 && len(reg.Ed25519PublicKey) != ed25519.PublicKeySize:
 		return errors.New("ed25519_public_key must be 32 bytes of standard Base64")
+	}
+	return validateKeyProof(reg)
+}
+
+// validateKeyProof checks that a registration carrying a key also proves it
+// holds the private half (docs/contract.md): bitchat broadcasts every
+// device's public key on the mesh, so without the signature anyone could
+// register a victim's key to their own device_id first.
+func validateKeyProof(reg contract.DeviceRegistration) error {
+	switch {
+	case len(reg.Ed25519PublicKey) == 0 && len(reg.Ed25519Signature) != 0:
+		return errors.New("ed25519_signature without ed25519_public_key")
+	case len(reg.Ed25519PublicKey) == 0:
+		return nil
+	case len(reg.Ed25519Signature) == 0:
+		return errors.New("ed25519_signature is required with ed25519_public_key")
+	case len(reg.Ed25519Signature) != ed25519.SignatureSize:
+		return errors.New("ed25519_signature must be 64 bytes of standard Base64")
+	case !ed25519.Verify(ed25519.PublicKey(reg.Ed25519PublicKey), contract.RegistrationSignedMessage(reg.DeviceID), reg.Ed25519Signature):
+		return errors.New("ed25519_signature does not verify for this device_id")
 	}
 	return nil
 }

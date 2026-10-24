@@ -70,21 +70,42 @@ private val familyNumbers = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SetupScreen(onContinue: () -> Unit) {
+fun SetupScreen(onContinue: () -> Unit, busy: Boolean = false, errorMessage: String? = null) {
     Scaffold(
         topBar = { CenterAlignedTopAppBar(title = { MamaWordmark(compact = true) }) },
         bottomBar = {
             Surface(color = MaterialTheme.colorScheme.surface) {
-                Button(
-                    onClick = onContinue,
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         // Keyboard + navigation bar: #15 adds text fields above this bar.
                         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
                         .padding(horizontal = MamaSpacing.screen, vertical = MamaSpacing.m),
-                    contentPadding = PaddingValues(vertical = MamaSpacing.m),
+                    verticalArrangement = Arrangement.spacedBy(MamaSpacing.s),
                 ) {
-                    Text("Empezar")
+                    if (errorMessage != null) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            ),
+                        ) {
+                            Text(
+                                errorMessage,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(MamaSpacing.m),
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = onContinue,
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(vertical = MamaSpacing.m),
+                    ) {
+                        Text("Empezar")
+                    }
                 }
             }
         },
@@ -255,6 +276,17 @@ private fun Initial(letter: String) {
 @Composable
 private fun SetupScreenPreview() {
     MamaTheme { SetupScreen(onContinue = {}) }
+}
+
+@Preview(showBackground = true, heightDp = 1600)
+@Composable
+private fun SetupScreenOfflinePreview() {
+    MamaTheme {
+        SetupScreen(
+            onContinue = {},
+            errorMessage = "Necesitas internet para terminar de configurar MAMÁ. Conéctate a wifi o datos y vuelve a intentarlo.",
+        )
+    }
 }
 
 @Preview(showBackground = true, heightDp = 1600, uiMode = Configuration.UI_MODE_NIGHT_YES)

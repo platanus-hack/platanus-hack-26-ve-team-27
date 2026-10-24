@@ -103,6 +103,22 @@ func TestFormattingNeverPrintsValues(t *testing.T) {
 	}
 }
 
+func TestEmergencyFormattingNeverPrintsValues(t *testing.T) {
+	const secret = "planted-emergency-secret-456" // secret-scan:allow (test fixture)
+	e := Emergency{SMSNumber: secret, Ed25519Seed: secret}
+	for _, verb := range []string{"%v", "%+v", "%#v", "%s"} {
+		out := fmt.Sprintf(verb, e)
+		if strings.Contains(out, secret) {
+			t.Errorf("Sprintf(%q, emergency) leaks a value: %s", verb, out)
+		}
+		for _, want := range []string{"EMERGENCY_SMS_NUMBER=set", "EMERGENCY_ED25519_SEED=set", "EMERGENCY_X25519_PRIVATE_KEY=unset"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("Sprintf(%q, emergency) = %s, want it to show %s", verb, out, want)
+			}
+		}
+	}
+}
+
 func TestNotifierDefaultsToKapsoAndIsLowercased(t *testing.T) {
 	if got := LoadFrom(envFrom(nil)).Notifier; got != NotifierKapso {
 		t.Errorf("unset NOTIFIER = %q, want %q", got, NotifierKapso)

@@ -52,7 +52,7 @@ Kotlin mirror test both sides of every threshold.
 ## Messages
 
 Endpoints are listed for the slices that implement them (#17 intake,
-#18 call engine, #20 notifier, #55 `GET /config`); this ticket does not add routes.
+#18 call engine, #20 notifier, #55 `GET /config`).
 
 ### Point
 
@@ -66,8 +66,8 @@ optional.
 ### DeviceRegistration (phone → server, `POST /devices`)
 
 Sent at the end of first-run setup and whenever the setup changes; the server
-upserts the `devices` row. `app_version` and `ed25519_public_key` are
-optional. Sample: `device_registration.json`.
+upserts the `devices` row. `app_version`, `ed25519_public_key` and
+`ed25519_signature` are optional. Sample: `device_registration.json`.
 
 ```json
 {
@@ -76,7 +76,8 @@ optional. Sample: `device_registration.json`.
   "family_numbers": ["+584241112233", "+584125556677"],
   "duress_phrase": "dile a la tía Carmen que llego tarde",
   "app_version": "0.1.0",
-  "ed25519_public_key": "Qjj0xMgcOctYzPP1+kmbgiXDnjbvMvg+Cm1vpph2NXo="
+  "ed25519_public_key": "Qjj0xMgcOctYzPP1+kmbgiXDnjbvMvg+Cm1vpph2NXo=",
+  "ed25519_signature": "JMio38RGA+n2az7/Xiiz4y7724rZcyDt7N90vGav0Vq8SwTXFvJSmH21VJeL323EPmedwMiyrm79YVgIjvXlAQ=="
 }
 ```
 
@@ -86,6 +87,27 @@ optional. Sample: `device_registration.json`.
 registration without it keeps the stored key; a different key for the same
 `device_id` replaces it; a key already registered to another `device_id` is
 answered `409`; a malformed key is `400`.
+
+`ed25519_signature` proves the phone holds the key's private half: standard
+Base64 with padding of the 64-byte Ed25519 signature, by that key, over the
+ASCII bytes `MAMA-device-registration-v1` followed by the UTF-8 bytes of
+`device_id` (no separator; `RegistrationSignedMessage` in Go,
+`DeviceRegistration.signedMessage` in Kotlin). Rules, all checked before any
+database access:
+
+- `ed25519_public_key` present: `ed25519_signature` is required and must
+  verify, else `400`.
+- `ed25519_signature` without `ed25519_public_key`: `400`.
+- neither: the registration behaves as without a key (the stored key stays).
+
+Why: bitchat broadcasts every device's Ed25519 public key on the mesh, so
+without the proof anyone in range could register a victim's key to their own
+`device_id` first, and the victim's registration would then get `409` and the
+server would attribute the victim's offline payloads to the squatter. The
+context string keeps this signature from being valid as any other MAMÁ
+signature. The sample's signature is real: the payload vector key
+(`device_ed25519_seed` in `server/internal/emergency/payload/testdata/vectors.json`)
+over the sample `device_id`.
 
 ### RemoteConfig (server → phone, `GET /config`)
 
@@ -233,7 +255,7 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 
 | Table | Key | Holds |
 | --- | --- | --- |
-| `devices` | `id` = `device_id` | phone number, family numbers, duress phrase |
+| `devices` | `id` = `device_id` | phone number, family numbers, duress phrase; `ed25519_public_key` (unique, 32 bytes) and `key_id` (unique, 8 bytes: the payload device_id derived from it), both NULL or both set |
 | `incidents` | `id` = `incident_id` | device, trigger, branch, speed used, `notified_at` |
 | `gps_points` | identity; unique `(incident_id, recorded_at)` | every fix of an incident |
 | `calls` | identity; unique `conversation_id` | call status, transcript (JSONB), duration, **verdict** |
