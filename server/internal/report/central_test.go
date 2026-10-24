@@ -175,8 +175,24 @@ func TestCentralNeedsTheKey(t *testing.T) {
 			ck = c
 		}
 	}
-	if ck == nil || !ck.HttpOnly || !ck.Secure || ck.SameSite != http.SameSiteStrictMode || ck.Path != "/central" || ck.MaxAge <= 0 {
-		t.Fatalf("cookie = %+v, want HttpOnly, Secure, SameSite=Strict on /central", ck)
+	// The test server is on 127.0.0.1, so the cookie comes without Secure
+	// (plain-http localhost); a public host gets Secure, checked below.
+	if ck == nil || !ck.HttpOnly || ck.Secure || ck.SameSite != http.SameSiteStrictMode || ck.Path != "/central" || ck.MaxAge <= 0 {
+		t.Fatalf("cookie = %+v, want HttpOnly, SameSite=Strict on /central, not Secure on localhost", ck)
+	}
+	pub, err := http.NewRequest(http.MethodGet, srv.URL+"/central/?key="+url.QueryEscape(testCentralKey), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub.Host = "mama-server.onrender.com"
+	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	presp, err := noRedirect.Do(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	presp.Body.Close()
+	if cs := presp.Cookies(); len(cs) != 1 || !cs[0].Secure {
+		t.Fatalf("public host cookies = %+v, want one Secure cookie", cs)
 	}
 	if strings.Contains(ck.Value, testCentralKey) {
 		t.Error("the cookie carries the key itself")
@@ -808,4 +824,17 @@ func TestCentralStreamsEndOnTheirOwnRules(t *testing.T) {
 		t.Fatalf("detail long after the seal: %+v, want end", m)
 	}
 	quiet("list after the detail ended", list, 120*time.Millisecond)
+}
+
+// The central cookie drops Secure only on a loopback host, so a local run
+// over plain http works in Safari; every other host keeps it.
+func TestIsLoopback(t *testing.T) {
+	for host, want := range map[string]bool{
+		"localhost": true, "localhost:8080": true, "127.0.0.1:8080": true, "[::1]:8080": true, "::1": true,
+		"mama-server.onrender.com": false, "example.com:443": false, "10.0.0.5:8080": false, "": false,
+	} {
+		if got := isLoopback(host); got != want {
+			t.Errorf("isLoopback(%q) = %v, want %v", host, got, want)
+		}
+	}
 }
