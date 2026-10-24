@@ -170,8 +170,8 @@ class TriggerSpikeService : Service() {
 
         // The warm-up's GPS fix often lands after the alert: follow with the
         // first precise one (the server keeps every point).
-        val freshFix = fresh.await()?.takeIf { it !== first && SpikeEvents.isPrecise(it.accuracy) }
-            ?: if (first != null && !SpikeEvents.isPrecise(first.accuracy)) preciseFixAfter(first) else null
+        val freshFix = fresh.await()?.takeIf { it !== first && it.isPrecise() }
+            ?: if (first != null && !first.isPrecise()) preciseFixAfter(first) else null
         if (freshFix != null && first != null) {
             val (status, ms) = post(SpikeEvents.pointsUrl(base, incidentId), SpikeEvents.pointsBody(incidentId, deviceId, freshFix.toPoint()), SystemClock.elapsedRealtime() - detectedAt)
             SpikeLog.log(this@TriggerSpikeService, "points $incidentId status=$status postMs=$ms fix=${freshFix.provider} acc=${freshFix.accuracy}")
@@ -214,6 +214,9 @@ class TriggerSpikeService : Service() {
 
     private fun ageMs(location: Location) = (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000
 
+    /** A fix with no accuracy reports 0, which must not read as precise. */
+    private fun Location.isPrecise() = hasAccuracy() && SpikeEvents.isPrecise(accuracy)
+
     private fun Location.toPoint() = SpikeEvents.point(
         lat = latitude,
         lng = longitude,
@@ -234,7 +237,7 @@ class TriggerSpikeService : Service() {
     private suspend fun preciseFixAfter(after: Location): Location? = withTimeoutOrNull(PRECISE_WAIT_MS) {
         var fix: Location? = null
         while (fix == null) {
-            fix = lastKnownFix()?.takeIf { it.elapsedRealtimeNanos > after.elapsedRealtimeNanos && SpikeEvents.isPrecise(it.accuracy) }
+            fix = lastKnownFix()?.takeIf { it.elapsedRealtimeNanos > after.elapsedRealtimeNanos && it.isPrecise() }
             if (fix == null) delay(500)
         }
         fix

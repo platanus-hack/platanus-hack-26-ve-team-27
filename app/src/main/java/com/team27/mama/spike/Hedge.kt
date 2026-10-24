@@ -1,5 +1,6 @@
 package com.team27.mama.spike
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
@@ -26,7 +27,14 @@ suspend fun hedged(
 ): HedgeResult {
     val firstOk = CompletableDeferred<HedgeResult>()
     fun attempt(name: String, call: suspend () -> Pair<Int, Long>) = scope.async {
-        val (status, ms) = call()
+        // Any failure is a failed attempt (-1), so it can never cancel the other one.
+        val (status, ms) = try {
+            call()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            -1 to 0L
+        }
         HedgeResult(name, status, ms).also { if (it.ok) firstOk.complete(it) }
     }
     val first = attempt("primary", primary)

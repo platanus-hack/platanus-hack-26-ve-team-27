@@ -105,9 +105,9 @@ func saveVideo(f *os.File, dir string) http.HandlerFunc {
 			http.Error(w, "bad incident_id", http.StatusBadRequest)
 			return
 		}
-		body, err := io.ReadAll(io.LimitReader(r.Body, 50<<20))
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 50<<20))
 		if err != nil {
-			http.Error(w, "read body", http.StatusBadRequest)
+			http.Error(w, "body too large or unreadable", http.StatusRequestEntityTooLarge)
 			return
 		}
 		path := filepath.Join(dir, "spike-video-"+id+".mp4")

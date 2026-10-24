@@ -39,6 +39,12 @@ class HedgeTest {
     }
 
     @Test
+    fun aThrowingPrimaryStillLetsTheBackupWin() = runBlocking {
+        val result = hedged(this, 5_000, { throw IllegalStateException("boom") }, after(50, 201))
+        assertEquals("backup", result.winner)
+    }
+
+    @Test
     fun withoutABackupItWaitsForThePrimary() = runBlocking {
         assertEquals(HedgeResult("primary", 201, 300), hedged(this, 100, after(300, 201), null))
     }

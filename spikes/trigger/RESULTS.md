@@ -57,10 +57,12 @@ Evidence: the phone's `files/spike.log`, the receiver log
 4. **Latency is the network, not the trigger.** Pattern to request is under
    75 ms on every run (855 ms when it waits for a fix, finding 5). What helps:
    `Warmup` opens a keep-alive connection (`GET /`) and starts the GPS on the
-   first press, so the ~1–2 s of the other two presses pays the cold radio,
+   first press of a locked phone, so the ~1–2 s of the other two presses pays the cold radio,
    DNS and TLS; `SpikeHttp` reads and closes responses instead of
    `disconnect()` so the alert reuses that connection. On mobile data the
-   warm-up finished (1.04 s) before the third press and the alert took 334 ms.
+   warm-up finished (1.04 s) before the third press and the alert's round
+   trip, as the phone measured it, was 334 ms (the server got it 179 ms after
+   the pattern).
    What does not: a weak, crowded Wi-Fi, where one request took 20 s. So the
    spike now also hedges: `Cellular` brings mobile data up next to the Wi-Fi
    on the first press, and `hedged()` sends the same AlertEvent (same

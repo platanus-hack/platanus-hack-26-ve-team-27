@@ -19,9 +19,11 @@ object PressRouter {
             SpikeLog.log(context, "key $key from=$source duplicate")
             return
         }
-        Warmup.onPress(context)
         val interactive = context.getSystemService(PowerManager::class.java).isInteractive
         val locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
+        // Only a locked phone warms up: ordinary volume use on an unlocked
+        // phone must not wake mobile data, the GPS or the server.
+        if (locked) Warmup.onPress(context)
         val matched = pattern.onPress(key, now)
         SpikeLog.log(context, "key $key from=$source screenOn=$interactive locked=$locked matched=$matched")
         if (matched) TriggerSpikeService.start(context, Trigger.VOLUME_PATTERN, now)
