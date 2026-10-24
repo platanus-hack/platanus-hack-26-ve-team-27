@@ -9,6 +9,9 @@ package com.team27.mama.setup
 object PhoneNumbers {
     private const val VENEZUELA = "58"
 
+    /** What every Venezuelan number starts with in E.164. */
+    const val VENEZUELA_PREFIX = "+$VENEZUELA"
+
     /** A Venezuelan national number (area or mobile code + subscriber) has 10 digits. */
     private const val VENEZUELA_NATIONAL_DIGITS = 10
 

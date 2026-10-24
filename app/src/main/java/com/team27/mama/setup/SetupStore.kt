@@ -63,6 +63,16 @@ class SetupStore(private val kv: KeyValueStore, private val newId: () -> String 
         get() = kv.getBoolean(KEY_COMPLETED)
         set(value) = kv.putBoolean(KEY_COMPLETED, value)
 
+    /** [PermissionFlow.settled], as "STEP:STATUS" pairs; unknown names (an older build) are dropped. */
+    var settledSteps: Map<SetupStep, StepStatus>
+        get() = kv.getString(KEY_SETTLED_STEPS)?.split(',').orEmpty().mapNotNull { pair ->
+            val (step, status) = pair.split(':').takeIf { it.size == 2 } ?: return@mapNotNull null
+            val knownStep = SetupStep.entries.firstOrNull { it.name == step } ?: return@mapNotNull null
+            val knownStatus = StepStatus.entries.firstOrNull { it.name == status } ?: return@mapNotNull null
+            knownStep to knownStatus
+        }.toMap()
+        set(value) = kv.putString(KEY_SETTLED_STEPS, value.entries.joinToString(",") { "${it.key.name}:${it.value.name}" })
+
     /** The DeviceRegistration for what is saved, or null while the numbers or phrase are missing. */
     fun registration(appVersion: String?): DeviceRegistration? {
         val own = ownNumber ?: return null
@@ -84,5 +94,6 @@ class SetupStore(private val kv: KeyValueStore, private val newId: () -> String 
         const val KEY_DURESS_PHRASE = "duress_phrase"
         const val KEY_MAMA_CONTACT = "mama_raw_contact_id"
         const val KEY_COMPLETED = "setup_completed"
+        const val KEY_SETTLED_STEPS = "settled_steps"
     }
 }

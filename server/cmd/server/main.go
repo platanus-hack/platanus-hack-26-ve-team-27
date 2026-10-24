@@ -10,7 +10,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/call"
@@ -59,11 +61,52 @@ func main() {
 		Addr:              ":" + cfg.Port,
 		Handler:           newMux(pool, notifier, calls, offline, reports),
 		ReadHeaderTimeout: 10 * time.Second,
+		// A phone on a weak signal still uploads any request body in this time;
+		// a client trickling bytes cannot hold a connection forever.
+		ReadTimeout: 60 * time.Second,
+		IdleTimeout: 120 * time.Second,
 	}
 
-	log.Printf("mama server listening on :%s", cfg.Port)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal(err)
+	// Render sends SIGTERM on every deploy and kills the process 30 s later.
+	stop, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer cancel()
+	go func() {
+		log.Printf("mama server listening on :%s", cfg.Port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+	<-stop.Done()
+	shutdown(srv, shutdownTimeout, requestDrain)
+}
+
+const (
+	// shutdownTimeout leaves a margin inside Render's 30 s between SIGTERM and SIGKILL.
+	shutdownTimeout = 25 * time.Second
+	// requestDrain is the part of it in-flight requests get. Every request
+	// answers well within it; what is still open after it is a stream
+	// (Server-Sent Events), which never goes idle on its own and would
+	// otherwise spend the handoffs' time.
+	requestDrain = 10 * time.Second
+)
+
+// shutdown stops taking requests, lets the in-flight ones answer within drain
+// and closes what is still open, then waits for the handoffs they started
+// until total: a call being placed or an alert being sent finishes instead of
+// being cut by a deploy.
+func shutdown(srv *http.Server, total, drain time.Duration) {
+	log.Print("shutting down: draining requests and handoffs")
+	ctx, cancel := context.WithTimeout(context.Background(), total)
+	defer cancel()
+	drainCtx, cancelDrain := context.WithTimeout(ctx, drain)
+	defer cancelDrain()
+	if err := srv.Shutdown(drainCtx); err != nil {
+		// A closed stream makes the browser reconnect, to the new instance.
+		log.Printf("shutdown: closing connections still open: %v", err)
+		_ = srv.Close()
+	}
+	if err := intake.WaitHandoffs(ctx); err != nil {
+		log.Printf("shutdown: handoffs still running: %v", err)
 	}
 }
 
