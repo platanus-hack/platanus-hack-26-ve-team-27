@@ -225,7 +225,7 @@ func TestWebhookBadJSONIs400(t *testing.T) {
 
 func spikeMux(t *testing.T, elevenLabsURL, token string) *http.ServeMux {
 	t.Helper()
-	rt := NewRoutes(config.ElevenLabs{APIKey: "key", AgentID: "a", PhoneNumberID: "p", CallSpikeToken: token}, nil)
+	rt := NewRoutes(config.Config{ElevenLabs: config.ElevenLabs{APIKey: "key", AgentID: "a", PhoneNumberID: "p", CallSpikeToken: token}}, nil)
 	rt.client.BaseURL = elevenLabsURL
 	mux := http.NewServeMux()
 	rt.Register(mux)
