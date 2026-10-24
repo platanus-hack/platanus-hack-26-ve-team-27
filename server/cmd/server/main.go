@@ -241,6 +241,21 @@ func newNotifier(cfg config.Config, pool *sql.DB, links notify.ReportLinks, deli
 	if deliveries != nil {
 		n.WithDeliveries(deliveries)
 	}
+	if cfg.NotifySelf {
+		log.Print("notifier: NOTIFY_SELF is on; the reporting phone also gets the alert (demo only)")
+		n.WithSelf()
+	}
+	if cfg.NotifySMS && cfg.Notifier == config.NotifierSMS {
+		log.Print("notifier: NOTIFY_SMS is on but NOTIFIER=sms already sends SMS; no second SMS")
+	}
+	// Compare the *SMS, not a Sender: a nil *SMS in an interface is not nil.
+	if sms := notify.NewExtraSMS(cfg); sms != nil {
+		log.Print("notifier: NOTIFY_SMS is on; every recipient also gets an SMS")
+		if !smsConfigured(cfg) {
+			log.Print("notifier: WARNING: Twilio credentials are not set; every extra SMS will fail")
+		}
+		n.WithSMS(sms)
+	}
 	return n
 }
 
@@ -370,10 +385,13 @@ func reportHook(c *report.Closer) func(context.Context, call.Finished) {
 	}
 }
 
-// channelName is how the report names the family message channel.
+// channelName is how the report names the family message channel(s).
 func channelName(cfg config.Config) string {
 	if cfg.Notifier == config.NotifierSMS {
 		return "SMS"
+	}
+	if cfg.NotifySMS {
+		return "WhatsApp y SMS"
 	}
 	return "WhatsApp"
 }
@@ -382,7 +400,12 @@ func channelName(cfg config.Config) string {
 // so a misconfigured deploy says so at boot instead of at the first alert.
 func channelConfigured(cfg config.Config) bool {
 	if cfg.Notifier == config.NotifierSMS {
-		return cfg.Twilio.AccountSID != "" && cfg.Twilio.AuthToken != "" && cfg.Twilio.PhoneNumber != ""
+		return smsConfigured(cfg)
 	}
 	return cfg.Kapso.APIKey != "" && cfg.Kapso.PhoneNumberID != ""
+}
+
+// smsConfigured reports whether Twilio can send SMS.
+func smsConfigured(cfg config.Config) bool {
+	return cfg.Twilio.AccountSID != "" && cfg.Twilio.AuthToken != "" && cfg.Twilio.PhoneNumber != ""
 }
