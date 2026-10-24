@@ -135,6 +135,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.serialization.json)
+    implementation(project(":mesh"))
     implementation(libs.bouncycastle.bcprov)
     debugImplementation(libs.androidx.compose.ui.tooling)
 

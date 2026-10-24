@@ -5,5 +5,13 @@
   Release builds keep Android's default and need an https:// mama.serverUrl.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:usesCleartextTraffic="true" />
+
+    <application android:usesCleartextTraffic="true">
+        <!-- Debug builds only: drives the BLE mesh from adb for the two-phone test.
+             DUMP is held by the adb shell but cannot be granted to other apps. -->
+        <receiver
+            android:name="com.team27.mama.debug.MeshDebugReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+    </application>
 </manifest>
