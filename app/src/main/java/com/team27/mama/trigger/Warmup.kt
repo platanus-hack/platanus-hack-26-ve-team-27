@@ -1,4 +1,4 @@
-package com.team27.mama.spike
+package com.team27.mama.trigger
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -32,8 +32,8 @@ object Warmup {
         Cellular.request(app)
         warmGps(app)
         executor.execute {
-            val (status, ms) = SpikeHttp.warm(BuildConfig.SERVER_URL) { SpikeLog.log(app, "warm $it") }
-            SpikeLog.log(app, "warm net status=$status ms=$ms")
+            val result = TriggerHttp.warm(BuildConfig.SERVER_URL) { TriggerLog.log(app, "warm $it") }
+            TriggerLog.log(app, "warm net status=${result.status} ms=${result.ms}")
         }
     }
 
@@ -46,11 +46,11 @@ object Warmup {
         val cancel = CancellationSignal()
         try {
             lm.getCurrentLocation(LocationManager.GPS_PROVIDER, cancel, executor) { location ->
-                SpikeLog.log(context, "warm gps ${location?.let { "acc=${it.accuracy}" } ?: "null"}")
+                TriggerLog.log(context, "warm gps ${location?.let { "acc=${it.accuracy}" } ?: "null"}")
             }
             Handler(Looper.getMainLooper()).postDelayed({ cancel.cancel() }, GPS_WARM_MS)
         } catch (e: Exception) {
-            SpikeLog.log(context, "warm gps failed ${e.javaClass.simpleName}: ${e.message}")
+            TriggerLog.log(context, "warm gps failed ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 }

@@ -1,4 +1,4 @@
-package com.team27.mama.spike
+package com.team27.mama.trigger
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
@@ -14,7 +14,7 @@ import android.view.accessibility.AccessibilityEvent
 class VolumePatternService : AccessibilityService() {
 
     override fun onServiceConnected() {
-        SpikeLog.log(this, "a11y connected")
+        TriggerLog.log(this, "a11y connected")
         VolumeSessionService.start(this)
     }
 
@@ -33,7 +33,7 @@ class VolumePatternService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onUnbind(intent: Intent?): Boolean {
-        SpikeLog.log(this, "a11y unbound")
+        TriggerLog.log(this, "a11y unbound")
         VolumeSessionService.stop(this)
         return super.onUnbind(intent)
     }

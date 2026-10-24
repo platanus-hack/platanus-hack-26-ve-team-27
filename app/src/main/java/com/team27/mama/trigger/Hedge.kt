@@ -1,4 +1,4 @@
-package com.team27.mama.spike
+package com.team27.mama.trigger
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -7,9 +7,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** Which attempt answered, its HTTP status (-1 on a network error) and its round trip in ms. */
-data class HedgeResult(val winner: String, val status: Int, val ms: Long) {
-    val ok: Boolean get() = status in 200..299
+/** Which attempt answered and what: its HTTP status (-1 on a network error), body and round trip in ms. */
+data class HedgeResult(val winner: String, val result: HttpResult) {
+    val ok: Boolean get() = result.ok
 }
 
 /**
@@ -22,20 +22,20 @@ data class HedgeResult(val winner: String, val status: Int, val ms: Long) {
 suspend fun hedged(
     scope: CoroutineScope,
     hedgeAfterMs: Long,
-    primary: suspend () -> Pair<Int, Long>,
-    backup: (suspend () -> Pair<Int, Long>)?,
+    primary: suspend () -> HttpResult,
+    backup: (suspend () -> HttpResult)?,
 ): HedgeResult {
     val firstOk = CompletableDeferred<HedgeResult>()
-    fun attempt(name: String, call: suspend () -> Pair<Int, Long>) = scope.async {
+    fun attempt(name: String, call: suspend () -> HttpResult) = scope.async {
         // Any failure is a failed attempt (-1), so it can never cancel the other one.
-        val (status, ms) = try {
+        val result = try {
             call()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            -1 to 0L
+            HttpResult.NETWORK_ERROR
         }
-        HedgeResult(name, status, ms).also { if (it.ok) firstOk.complete(it) }
+        HedgeResult(name, result).also { if (it.ok) firstOk.complete(it) }
     }
     val first = attempt("primary", primary)
     val early = withTimeoutOrNull(hedgeAfterMs) { first.await() }

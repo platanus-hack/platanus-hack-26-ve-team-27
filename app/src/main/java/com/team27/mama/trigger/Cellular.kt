@@ -1,4 +1,4 @@
-package com.team27.mama.spike
+package com.team27.mama.trigger
 
 import android.content.Context
 import android.net.ConnectivityManager
@@ -33,12 +33,12 @@ object Cellular {
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(n: Network) {
                 network = n
-                SpikeLog.log(app, "cellular available")
+                TriggerLog.log(app, "cellular available")
             }
 
             override fun onLost(n: Network) {
                 if (network == n) network = null
-                SpikeLog.log(app, "cellular lost")
+                TriggerLog.log(app, "cellular lost")
             }
         }
         val request = NetworkRequest.Builder()
@@ -49,7 +49,7 @@ object Cellular {
             cm.requestNetwork(request, cb)
             callback = cb
         } catch (e: Exception) {
-            SpikeLog.log(app, "cellular request failed ${e.javaClass.simpleName}: ${e.message}")
+            TriggerLog.log(app, "cellular request failed ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 

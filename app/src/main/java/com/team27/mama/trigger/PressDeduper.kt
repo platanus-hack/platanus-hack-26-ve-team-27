@@ -1,4 +1,4 @@
-package com.team27.mama.spike
+package com.team27.mama.trigger
 
 /** Where a volume press came from. */
 enum class PressSource { ACCESSIBILITY, MEDIA_SESSION }

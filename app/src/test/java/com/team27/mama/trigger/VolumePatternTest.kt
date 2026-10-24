@@ -1,7 +1,7 @@
-package com.team27.mama.spike
+package com.team27.mama.trigger
 
-import com.team27.mama.spike.VolumeKey.DOWN
-import com.team27.mama.spike.VolumeKey.UP
+import com.team27.mama.trigger.VolumeKey.DOWN
+import com.team27.mama.trigger.VolumeKey.UP
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
