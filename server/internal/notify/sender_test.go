@@ -31,7 +31,7 @@ func TestKapsoSendRequest(t *testing.T) {
 		t.Errorf("path=%q key=%q content-type=%q", gotPath, gotKey, gotType)
 	}
 	// to is digits only: Kapso rejects the E.164 "+".
-	want := `{"messaging_product":"whatsapp","to":"584226340289","type":"text","text":{"body":"hola"}}`
+	want := `{"messaging_product":"whatsapp","to":"584226340289","type":"text","text":{"body":"hola","preview_url":false}}`
 	if string(gotBody) != want {
 		t.Errorf("body = %s, want %s", gotBody, want)
 	}

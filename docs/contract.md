@@ -236,9 +236,12 @@ NULL; only if there is none does it insert. Sample: `call_webhook.json`.
 
 ### NotifierMessage (server → notifier)
 
-What the notifier sends to the family: the location and the verdict, and
-**no link**. `verdict` is `duress`, `no_duress` or `unclear`; `verdict` and
-`reason` are left out when no call happened (`immediate_alert`,
+What the notifier sends to the family: the location and the verdict. Its only
+link is the incident report's (#76): with `INCIDENT_REPORT_ENABLED` on and
+`PUBLIC_URL` set, the text ends with a `Ficha: <url>` line, sent with
+`preview_url: false` so WhatsApp fetches no preview. The link is added to the
+text, not to this JSON shape. `verdict` is `duress`, `no_duress` or
+`unclear`; `verdict` and `reason` are left out when no call happened (`immediate_alert`,
 `silent_tracker`). `incident_id` is the dedupe key: one message per incident.
 Before sending, the sender claims the incident with
 `UPDATE incidents SET notified_at = now() WHERE id = $1 AND notified_at IS NULL`
@@ -338,8 +341,9 @@ default; then every route below answers `404`). Code:
   (`incident_reports`); it lives `INCIDENT_REPORT_TTL_DAYS` days (default 30)
   and the next request for a link after it expired gets a new token. An
   unknown, malformed or expired token answers `404`, all alike. The absolute
-  URL uses `PUBLIC_URL` (else `RENDER_EXTERNAL_URL`). `go run ./cmd/ficha
-  <incident_id>` prints the link of an incident, creating it if needed.
+  URL uses `PUBLIC_URL` (else `RENDER_EXTERNAL_URL`); the family message's
+  `Ficha: <url>` line creates the link (see NotifierMessage).
+  `go run ./cmd/ficha <incident_id>` prints the link of an incident, creating it if needed.
 - **Privacy.** Every response under `/i/` carries `Referrer-Policy:
   no-referrer`, `X-Robots-Tag: noindex, nofollow, noarchive`, `Cache-Control:
   no-store` and a `Content-Security-Policy` that allows only this server.

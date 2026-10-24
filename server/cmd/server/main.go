@@ -43,8 +43,8 @@ func main() {
 	offline := loadOfflineEmergency(cfg, os.Getenv("RENDER") != "")
 
 	pool := openAndMigrate(cfg.DatabaseURL)
-	notifier := newNotifier(cfg, pool)
 	reports, closer := newReports(cfg, pool, reportSigningKey(cfg, offline))
+	notifier := newNotifier(cfg, pool, reportLinks(cfg, pool, reports != nil))
 	calls := newCallRoutes(cfg, pool)
 	// The post-call hooks, in order (call.Hooks). #21 adds "duress detector
 	// -> save verdict -> notify" first, so the report closes after them.
@@ -171,7 +171,8 @@ func openAndMigrate(url string) *sql.DB {
 // unknown NOTIFIER exits, like a failed migration: Render keeps the previous
 // deploy instead of alerting through a channel nobody chose. Without a
 // database intake answers 503 and never hands off, so LogHandoff is enough.
-func newNotifier(cfg config.Config, pool *sql.DB) intake.Notifier {
+// links, when not nil, adds the incident report line to every message.
+func newNotifier(cfg config.Config, pool *sql.DB, links notify.ReportLinks) intake.Notifier {
 	sender, err := notify.NewSender(cfg)
 	if err != nil {
 		log.Fatalf("notifier: %v", err)
@@ -183,7 +184,22 @@ func newNotifier(cfg config.Config, pool *sql.DB) intake.Notifier {
 	if !channelConfigured(cfg) {
 		log.Printf("notifier: WARNING: %s credentials are not set; every family alert will fail", cfg.Notifier)
 	}
-	return notify.New(notify.NewDBStore(pool), sender)
+	n := notify.New(notify.NewDBStore(pool), sender)
+	if links != nil {
+		log.Print("notifier: family messages carry the incident report link")
+		n.WithReportLinks(links)
+	}
+	return n
+}
+
+// reportLinks is the family message's report link (#76): only when the
+// report page is mounted (reportsOn: enabled, with a database) and the
+// server knows its public URL. A nil interface otherwise.
+func reportLinks(cfg config.Config, pool *sql.DB, reportsOn bool) notify.ReportLinks {
+	if !reportsOn || pool == nil || cfg.PublicURL == "" {
+		return nil
+	}
+	return report.Links{Store: report.NewDBStore(pool), BaseURL: cfg.PublicURL, TTLDays: cfg.Report.TTLDays}
 }
 
 // newCallRoutes builds the call engine on the database. Without one the

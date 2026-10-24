@@ -1,7 +1,8 @@
 // Package notify sends the family the one message of an incident
-// (docs/contract.md "NotifierMessage"): the location and the verdict, never a
-// link. The incident is claimed in the database before sending, so a retried
-// or concurrent Notify sends at most once per incident.
+// (docs/contract.md "NotifierMessage"): the location and the verdict. Its
+// only link is the private incident report (#76), added when the report is
+// on (WithReportLinks). The incident is claimed in the database before
+// sending, so a retried or concurrent Notify sends at most once per incident.
 //
 // The channel is a Sender: Kapso WhatsApp (the default) or Twilio SMS,
 // picked by the NOTIFIER env var (see NewSender).
@@ -36,10 +37,19 @@ type Store interface {
 	Release(ctx context.Context, incidentID string) error
 }
 
+// ReportLinks gives the private incident report link (#76) for the message.
+// report.Links is the real one.
+type ReportLinks interface {
+	// ReportURL returns the report's absolute URL, creating its link when
+	// needed; "" when there is none to send.
+	ReportURL(ctx context.Context, incidentID string) (string, error)
+}
+
 // Notifier implements intake.Notifier. Create it with New.
 type Notifier struct {
 	store  Store
 	sender Sender
+	links  ReportLinks // nil: no report line
 }
 
 var _ intake.Notifier = (*Notifier)(nil)
@@ -47,6 +57,12 @@ var _ intake.Notifier = (*Notifier)(nil)
 // New returns a Notifier that claims through store and sends through sender.
 func New(store Store, sender Sender) *Notifier {
 	return &Notifier{store: store, sender: sender}
+}
+
+// WithReportLinks adds the "Ficha: <url>" line to every message, from links.
+func (n *Notifier) WithReportLinks(links ReportLinks) *Notifier {
+	n.links = links
+	return n
 }
 
 // Notify sends the incident's message to every family number, once. It only
@@ -76,7 +92,7 @@ func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 		return
 	}
 
-	body := Format(msg)
+	body := FormatWithReport(msg, n.reportURL(ctx, inc.ID))
 	sent := 0
 	for _, to := range msg.To {
 		if err := n.sender.Send(ctx, to, body); err != nil {
@@ -95,18 +111,39 @@ func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 	}
 }
 
+// reportURL is the report link for the message, "" without one. A failure
+// only drops the line: the alert matters more than the link.
+func (n *Notifier) reportURL(ctx context.Context, incidentID string) string {
+	if n.links == nil {
+		return ""
+	}
+	u, err := n.links.ReportURL(ctx, incidentID)
+	if err != nil {
+		log.Printf("notify: incident %s: report link: %v; sending without it", incidentID, err)
+		return ""
+	}
+	return u
+}
+
 // vet is Venezuela time (UTC-4, no DST). A fixed zone needs no tzdata on the
 // server image.
 var vet = time.FixedZone("VET", -4*60*60)
 
 // Format renders the family message in Spanish: who, where, the verdict and
-// the time. It never contains a link.
+// the time, with no link. FormatWithReport adds the report's.
 //
 //	🚨 Alerta de MAMÁ
 //	Ubicación: 10.4961, -66.8531 (±12 m)
 //	Veredicto: coacción
 //	Hora: 09:10 VET
-func Format(msg contract.NotifierMessage) string {
+func Format(msg contract.NotifierMessage) string { return FormatWithReport(msg, "") }
+
+// FormatWithReport is Format plus, when reportURL is not blank, a last line
+// with the private incident report (#76), the message's only link. Kapso
+// sends it with preview_url false, so WhatsApp fetches nothing from it.
+//
+//	Ficha: https://mama.example.com/i/Mq-7vD8oe12cyws_nqXsWg
+func FormatWithReport(msg contract.NotifierMessage, reportURL string) string {
 	var b strings.Builder
 	b.WriteString("🚨 Alerta de MAMÁ\n")
 	fmt.Fprintf(&b, "Ubicación: %.4f, %.4f", msg.Location.Lat, msg.Location.Lng)
@@ -116,6 +153,9 @@ func Format(msg contract.NotifierMessage) string {
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "Veredicto: %s\n", verdictLabel(msg))
 	fmt.Fprintf(&b, "Hora: %s VET", msg.TriggeredAt.In(vet).Format("15:04"))
+	if reportURL != "" {
+		fmt.Fprintf(&b, "\nFicha: %s", reportURL)
+	}
 	return b.String()
 }
 

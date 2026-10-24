@@ -189,3 +189,22 @@ func TestLoadReadsTheWholeRecord(t *testing.T) {
 		t.Errorf("Load(unknown) = %v", err)
 	}
 }
+
+func TestLinksReportURL(t *testing.T) {
+	s := NewDBStore(newDB(t))
+	ctx := context.Background()
+	u, err := Links{Store: s, BaseURL: "https://mama.example.com/", TTLDays: 30}.ReportURL(ctx, testIncidentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, _ := s.Ensure(ctx, testIncidentID, 30)
+	if u != "https://mama.example.com/i/"+link.Token {
+		t.Errorf("ReportURL = %q, want the live link %q", u, link.Token)
+	}
+	if u, err := (Links{Store: s, TTLDays: 30}).ReportURL(ctx, testIncidentID); u != "" || err != nil {
+		t.Errorf("no public URL: %q %v, want no link", u, err)
+	}
+	if _, err := (Links{Store: s, BaseURL: "https://x", TTLDays: 30}).ReportURL(ctx, "00000000-0000-4000-8000-000000000000"); !errors.Is(err, ErrUnknownIncident) {
+		t.Errorf("unknown incident: %v", err)
+	}
+}

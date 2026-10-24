@@ -336,3 +336,24 @@ func (s DBStore) SaveSeal(ctx context.Context, incidentID string, seal Seal) (bo
 	n, err := res.RowsAffected()
 	return n == 1, err
 }
+
+// Links gives the family message its report link (notify.ReportLinks).
+type Links struct {
+	Store   DBStore
+	BaseURL string // the server's public URL (PUBLIC_URL); blank sends no link
+	TTLDays int    // how long a new link lives
+}
+
+// ReportURL ensures the incident has a live link and returns its absolute
+// URL. Without a public URL it returns "": a bare path is no use in a
+// WhatsApp message.
+func (l Links) ReportURL(ctx context.Context, incidentID string) (string, error) {
+	if l.BaseURL == "" {
+		return "", nil
+	}
+	link, err := l.Store.Ensure(ctx, incidentID, l.TTLDays)
+	if err != nil {
+		return "", err
+	}
+	return link.URL(l.BaseURL), nil
+}

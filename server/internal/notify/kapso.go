@@ -22,8 +22,11 @@ type Kapso struct {
 	Client        *http.Client
 }
 
+// kapsoText is a WhatsApp text. PreviewURL is always sent, as false: the
+// report link (#76) must not make WhatsApp fetch the page for a preview.
 type kapsoText struct {
-	Body string `json:"body"`
+	Body       string `json:"body"`
+	PreviewURL bool   `json:"preview_url"`
 }
 
 type kapsoMessage struct {

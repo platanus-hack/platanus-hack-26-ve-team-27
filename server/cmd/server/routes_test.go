@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -196,5 +197,25 @@ func TestReportSigningKey(t *testing.T) {
 	offline := testOffline(t)
 	if k := reportSigningKey(on, offline); !k.Equal(offline.keys.Signing) {
 		t.Error("offline channel on: want its key, the one GET /config publishes")
+	}
+}
+
+func TestReportLinksOnlyWithThePageAndAPublicURL(t *testing.T) {
+	pool, err := sql.Open("pgx", "postgres://unused")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	cfg := config.Config{PublicURL: "https://mama.example.com", Report: config.Report{Enabled: true, TTLDays: 30}}
+	if reportLinks(cfg, pool, false) != nil || reportLinks(cfg, nil, true) != nil {
+		t.Error("links without the report page or a database")
+	}
+	noURL := cfg
+	noURL.PublicURL = ""
+	if reportLinks(noURL, pool, true) != nil {
+		t.Error("links without a public URL")
+	}
+	if l, ok := reportLinks(cfg, pool, true).(report.Links); !ok || l.BaseURL != "https://mama.example.com" || l.TTLDays != 30 {
+		t.Errorf("links = %#v", reportLinks(cfg, pool, true))
 	}
 }
