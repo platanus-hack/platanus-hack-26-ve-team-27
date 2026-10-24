@@ -104,8 +104,7 @@ button { font: inherit; color: inherit; }
 
 .top { display: flex; align-items: center; justify-content: space-between; gap: var(--s-s); padding: var(--s-m) 0; }
 .wordmark { display: inline-flex; align-items: center; gap: var(--s-s); font-weight: 700; font-size: 22px; line-height: 28px; letter-spacing: 0.04em; }
-.mark { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-s); background: var(--primary); color: var(--on-primary); }
-.mark svg { width: 22px; height: 22px; }
+.mark { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; } /* MamaMark: Mamá's face in a circle (#89) */
 .top .label { font-weight: 500; font-size: 12px; line-height: 16px; letter-spacing: 0.4px; color: var(--on-surface-variant); }
 
 /* ---------------------------------------------------------------- hero */

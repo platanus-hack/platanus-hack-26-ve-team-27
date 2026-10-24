@@ -51,7 +51,6 @@ var staticTypes = map[string]string{
 	".js":   "text/javascript; charset=utf-8",
 	".ttf":  "font/ttf",
 	".webp": "image/webp",
-	".svg":  "image/svg+xml",
 	".txt":  "text/plain; charset=utf-8",
 }
 

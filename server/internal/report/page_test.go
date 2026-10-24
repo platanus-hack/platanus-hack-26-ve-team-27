@@ -157,7 +157,7 @@ func TestStaticFiles(t *testing.T) {
 		"/ficha/static/mama_escuchando.webp": "image/webp",
 		"/ficha/static/mama_lista.webp":      "image/webp",
 		"/ficha/static/Lexend-OFL.txt":       "text/plain; charset=utf-8",
-		"/ficha/static/mark.svg":             "image/svg+xml",
+		"/ficha/static/mama_mark.webp":       "image/webp",
 	} {
 		rec := serve(t, fakeSource{}, path)
 		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != typ || rec.Body.Len() == 0 {
