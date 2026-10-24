@@ -121,7 +121,7 @@ func LoadFrom(getenv func(string) string) Config {
 // NOTIFIER are left out because they always have a value, DURESS_LLM_MODEL
 // because it is optional.
 func (c Config) vars() []struct{ name, value string } {
-	return []struct{ name, value string }{
+	return append([]struct{ name, value string }{
 		{"DATABASE_URL", c.DatabaseURL},
 		{"ELEVENLABS_API_KEY", c.ElevenLabs.APIKey},
 		{"ELEVENLABS_AGENT_ID", c.ElevenLabs.AgentID},
@@ -133,9 +133,14 @@ func (c Config) vars() []struct{ name, value string } {
 		{"KAPSO_API_KEY", c.Kapso.APIKey},
 		{"KAPSO_PHONE_NUMBER_ID", c.Kapso.PhoneNumberID},
 		{"ANTHROPIC_API_KEY", c.Anthropic.APIKey},
-		{"EMERGENCY_SMS_NUMBER", c.Emergency.SMSNumber},
-		{"EMERGENCY_ED25519_SEED", c.Emergency.Ed25519Seed},
-		{"EMERGENCY_X25519_PRIVATE_KEY", c.Emergency.X25519PrivateKey},
+	}, c.Emergency.vars()...)
+}
+
+func (e Emergency) vars() []struct{ name, value string } {
+	return []struct{ name, value string }{
+		{"EMERGENCY_SMS_NUMBER", e.SMSNumber},
+		{"EMERGENCY_ED25519_SEED", e.Ed25519Seed},
+		{"EMERGENCY_X25519_PRIVATE_KEY", e.X25519PrivateKey},
 	}
 }
 
@@ -155,16 +160,31 @@ func (c Config) Missing() []string {
 // Config by mistake cannot leak a key.
 func (c Config) String() string {
 	// NOTIFIER is a channel name, not a secret, so its value is shown.
-	parts := []string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier}
-	for _, v := range c.vars() {
+	parts := append([]string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier}, setOrUnset(c.vars())...)
+	return fmt.Sprintf("config{%s}", strings.Join(parts, " "))
+}
+
+// GoString keeps %#v as safe as %v.
+func (c Config) GoString() string { return c.String() }
+
+// String reports which emergency vars are set, never their values: the
+// Ed25519 seed and the X25519 private key are the server's secret keys.
+func (e Emergency) String() string {
+	return fmt.Sprintf("emergency{%s}", strings.Join(setOrUnset(e.vars()), " "))
+}
+
+// GoString keeps %#v as safe as %v.
+func (e Emergency) GoString() string { return e.String() }
+
+// setOrUnset renders each var as NAME=set or NAME=unset.
+func setOrUnset(vars []struct{ name, value string }) []string {
+	parts := make([]string, 0, len(vars))
+	for _, v := range vars {
 		state := "set"
 		if v.value == "" {
 			state = "unset"
 		}
 		parts = append(parts, v.name+"="+state)
 	}
-	return fmt.Sprintf("config{%s}", strings.Join(parts, " "))
+	return parts
 }
-
-// GoString keeps %#v as safe as %v.
-func (c Config) GoString() string { return c.String() }
