@@ -81,5 +81,17 @@ func newNotifier(cfg config.Config, pool *sql.DB) intake.Notifier {
 		return intake.LogHandoff{}
 	}
 	log.Printf("notifier: sending through %s", cfg.Notifier)
+	if !channelConfigured(cfg) {
+		log.Printf("notifier: WARNING: %s credentials are not set; every family alert will fail", cfg.Notifier)
+	}
 	return notify.New(notify.NewDBStore(pool), sender)
+}
+
+// channelConfigured reports whether the NOTIFIER channel has its credentials,
+// so a misconfigured deploy says so at boot instead of at the first alert.
+func channelConfigured(cfg config.Config) bool {
+	if cfg.Notifier == config.NotifierSMS {
+		return cfg.Twilio.AccountSID != "" && cfg.Twilio.AuthToken != "" && cfg.Twilio.PhoneNumber != ""
+	}
+	return cfg.Kapso.APIKey != "" && cfg.Kapso.PhoneNumberID != ""
 }
