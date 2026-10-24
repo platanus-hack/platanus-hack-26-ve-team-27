@@ -110,6 +110,14 @@ private val NightHighest = Color(0xFF393A35)
 private val NightBright = Color(0xFF3F403A)
 
 /*
+ * Hang-up red (#94), only for the Rechazar and Colgar buttons of the in-app
+ * call: every phone paints them red, so a red there reads as an ordinary call.
+ * The same in both modes (the call screen is always dark). Nothing else may use it.
+ */
+val ColorScheme.hangUp: Color get() = Alert
+val ColorScheme.onHangUp: Color get() = White
+
+/*
  * Both schemes use the full ColorScheme constructor, which has no defaults:
  * the compiler refuses a scheme that forgets a role, so no Material baseline
  * color (the default lavender) can leak into a screen.
