@@ -1,10 +1,10 @@
 # Spike #10 results: locked-phone trigger on the demo Xiaomi
 
-Run on Sat Oct 24, 2026, 11:05–12:30 VET, after the issue's 05:05 VET due time.
+Run on Sat Oct 24, 2026, 11:05–13:20 VET, after the issue's 05:05 VET due time.
 All times are VET (UTC-4); `spike.log` itself writes UTC. Every
 press below is a physical press by a person unless it says **simulated**.
 Evidence: the phone's `files/spike.log`, the receiver log
-(`spikes/trigger/receiver.go`, 32 alerts) and `adb logcat`
+(`spikes/trigger/receiver.go`) and `adb logcat`
 (`MiuiInputKeyEventLog`, `MediaSessionService`, `DozeMachine`).
 
 ## The phone
@@ -20,7 +20,7 @@ Evidence: the phone's `files/spike.log`, the receiver log
 
 | Criterion | Result | Evidence |
 | --- | --- | --- |
-| Under 2 s from the pattern to the server with GPS, after 30 min locked in a pocket | **fail / not run as written** | The 30 min run was not done (the tester declined the wait). Unplugged, about 1.5 min in a pocket, over mobile network and a Cloudflare tunnel: pattern 12:27:56.098, received 12:28:00.354, **4.26 s**. The phone sent at +69 ms; the first HTTPS request took 4378 ms (cold radio, DNS, TLS through the tunnel), the next one 830 ms. Its point was a 230 s old fused fix at 100 m, not a fresh GPS fix. Over USB (`adb reverse`), locked, screen off: received 54–209 ms after the pattern (phone clock ~78 ms behind the laptop, so ~0–130 ms real), phone-side 10–71 ms. |
+| Under 2 s from the pattern to the server with GPS, after 30 min locked in a pocket | **pass on mobile data after 2 min; 30 min not run; fails on the venue Wi-Fi** | Unplugged, in a pocket, through a Cloudflare tunnel, with the warm-up (finding 4). **Mobile data (Movistar LTE), ~2 min in the pocket, 13:18:01:** received **179 ms** after the pattern (phone clock 51 ms ahead, so ~130 ms real); first point a fused fix at 13 m, ~1 s old. **Venue Wi-Fi "Hackathon" (−68 dBm on a table), ~9 min in the pocket, 13:11:59:** received **20.4 s** after the pattern; the warm-up GET alone took 4.8 s and the alert request 20 s; point 15 m. Before the warm-up, on the same Wi-Fi (~1.5 min, 12:27:56): 4.26 s and a 230 s old 100 m point. The 30 min run was not done (the tester declined the wait). Over USB (`adb reverse`), locked, panel off: 54–209 ms. |
 | Survives clearing recents and a reboot, and comes back on its own | **recents: pass; reboot: not run** | After clearing recents the service reconnected by itself (`a11y connected` at 11:12:56) and a locked, screen-off pattern reached the server (`status=201` at 11:13:09). Every `adb install -r` also killed the app and both services came back within 6 s. No reboot was done (`/proc/uptime` 20 days at 12:17). |
 | Mic starts from the trigger: yes or no | **yes** | A foreground service of type `location\|microphone\|camera` starts from the locked trigger; 1 s of `AudioRecord` gets real audio every time (`peak=1667…16556`, `clientSilenced=false`), including locked with the panel off. The spike never uploads audio (`has_audio: false`). |
 | The pattern doesn't open the camera | **pass** | No camera or any UI opened on any trigger (tester, and the log shows no activity starts). Caveat: HyperOS's own volume-key camera shortcut is off on this phone (`volumekey_launch_camera=0`); up-down-up has a single down, so the down-down shortcut would not match anyway, but it was not tried with the shortcut on. |
@@ -55,14 +55,23 @@ Evidence: the phone's `files/spike.log`, the receiver log
    reached it at 12:01:22); it keeps an audio track open (battery not
    measured).
 4. **Latency is the network, not the trigger.** Pattern to request is under
-   75 ms on every run. The pocket run lost 4.3 s on the first HTTPS request.
-   For #16: keep a warm connection or retry fast, and measure against the
+   75 ms on every run (855 ms when it waits for a fix, finding 5). What helps:
+   `Warmup` opens a keep-alive connection (`GET /`) and starts the GPS on the
+   first press, so the ~1–2 s of the other two presses pays the cold radio,
+   DNS and TLS; `SpikeHttp` reads and closes responses instead of
+   `disconnect()` so the alert reuses that connection. On mobile data the
+   warm-up finished (1.04 s) before the third press and the alert took 334 ms.
+   What does not: a weak, crowded Wi-Fi, where one request took 20 s. For
+   #16: do not rely on one HTTPS request; send the SMS channel (#58) in
+   parallel, retry on a fresh connection after ~2 s, and measure against the
    real server URL (the tunnel adds hops).
 5. **The first point is often not GPS.** `getLastKnownLocation` gives an old
-   or coarse fix (up to 230 s old; one was 4062 m at 11:33:02). The fresh GPS
-   fix (1.2–8.8 m when the sky is visible) usually comes back as the cached
-   one. #16 should send at once and follow with a fresh fix
-   (`LocationUpdate`), as the spike does.
+   or coarse fix (up to 230 s old; one was 4062 m at 11:33:02). The spike now
+   sends the last known fix at once only if it is at most 30 s old and 50 m;
+   otherwise it waits up to 1 s for a fresh one, then sends what it has, and
+   follows with the first fix within 20 m as a `LocationUpdate` (a warmed-up
+   GPS gave 1.0 m about 5 s after the pattern). With the warm-up, the pocket
+   runs sent 13–15 m fused fixes about 1 s old.
 6. **Press timing.** Blind presses took up to 1.28 s between keys (the
    first pocket attempt missed with a 1 s limit; now 1.5 s). Twice the
    tester pressed up and down together (11:19:52, 11:20:07), which reads as
@@ -70,9 +79,11 @@ Evidence: the phone's `files/spike.log`, the receiver log
 7. **Video works with nothing on screen.** A `camera` foreground service
    records back-camera video straight to a file with Camera2 + MediaRecorder,
    locked with the panel off: opens in 52–270 ms, 3 s clips (1280x720, 81
-   frames, checked by extracting frames). Not in the contract (no video
-   field); sending it needs the Tech lead's OK. Android shows its green
-   camera dot while recording.
+   frames, checked by extracting frames). Uploaded to a spike-only receiver
+   route (`POST /spike/video`): 1.04 MB in 1.3 s on mobile data, 1.29 MB in
+   5.2 s on the venue Wi-Fi, after the alert. Not in the contract (no video
+   field); sending it to the real server needs the Tech lead's OK. Android
+   shows its green camera dot while recording.
 8. The foreground-service notifications ("MAMÁ · Sincronizando", "Activa")
    are low importance and HyperOS folds them into silent notifications; the
    tester did not see them.
