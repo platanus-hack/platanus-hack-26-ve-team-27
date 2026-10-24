@@ -6,7 +6,11 @@ import com.team27.mama.emergency.payload.Ed25519SeedSigner
 import com.team27.mama.server.ServerApi
 import com.team27.mama.server.ServerHttpException
 import java.io.IOException
+import java.util.Base64
+import org.bouncycastle.crypto.params.Ed25519PublicKeyParameters
+import org.bouncycastle.crypto.signers.Ed25519Signer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -24,11 +28,41 @@ class DeviceRegistrarTest {
         }
     }
 
-    @Test fun addsPublicKey() {
+    private fun verifies(publicKey: ByteArray, message: ByteArray, signature: ByteArray): Boolean {
+        val v = Ed25519Signer()
+        v.init(false, Ed25519PublicKeyParameters(publicKey, 0))
+        v.update(message, 0, message.size)
+        return v.verifySignature(signature)
+    }
+
+    @Test fun addsPublicKeyAndSignature() {
         val api = FakeApi()
         val r = DeviceRegistrar(api, signer).register(reg)
         assertEquals(RegisterResult.Registered, r)
-        assertEquals(reg.copy(ed25519PublicKey = "Qjj0xMgcOctYzPP1+kmbgiXDnjbvMvg+Cm1vpph2NXo="), api.sent)
+        val sent = api.sent!!
+        assertEquals(reg, sent.copy(ed25519PublicKey = null, ed25519Signature = null))
+        assertEquals("Qjj0xMgcOctYzPP1+kmbgiXDnjbvMvg+Cm1vpph2NXo=", sent.ed25519PublicKey)
+    }
+
+    @Test fun signatureVerifiesOverContextAndDeviceId() {
+        val api = FakeApi()
+        DeviceRegistrar(api, signer).register(reg)
+        val sent = api.sent!!
+        val pub = Base64.getDecoder().decode(sent.ed25519PublicKey)
+        val sig = Base64.getDecoder().decode(sent.ed25519Signature)
+        assertEquals(64, sig.size)
+        assertTrue(verifies(pub, "MAMA-device-registration-v1d1".toByteArray(Charsets.US_ASCII), sig))
+        assertFalse(verifies(pub, DeviceRegistration.signedMessage("d2"), sig))
+    }
+
+    /** Ed25519 is deterministic: the vector key over the sample's device_id gives the sample's signature. */
+    @Test fun matchesTheSharedSample() {
+        val api = FakeApi()
+        DeviceRegistrar(api, signer).register(reg.copy(deviceId = "3f1c9a52-7b1e-4c8a-9a0e-2d6b8f4e1a77"))
+        assertEquals(
+            "JMio38RGA+n2az7/Xiiz4y7724rZcyDt7N90vGav0Vq8SwTXFvJSmH21VJeL323EPmedwMiyrm79YVgIjvXlAQ==",
+            api.sent!!.ed25519Signature,
+        )
     }
 
     @Test fun conflictIs409() {

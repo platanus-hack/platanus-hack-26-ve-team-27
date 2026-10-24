@@ -120,7 +120,23 @@ data class DeviceRegistration(
      * payloads (#57).
      */
     @SerialName("ed25519_public_key") val ed25519PublicKey: String? = null,
-)
+    /**
+     * Proof the phone holds [ed25519PublicKey]'s private half: std Base64 of
+     * the 64-byte Ed25519 signature over [signedMessage] of [deviceId].
+     * Required with [ed25519PublicKey] and only with it (the server answers
+     * 400 otherwise), because bitchat broadcasts public keys on the mesh.
+     */
+    @SerialName("ed25519_signature") val ed25519Signature: String? = null,
+) {
+    companion object {
+        /** Prefixes the bytes [ed25519Signature] covers; Go's RegistrationSignatureContext. */
+        const val SIGNATURE_CONTEXT = "MAMA-device-registration-v1"
+
+        /** The ASCII context, then the UTF-8 bytes of [deviceId]; Go's RegistrationSignedMessage. */
+        fun signedMessage(deviceId: String): ByteArray =
+            SIGNATURE_CONTEXT.toByteArray(Charsets.US_ASCII) + deviceId.toByteArray(Charsets.UTF_8)
+    }
+}
 
 /**
  * Server -> phone, reply to GET /config; the phone caches it and works

@@ -13,14 +13,24 @@ sealed interface RegisterResult {
     data class Failed(val cause: IOException) : RegisterResult
 }
 
-/** Registers the device with its Ed25519 public key attached. Blocking. */
+/**
+ * Registers the device with its Ed25519 public key and the proof it holds the
+ * private half (a signature over [DeviceRegistration.signedMessage]). Blocking.
+ *
+ * Nobody calls it yet: #59 does, once it has the [PayloadSigner] over :mesh's
+ * identity key, with the real setup data that #15 collects.
+ */
 class DeviceRegistrar(
     private val api: ServerApi,
     private val signer: PayloadSigner,
 ) {
     fun register(registration: DeviceRegistration): RegisterResult {
+        val b64 = Base64.getEncoder()
         val withKey = registration.copy(
-            ed25519PublicKey = Base64.getEncoder().encodeToString(signer.publicKey),
+            ed25519PublicKey = b64.encodeToString(signer.publicKey),
+            ed25519Signature = b64.encodeToString(
+                signer.sign(DeviceRegistration.signedMessage(registration.deviceId)),
+            ),
         )
         return try {
             api.registerDevice(withKey)
