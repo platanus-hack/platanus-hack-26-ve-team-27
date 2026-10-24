@@ -421,7 +421,10 @@ default; then every route below answers `404`). Code:
   the newest recorded call. No recording: `404`, and the page says "Audio no
   disponible" and keeps the transcript.
 - **Seal.** After the recording, and after waiting up to 60 s for the
-  call's verdict and `notified_at`, the server seals a `call` report once:
+  call's verdict and `notified_at`, the server seals a `call` report once,
+  for its newest finished call and only when no call of it is still
+  requested or in progress (after a failed retry, the first page view 5 min
+  after the finished call ended seals it):
   pure Ed25519 by the `GET /config` key over `MAMA-incident-report-v1 ||
   ficha.json`. `GET /i/{token}/ficha.json` serves the exact signed bytes and
   `GET /i/{token}/ficha.sig` the signature in Base64 (both `404` until
