@@ -11,6 +11,7 @@ import com.team27.mama.emergency.payload.PayloadCodec
 import com.team27.mama.emergency.payload.PayloadSigner
 import com.team27.mama.emergency.payload.SealedBox
 import java.io.IOException
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -61,10 +62,28 @@ class FakeMesh : MeshEmergencyChannel {
 class FakeLocation : LocationSource {
     var lastKnown: LocationFix? = null
     val fresh = CompletableDeferred<LocationFix?>()
+    var freshCalls = 0
+    var freshCancelled = false
 
     override fun lastKnown(): LocationFix? = lastKnown
 
-    override suspend fun awaitFreshFix(): LocationFix? = fresh.await()
+    override suspend fun awaitFreshFix(): LocationFix? {
+        freshCalls++
+        try {
+            return fresh.await()
+        } catch (e: CancellationException) {
+            freshCancelled = true
+            throw e
+        }
+    }
+}
+
+/** The device key until [broken] is cleared; reading it throws like an unusable mesh keystore. */
+class FlakySigner(var broken: Boolean = true) : PayloadSigner {
+    override val publicKey: ByteArray
+        get() = if (broken) throw MeshUnavailableException(IllegalStateException("keystore")) else EmergencyTestKit.DEVICE.publicKey
+
+    override fun sign(message: ByteArray) = EmergencyTestKit.DEVICE.sign(message)
 }
 
 /** Fakes for every port, plus helpers to read what the orchestrator sent. One kit per run. */

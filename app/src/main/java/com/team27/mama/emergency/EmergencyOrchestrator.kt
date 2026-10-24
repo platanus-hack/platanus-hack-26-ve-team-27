@@ -49,7 +49,8 @@ object EmergencyTiming {
 /**
  * Emits an emergency over every channel the override allows (#62 §2): HTTP first when
  * online, then SMS and the mesh in parallel, re-emitting on [EmergencyTiming] ticks until
- * a valid server ack arrives by any channel.
+ * a valid server ack arrives by any channel. A fresh fix after declaring becomes one UPDATE
+ * frame (seq + 1); [cancel] replaces the frame with a signed CANCEL over the same channels.
  *
  * All work runs on [scope] and never switches dispatchers; production passes a
  * single-threaded scope, so the session state below needs no locking. [declare] and
@@ -75,29 +76,38 @@ class EmergencyOrchestrator(
     /** The emergency in progress. Read and written only from coroutines on [scope]. */
     private var session: Session? = null
 
+    /** Makes the phase check and change of [declare] and [cancel] one step across threads. */
+    private val lock = Any()
+
+    /** The session of the last [declare]. Guarded by [lock]. */
+    private var declared: Session? = null
+
     override fun declare(): Boolean {
-        val id = newEmergencyId()
-        val before = mutableState.getAndUpdate {
-            if (it.phase.isActive) it else EmergencyState(phase = EmergencyPhase.SENDING, emergencyId = id)
+        val next = synchronized(lock) {
+            val id = newEmergencyId()
+            val before = mutableState.getAndUpdate {
+                if (it.phase.isActive) it else EmergencyState(phase = EmergencyPhase.SENDING, emergencyId = id)
+            }
+            if (before.phase.isActive) return false
+            Session(id, channelOverride(), config(), orElse(null) { location.lastKnown() }).also { declared = it }
         }
-        if (before.phase.isActive) return false
-        val next = Session(id, channelOverride(), config(), orElse(null) { location.lastKnown() })
-        val frame = next.buildAlert()
-        scope.launch { next.begin(frame) }
+        scope.launch { next.begin() }
         return true
     }
 
-    /** Stops emitting. Task 4 replaces this with a cancel frame (CANCELLING, then CANCELLED). */
+    /**
+     * CANCELLING right away, on the calling thread, so a second cancel or a declare sees it.
+     * The scope then cancels exactly the session that was declared, never a later one.
+     */
     override fun cancel() {
-        scope.launch {
-            val phase = mutableState.value.phase
-            if (phase == EmergencyPhase.IDLE || phase == EmergencyPhase.CANCELLING || phase == EmergencyPhase.CANCELLED) {
-                return@launch
+        val target = synchronized(lock) {
+            val before = mutableState.getAndUpdate {
+                if (it.phase.isCancellable) it.copy(phase = EmergencyPhase.CANCELLING) else it
             }
-            session?.jobs?.cancel()
-            session = null
-            mutableState.update { it.copy(phase = EmergencyPhase.CANCELLED) }
-        }
+            if (!before.phase.isCancellable) return
+            declared
+        } ?: return
+        scope.launch { target.cancel() }
     }
 
     private fun online(): Boolean = orElse(false) { network.isOnline() }
@@ -106,12 +116,20 @@ class EmergencyOrchestrator(
         val id: Long,
         val override: ChannelOverride,
         val config: EmergencyConfig,
-        val fix: LocationFix?,
+        /** The newest fix: frames built from now on carry it. */
+        var fix: LocationFix?,
     ) {
         /** Parent of the ack collectors and every emission job of this emergency. */
         val jobs = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
         var frame: Frame? = null
         var emission: Job? = null
+
+        /** Retries building a frame while the device key cannot sign. */
+        var pending: Job? = null
+        var fixWait: Job? = null
+
+        /** seq of the cancel frame once [cancel] ran; acks then end the emergency instead of notifying. */
+        var cancelSeq: Int? = null
 
         /** True once `mesh.start()` succeeded; reset when a broadcast is refused. */
         var meshRunning = false
@@ -123,26 +141,87 @@ class EmergencyOrchestrator(
 
         fun use(channel: Channel) = update { it.copy(channelsUsed = it.channelsUsed + channel) }
 
-        /** Frame seq 0, or null when the device key cannot sign (mesh keystore unusable). */
-        fun buildAlert(): Frame? = orElse(null) {
-            EmergencyFrames.build(Kind.ALERT, signer, id, 0, fix, nowMs())
+        /** A signed frame, or null when the device key cannot sign (mesh keystore unusable). */
+        fun build(kind: Kind, seq: Int): Frame? = orElse(null) {
+            EmergencyFrames.build(kind, signer, id, seq, fix, nowMs())
         }
 
-        fun begin(alert: Frame?) {
+        fun begin() {
+            val declaredState = mutableState.value
+            if (declaredState.emergencyId != id || !declaredState.phase.isActive) return
             session?.jobs?.cancel()
             session = this
+            // Cancelled before this ran: nothing went out, so there is nothing to cancel.
+            if (declaredState.phase == EmergencyPhase.CANCELLING) return finish()
             val serverKey = config.serverEd25519PublicKey
             jobs.launch { collectAcks(mesh.incoming) { AckReader.fromMesh(it, serverKey) } }
             jobs.launch { collectAcks(sms.incoming) { AckReader.fromSms(it, serverKey) } }
-            if (alert != null) {
-                emit(alert)
-                return
+            val known = fix
+            if (known == null || nowMs() - known.timeMs > EmergencyTiming.FRESH_FIX_MAX_AGE_MS) {
+                fixWait = jobs.launch { awaitFreshFix() }
             }
-            update { it.copy(phase = EmergencyPhase.NO_CHANNEL, meshIssue = MeshIssue.UNAVAILABLE) }
+            emitSigned { build(Kind.ALERT, 0) }
+        }
+
+        /** One fresh fix within [EmergencyTiming.FRESH_FIX_TIMEOUT_MS] becomes the UPDATE frame. */
+        suspend fun awaitFreshFix() {
+            val fresh = try {
+                withTimeoutOrNull(EmergencyTiming.FRESH_FIX_TIMEOUT_MS) { location.awaitFreshFix() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            } ?: return
+            if (session !== this || cancelSeq != null) return
+            val used = fix
+            if (used != null && fresh.timeMs <= used.timeMs) return
+            fix = fresh
+            // Still waiting for the key to sign the alert: the alert will carry this fix.
+            val current = frame ?: return
+            emitSigned { build(Kind.UPDATE, current.payload.seq + 1) }
+        }
+
+        /** Stops the fix wait and the current frame, then emits CANCEL until its ack or the window ends. */
+        fun cancel() {
+            if (session !== this || cancelSeq != null) return
+            fixWait?.cancel()
+            emission?.cancel()
+            val sent = frame ?: return finish()
+            val seq = sent.payload.seq + 1
+            cancelSeq = seq
+            fix = listOfNotNull(fix, orElse(null) { location.lastKnown() }).maxByOrNull { it.timeMs }
+            emitSigned { build(Kind.CANCEL, seq) }
             jobs.launch {
+                delay(EmergencyTiming.CANCEL_WINDOW_MS)
+                finish()
+            }
+        }
+
+        /** CANCELLED: every job of this emergency stops and [declare] works again. */
+        fun finish() {
+            if (session !== this) return
+            mutableState.update { it.copy(phase = EmergencyPhase.CANCELLED) }
+            session = null
+            jobs.cancel()
+        }
+
+        /**
+         * Emits the frame [make] builds. While the key cannot sign, the frame already being
+         * emitted (if any) keeps going and [make] is retried on the re-emit gaps.
+         */
+        fun emitSigned(make: () -> Frame?) {
+            pending?.cancel()
+            make()?.let { return emit(it) }
+            if (emission?.isActive != true) {
+                update {
+                    val phase = if (it.phase in FALLBACK_PHASES) EmergencyPhase.NO_CHANNEL else it.phase
+                    it.copy(phase = phase, meshIssue = MeshIssue.UNAVAILABLE)
+                }
+            }
+            pending = jobs.launch {
                 for (gap in EmergencyTiming.reemitGaps()) {
                     delay(gap)
-                    val built = buildAlert() ?: continue
+                    val built = make() ?: continue
                     update { it.copy(meshIssue = null) }
                     emit(built)
                     return@launch
@@ -162,11 +241,21 @@ class EmergencyOrchestrator(
             texts.catch { }.collect { text -> read(text)?.let(::onAck) }
         }
 
-        /** Applies an ack; true when it covers the frame being emitted, which then stops. */
+        /**
+         * Applies an ack; true when it covers the frame being emitted, which then stops.
+         * While cancelling, an ack covering the cancel ends the emergency; an older one changes only [EmergencyState.ackedSeq].
+         */
         fun onAck(ack: AckInfo): Boolean {
             if (ack.emergencyId != id || session !== this) return false
+            val cancelling = cancelSeq
             update {
-                it.copy(phase = EmergencyPhase.NOTIFIED, ackedSeq = maxOf(it.ackedSeq ?: ack.seq, ack.seq))
+                val acked = maxOf(it.ackedSeq ?: ack.seq, ack.seq)
+                if (cancelling != null) it.copy(ackedSeq = acked) else it.copy(phase = EmergencyPhase.NOTIFIED, ackedSeq = acked)
+            }
+            if (cancelling != null) {
+                if (ack.seq < cancelling) return false
+                finish()
+                return true
             }
             val current = frame ?: return false
             if (ack.seq < current.payload.seq) return false
@@ -203,7 +292,7 @@ class EmergencyOrchestrator(
             private suspend fun attemptHttp(): Boolean {
                 use(Channel.HTTP)
                 val reply = withTimeoutOrNull(EmergencyTiming.HTTP_TIMEOUT_MS) {
-                    // Rethrow cancellation, no runCatching: a swallowed cancel (ack elsewhere) must never reach the fallback.
+                    // Rethrow cancellation explicitly; never treat it as a channel failure.
                     try {
                         http.post(frame.smsText)
                     } catch (e: CancellationException) {
@@ -276,6 +365,9 @@ class EmergencyOrchestrator(
     private companion object {
         /** Phases the fallback may overwrite; NOTIFIED and cancel phases are never downgraded. */
         val FALLBACK_PHASES = setOf(EmergencyPhase.SENDING, EmergencyPhase.SEARCHING_NEARBY, EmergencyPhase.NO_CHANNEL)
+
+        /** An emergency that a cancel can still stop. */
+        val EmergencyPhase.isCancellable: Boolean get() = isActive && this != EmergencyPhase.CANCELLING
 
         /** Port calls must never crash the emergency: any failure becomes [fallback]. */
         inline fun <T> orElse(fallback: T, block: () -> T): T =

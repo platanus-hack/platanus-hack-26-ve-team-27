@@ -14,7 +14,6 @@ import com.team27.mama.emergency.payload.AckCodec
 import com.team27.mama.emergency.payload.AckInfo
 import com.team27.mama.emergency.payload.Kind
 import com.team27.mama.emergency.payload.MamaText
-import com.team27.mama.emergency.payload.PayloadSigner
 import com.team27.mama.server.ServerHttpException
 import java.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -387,15 +386,6 @@ class EmergencyOrchestratorTest {
         }
     }
 
-    /** The device key until [broken] is cleared; reading it throws like an unusable mesh keystore. */
-    private class FlakySigner : PayloadSigner {
-        var broken = true
-        override val publicKey: ByteArray
-            get() = if (broken) throw MeshUnavailableException(IllegalStateException("keystore")) else DEVICE.publicKey
-
-        override fun sign(message: ByteArray) = DEVICE.sign(message)
-    }
-
     @Test
     fun signingFailureIsNoChannelAndRetried() = runTest {
         with(EmergencyTestKit()) {
@@ -492,21 +482,6 @@ class EmergencyOrchestratorTest {
             assertEquals(EmergencyPhase.SEARCHING_NEARBY, o.state.value.phase)
             at(15_000)
             assertEquals(2, mesh.startCalls)
-        }
-    }
-
-    @Test
-    fun cancelStopsEmission() = runTest {
-        with(EmergencyTestKit()) {
-            val o = orchestrator()
-            o.declare()
-            runCurrent()
-            o.cancel()
-            runCurrent()
-            assertEquals(EmergencyPhase.CANCELLED, o.state.value.phase)
-            advanceTimeBy(600_000)
-            assertEquals(1, mesh.broadcasts.size)
-            assertTrue(o.declare())
         }
     }
 }
