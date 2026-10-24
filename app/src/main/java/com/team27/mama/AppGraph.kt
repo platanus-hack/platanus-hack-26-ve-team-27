@@ -4,6 +4,8 @@ import android.content.Context
 import com.team27.mama.emergency.config.RemoteConfigRepository
 import com.team27.mama.emergency.config.SharedPreferencesConfigStore
 import com.team27.mama.emergency.payload.PayloadSigner
+import com.team27.mama.emergency.sms.SmsChannel
+import com.team27.mama.emergency.sms.SmsManagerSender
 import com.team27.mama.onboarding.ConnectivityNetworkStatus
 import com.team27.mama.onboarding.DeviceRegistrar
 import com.team27.mama.onboarding.OnboardingGate
@@ -39,6 +41,12 @@ class AppGraph(
         RemoteConfigRepository(serverApi, SharedPreferencesConfigStore(app), BuildConfig.DEFAULT_SMS_NUMBER)
 
     val onboardingGate: OnboardingGate = OnboardingGate(ConnectivityNetworkStatus(app), remoteConfig, background)
+
+    /**
+     * The SMS leg of the offline emergency (#58). Built on first use, and only #59 uses it (when
+     * [offlineEmergency] is on); with the flag off nothing touches it.
+     */
+    val smsChannel: SmsChannel by lazy { SmsChannel(remoteConfig, SmsManagerSender(app)) }
 
     fun deviceRegistrar(signer: PayloadSigner): DeviceRegistrar = DeviceRegistrar(serverApi, signer)
 }
