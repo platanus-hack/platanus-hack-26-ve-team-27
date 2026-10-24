@@ -10,7 +10,8 @@
 # Gradle / Android
 .gradle/
 .kotlin/
-build/
+/build/
+/app/build/
 /captures/
 .externalNativeBuild/
 .cxx/
