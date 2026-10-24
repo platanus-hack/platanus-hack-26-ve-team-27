@@ -27,6 +27,16 @@ var ttsJSON []byte
 // Language is the agent language (ASR and TTS).
 const Language = "es"
 
+// Placeholders are the agent's default values for the dynamic variables,
+// used when a caller does not send them (calls placed before #104, the
+// dashboard test, the WebRTC page). No alert phrase means Mamá takes the
+// "neither phrase" path: she still asks where and with whom.
+var Placeholders = map[string]string{
+	"nombre":       "mi vida",
+	"frase_alerta": "",
+	"frase_segura": "",
+}
+
 // Prompt is the system prompt of the agent. Line endings are normalized to
 // \n, since a Windows checkout may embed \r\n.
 func Prompt() string { return strings.ReplaceAll(prompt, "\r\n", "\n") }
@@ -93,9 +103,16 @@ type ConversationConfig struct {
 }
 
 type AgentConfig struct {
-	FirstMessage string       `json:"first_message"`
-	Language     string       `json:"language"`
-	Prompt       PromptConfig `json:"prompt"`
+	FirstMessage     string           `json:"first_message"`
+	Language         string           `json:"language"`
+	DynamicVariables DynamicVariables `json:"dynamic_variables"`
+	Prompt           PromptConfig     `json:"prompt"`
+}
+
+// DynamicVariables follows
+// https://elevenlabs.io/docs/agents-platform/customization/personalization/dynamic-variables
+type DynamicVariables struct {
+	Placeholders map[string]string `json:"dynamic_variable_placeholders"`
 }
 
 type PromptConfig struct {
@@ -120,7 +137,8 @@ type SystemToolParams struct {
 }
 
 // NewUpdate builds the PATCH body with the prompt, the first message, the
-// language, the end_call system tool and the TTS settings.
+// language, the dynamic variable defaults, the end_call system tool and the
+// TTS settings.
 func NewUpdate() (Update, error) {
 	tts, err := LoadTTS()
 	if err != nil {
@@ -128,8 +146,9 @@ func NewUpdate() (Update, error) {
 	}
 	return Update{ConversationConfig: ConversationConfig{
 		Agent: AgentConfig{
-			FirstMessage: FirstMessage(),
-			Language:     Language,
+			FirstMessage:     FirstMessage(),
+			Language:         Language,
+			DynamicVariables: DynamicVariables{Placeholders: Placeholders},
 			Prompt: PromptConfig{
 				Prompt: Prompt(),
 				BuiltInTools: BuiltInTools{EndCall: SystemTool{

@@ -21,7 +21,8 @@ What lives where:
 2. **Agent "hackathon"** (`ELEVENLABS_AGENT_ID`): the prompt and first
    message live in [`server/internal/call/agent/`](../../server/internal/call/agent/README.md);
    upload them with `cd server && go run ./cmd/pushagent` (it backs up the
-   current configuration first), then **Publish**. Assign the agent to the
+   current configuration first; try `--agent <test agent>` before touching
+   the shared one), then **Publish**. Assign the agent to the
    imported Twilio number ("hackathon").
 3. **Voice.** Until #35 lands, the agent's stock voice (Maggie) is used. To
    swap in Mariana's voice without touching the agent, set

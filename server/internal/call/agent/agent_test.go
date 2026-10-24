@@ -50,6 +50,21 @@ func TestPromptUsesDynamicVariables(t *testing.T) {
 	}
 }
 
+var variable = regexp.MustCompile(`\{\{\s*([a-z_]+)\s*\}\}`)
+
+// Every variable the texts use has a default, so the agent can start a
+// conversation even when the caller sends none (before #104).
+func TestEveryVariableHasPlaceholder(t *testing.T) {
+	for _, m := range variable.FindAllStringSubmatch(Prompt()+FirstMessage(), -1) {
+		if _, ok := Placeholders[m[1]]; !ok {
+			t.Errorf("{{%s}} has no default in Placeholders", m[1])
+		}
+	}
+	if Placeholders["frase_alerta"] != "" || Placeholders["frase_segura"] != "" {
+		t.Error("default phrases must be empty: a default phrase could fire by chance")
+	}
+}
+
 func TestMamaLinesAvoidForbiddenWords(t *testing.T) {
 	lines := append(mamaLines(t), FirstMessage())
 	for _, line := range lines {
@@ -82,8 +97,11 @@ func TestUpdateBody(t *testing.T) {
 	var got struct {
 		ConversationConfig struct {
 			Agent struct {
-				FirstMessage string `json:"first_message"`
-				Language     string `json:"language"`
+				FirstMessage     string `json:"first_message"`
+				Language         string `json:"language"`
+				DynamicVariables struct {
+					Placeholders map[string]string `json:"dynamic_variable_placeholders"`
+				} `json:"dynamic_variables"`
 				Prompt       struct {
 					Prompt       string `json:"prompt"`
 					BuiltInTools struct {
@@ -106,6 +124,9 @@ func TestUpdateBody(t *testing.T) {
 	a := got.ConversationConfig.Agent
 	if a.FirstMessage != FirstMessage() || a.Language != "es" || a.Prompt.Prompt != Prompt() {
 		t.Errorf("agent config = %+v", a)
+	}
+	if ph := a.DynamicVariables.Placeholders; len(ph) != 3 || ph["nombre"] == "" {
+		t.Errorf("dynamic_variable_placeholders = %v", ph)
 	}
 	ec := a.Prompt.BuiltInTools.EndCall
 	if ec.Type != "system" || ec.Name != "end_call" || ec.Params.SystemToolType != "end_call" {

@@ -2,12 +2,14 @@
 // (server/internal/call/agent) to the ElevenLabs agent:
 //
 //	cd server && go run ./cmd/pushagent            # backup, then PATCH
+//	cd server && go run ./cmd/pushagent --agent agent_...  # another agent
 //	cd server && go run ./cmd/pushagent --dry-run  # print the body only (also with --restore)
 //	cd server && go run ./cmd/pushagent --restore cmd/pushagent/backup/<file>.json
 //
-// It reads ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID. Before writing, it
-// saves the agent's current configuration (GET) under --backup-dir
-// (gitignored), so --restore can put its agent and tts sections back.
+// It reads ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID (--agent overrides
+// it). Before writing, it saves the agent's current configuration (GET)
+// under --backup-dir (gitignored), so --restore can put its agent and tts
+// sections back.
 package main
 
 import (
@@ -42,6 +44,7 @@ type pusher struct {
 func main() {
 	dryRun := flag.Bool("dry-run", false, "print the PATCH body without sending it")
 	backupDir := flag.String("backup-dir", "cmd/pushagent/backup", "where to save the current agent configuration before writing")
+	agentID := flag.String("agent", os.Getenv("ELEVENLABS_AGENT_ID"), "agent to update (default $ELEVENLABS_AGENT_ID)")
 	restore := flag.String("restore", "", "backup file whose agent and tts sections are sent back instead of the repo config")
 	flag.Parse()
 
@@ -67,14 +70,14 @@ func main() {
 	p := &pusher{
 		BaseURL:   call.BaseURL,
 		APIKey:    os.Getenv("ELEVENLABS_API_KEY"),
-		AgentID:   os.Getenv("ELEVENLABS_AGENT_ID"),
+		AgentID:   *agentID,
 		BackupDir: *backupDir,
 		Client:    &http.Client{Timeout: 30 * time.Second},
 		Now:       time.Now,
 	}
 	backup, err := p.Push(context.Background(), body)
 	if backup != "" {
-		log.Printf("pushagent: previous configuration saved to %s", backup)
+		log.Printf("pushagent: previous configuration of %s saved to %s", p.AgentID, backup)
 	}
 	if err != nil {
 		log.Fatal(err)
@@ -96,7 +99,7 @@ func printBody(w io.Writer, body []byte) error {
 // PATCHes body. It returns the backup path; it never PATCHes without one.
 func (p *pusher) Push(ctx context.Context, body []byte) (string, error) {
 	if p.APIKey == "" || p.AgentID == "" {
-		return "", errors.New("pushagent: ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID are required")
+		return "", errors.New("pushagent: ELEVENLABS_API_KEY and an agent (--agent or ELEVENLABS_AGENT_ID) are required")
 	}
 	current, err := p.do(ctx, http.MethodGet, nil)
 	if err != nil {
