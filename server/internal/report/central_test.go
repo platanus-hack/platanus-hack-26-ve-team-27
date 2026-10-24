@@ -486,3 +486,55 @@ func TestCentralStaticFiles(t *testing.T) {
 		}
 	}
 }
+
+// main.go gives the server a ReadTimeout (#127). It bounds reading the
+// request only (net/http clears the deadline once the request is read), so
+// the family page's and the central's streams stay open past it and keep
+// getting updates: the projector must not drop and reconnect every minute.
+func TestStreamsOutliveTheServerReadTimeout(t *testing.T) {
+	src := &liveSource{}
+	src.set(testToken, openRecord())
+	store := &fakeCentral{}
+	store.setCases(caseAt(testIncidentID, centralNow.Add(-time.Minute)))
+	h := NewHandler(src, Options{CanSeal: true, Channel: "WhatsApp"}).WithCentral(&Central{Key: testCentralKey, Store: store})
+	h.LivePoll, h.KeepAlive = 10*time.Millisecond, time.Hour
+	h.Now = func() time.Time { return centralNow }
+	mux := http.NewServeMux()
+	h.Register(mux)
+	srv := httptest.NewUnstartedServer(mux)
+	srv.Config.ReadTimeout = 150 * time.Millisecond
+	srv.Start()
+	t.Cleanup(srv.Close) // after the streams below close (cleanups run last first)
+	ck := login(t, srv)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	open := func(path string) chan sseMessage {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+path, nil)
+		req.AddCookie(ck)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { resp.Body.Close() })
+		msgs := make(chan sseMessage, 16)
+		go readSSE(bufio.NewReader(resp.Body), msgs)
+		if m := next(t, msgs); m.event != "update" {
+			t.Fatalf("%s: first message %+v", path, m)
+		}
+		return msgs
+	}
+	family, list := open("/i/"+testToken+"/live"), open("/central/live")
+	time.Sleep(450 * time.Millisecond) // three read timeouts
+
+	rec := openRecord()
+	rec.Incident.NotifiedAt = nil
+	src.set(testToken, rec)
+	if m := next(t, family); m.event != "update" {
+		t.Errorf("family stream after the read timeout: %+v", m)
+	}
+	store.setCases(caseAt(testIncidentID, centralNow.Add(-time.Minute)), caseAt(cancelledID, centralNow.Add(-2*time.Minute)))
+	if m := next(t, list); m.event != "update" {
+		t.Errorf("central stream after the read timeout: %+v", m)
+	}
+}
