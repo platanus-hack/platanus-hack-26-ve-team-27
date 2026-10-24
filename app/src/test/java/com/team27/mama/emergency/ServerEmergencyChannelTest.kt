@@ -8,8 +8,13 @@ import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
@@ -18,6 +23,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ServerEmergencyChannelTest {
     private class Recording(private val reply: () -> HttpResponse) : HttpTransport {
         val calls = mutableListOf<Triple<String, String, String?>>()
@@ -80,6 +86,22 @@ class ServerEmergencyChannelTest {
             transport.release.countDown()
             io.cancel()
         }
+    }
+
+    /** The caller gave up before [ServerEmergencyChannel]'s IO thread picked the call up: no POST goes out. */
+    @Test
+    fun cancelledBeforeTheIoThreadStartsNeverPosts() = runTest {
+        val ioScheduler = TestCoroutineScheduler()
+        val io = CoroutineScope(SupervisorJob() + StandardTestDispatcher(ioScheduler))
+        val transport = Recording { HttpResponse(200, "MAMA1:ACK:x") }
+        val channel = ServerEmergencyChannel("https://example.test", transport, io = io)
+        val caller = launch { channel.post("MAMA1 x") }
+        runCurrent()
+        caller.cancel()
+        runCurrent()
+        ioScheduler.advanceUntilIdle()
+        assertTrue(transport.calls.isEmpty())
+        io.cancel()
     }
 
     @Test

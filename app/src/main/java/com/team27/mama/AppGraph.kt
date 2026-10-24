@@ -103,7 +103,8 @@ class AppGraph(
             network = networkStatus,
             channelOverride = channelOverride::value,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1)),
-            onError = { message, error -> Log.w(LOG_TAG, message, error) },
+            // Only the tag: a throwable's message or causes could carry a location or a number.
+            onError = { message, _ -> Log.w(LOG_TAG, message) },
         )
     }
 

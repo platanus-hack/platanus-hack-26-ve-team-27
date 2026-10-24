@@ -45,7 +45,7 @@ object PayloadCodec {
         ByteBuffer.wrap(MessageDigest.getInstance("SHA-256").digest(publicKey), 0, 8).long
 
     fun degreesToE5(deg: Double): Int {
-        require(deg.isFinite() && kotlin.math.abs(deg) <= 180.0) { "invalid degrees: $deg" }
+        require(deg.isFinite() && kotlin.math.abs(deg) <= 180.0) { "degrees out of range" }
         return roundHalfAwayFromZero(deg * 1e5).toInt()
     }
 

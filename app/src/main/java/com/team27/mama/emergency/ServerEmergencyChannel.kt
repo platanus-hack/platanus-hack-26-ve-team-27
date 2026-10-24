@@ -17,7 +17,8 @@ import kotlinx.coroutines.async
  *
  * The blocking call runs on [io], detached from the caller: socket connect, read and DNS ignore
  * thread interrupts, so a caller's timeout must not wait for them. Cancelling [post] returns at
- * once; the orphaned call finishes in the background and its reply is dropped.
+ * once; the orphaned call finishes in the background and its reply is dropped. A call cancelled
+ * before [io] started it never sends the POST.
  */
 class ServerEmergencyChannel(
     baseUrl: String,
@@ -28,7 +29,13 @@ class ServerEmergencyChannel(
     private val url = baseUrl.trimEnd('/') + "/emergencies"
 
     override suspend fun post(smsText: String): String {
-        val res = io.async { transport.execute("POST", url, smsText) }.await()
+        val call = io.async { transport.execute("POST", url, smsText) }
+        val res = try {
+            call.await()
+        } finally {
+            // A call the IO thread has not picked up yet never runs; one already blocked is unaffected.
+            call.cancel()
+        }
         if (res.code !in 200..299) {
             log("POST /emergencies: HTTP ${res.code}")
             throw ServerHttpException(res.code, "POST /emergencies: HTTP ${res.code}")
