@@ -146,7 +146,9 @@ class AppGraph(
             networkStatus,
             SharedPreferencesRelayStore(app),
             CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1)),
-            log = { Log.w("MamaRelay", it) },
+            // Info: every line is a routine outcome (queued, acked, a retried failure). The real failures, a
+            // refused service start or mesh call, are warnings from MeshController and RelayForegroundService.
+            log = { Log.i("MamaRelay", it) },
         )
     }
 
