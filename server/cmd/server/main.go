@@ -176,9 +176,9 @@ func newNotifier(cfg config.Config, pool *sql.DB) intake.Notifier {
 // webhook only logs and intake never hands off a call.
 func newCallRoutes(cfg config.Config, pool *sql.DB) *call.Routes {
 	if pool == nil {
-		return call.NewRoutes(cfg.ElevenLabs, nil)
+		return call.NewRoutes(cfg, nil)
 	}
-	return call.NewRoutes(cfg.ElevenLabs, call.NewDBStore(pool))
+	return call.NewRoutes(cfg, call.NewDBStore(pool))
 }
 
 // channelConfigured reports whether the NOTIFIER channel has its credentials,

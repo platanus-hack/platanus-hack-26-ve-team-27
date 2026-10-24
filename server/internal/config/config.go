@@ -24,6 +24,10 @@ type Config struct {
 	Port        string // PORT
 	DatabaseURL string // DATABASE_URL
 	Notifier    string // NOTIFIER, lowercased; NotifierKapso when unset
+	// PublicURL is PUBLIC_URL, else Render's RENDER_EXTERNAL_URL: the
+	// server's public base URL, optional. Log lines that point the operator
+	// at a page (the call fallback) use it; blank logs the bare path.
+	PublicURL string
 
 	ElevenLabs ElevenLabs
 	Twilio     Twilio
@@ -47,6 +51,10 @@ type ElevenLabs struct {
 	// #11 spike route POST /spike/call. Blank leaves the route off, so a
 	// deploy never exposes an open "call any number" endpoint.
 	CallSpikeToken string
+	// ForceCallFailure is CALL_FORCE_FAILURE, "true" or "1": every call
+	// fails without dialing, so the retry and the WebRTC fallback can be
+	// rehearsed (#23). Off by default.
+	ForceCallFailure bool
 }
 
 // Twilio owns the caller number, sends the SMS fallback and receives the
@@ -100,13 +108,15 @@ func LoadFrom(getenv func(string) string) Config {
 		Port:        get("PORT"),
 		DatabaseURL: get("DATABASE_URL"),
 		Notifier:    strings.ToLower(get("NOTIFIER")),
+		PublicURL:   get("PUBLIC_URL"),
 		ElevenLabs: ElevenLabs{
-			APIKey:         get("ELEVENLABS_API_KEY"),
-			AgentID:        get("ELEVENLABS_AGENT_ID"),
-			PhoneNumberID:  get("ELEVENLABS_PHONE_NUMBER_ID"),
-			WebhookSecret:  get("ELEVENLABS_WEBHOOK_SECRET"),
-			VoiceID:        get("ELEVENLABS_VOICE_ID"),
-			CallSpikeToken: get("CALL_SPIKE_TOKEN"),
+			APIKey:           get("ELEVENLABS_API_KEY"),
+			AgentID:          get("ELEVENLABS_AGENT_ID"),
+			PhoneNumberID:    get("ELEVENLABS_PHONE_NUMBER_ID"),
+			WebhookSecret:    get("ELEVENLABS_WEBHOOK_SECRET"),
+			VoiceID:          get("ELEVENLABS_VOICE_ID"),
+			CallSpikeToken:   get("CALL_SPIKE_TOKEN"),
+			ForceCallFailure: isOn(get("CALL_FORCE_FAILURE")),
 		},
 		Twilio: Twilio{
 			AccountSID:     get("TWILIO_ACCOUNT_SID"),
@@ -134,6 +144,9 @@ func LoadFrom(getenv func(string) string) Config {
 	}
 	if c.Notifier == "" {
 		c.Notifier = NotifierKapso
+	}
+	if c.PublicURL == "" {
+		c.PublicURL = get("RENDER_EXTERNAL_URL")
 	}
 	return c
 }
