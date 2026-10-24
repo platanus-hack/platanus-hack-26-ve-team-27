@@ -9,6 +9,7 @@ import com.team27.mama.emergency.payload.Kind
 import com.team27.mama.emergency.payload.PayloadCodec
 import com.team27.mama.emergency.payload.PayloadFormat
 import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.TestScope
@@ -141,6 +142,28 @@ class EmergencyLifecycleTest {
             at(6_000)
             val p = decodeMesh(mesh.broadcasts.last())
             assertEquals(Kind.UPDATE to 1, p.kind to p.seq)
+        }
+    }
+
+    @Test
+    fun unsignedUpdateAfterAckStaysNotifiedWithoutMeshIssue() = runTest {
+        with(EmergencyTestKit()) {
+            httpAcksEverything()
+            val signer = FlakySigner(broken = false)
+            val o = orchestrator(signer = signer)
+            o.declare()
+            runCurrent()
+            assertEquals(EmergencyPhase.NOTIFIED, o.state.value.phase)
+            signer.broken = true
+            location.fresh.complete(freshFix.copy(timeMs = NOW))
+            runCurrent()
+            assertEquals(EmergencyPhase.NOTIFIED, o.state.value.phase)
+            assertEquals(null, o.state.value.meshIssue)
+            signer.broken = false
+            at(5_000)
+            val p = decodeSms(http.posted.last())
+            assertEquals(Kind.UPDATE to 1, p.kind to p.seq)
+            assertEquals(1, o.state.value.ackedSeq)
         }
     }
 
@@ -299,12 +322,75 @@ class EmergencyLifecycleTest {
             at(15_000)
             assertEquals(before, mesh.broadcasts.size)
             assertEquals(EmergencyPhase.CANCELLING, o.state.value.phase)
-            assertEquals(MeshIssue.UNAVAILABLE, o.state.value.meshIssue)
             signer.broken = false
             at(21_000)
             val p = decodeMesh(mesh.broadcasts.drop(before).single())
             assertEquals(Kind.CANCEL to 1, p.kind to p.seq)
             assertEquals(EmergencyPhase.CANCELLING, o.state.value.phase)
+        }
+    }
+
+    @Test
+    fun ackBetweenCancelAndItsScopeWorkKeepsCancelling() = runTest {
+        with(EmergencyTestKit()) {
+            val gate = CompletableDeferred<Unit>()
+            online = true
+            http.behaviour = { gate.await(); httpAck(42, 0) }
+            val o = orchestrator()
+            o.declare()
+            runCurrent()
+            // The alert's ack resumes before the scope runs the cancel: it lands in the gap.
+            gate.complete(Unit)
+            o.cancel()
+            runCurrent()
+            assertEquals(EmergencyPhase.CANCELLING, o.state.value.phase)
+            assertEquals(0, o.state.value.ackedSeq)
+            val p = decodeSms(http.posted[1])
+            assertEquals(Kind.CANCEL to 1, p.kind to p.seq)
+            assertEquals(Kind.CANCEL, decodeMesh(mesh.broadcasts.single()).kind)
+        }
+    }
+
+    @Test
+    fun freshFixBetweenCancelAndItsScopeWorkIsDropped() = runTest {
+        with(EmergencyTestKit()) {
+            val o = orchestrator()
+            o.declare()
+            at(6_000)
+            val before = mesh.broadcasts.size
+            location.fresh.complete(freshFix.copy(timeMs = NOW + 6_000))
+            o.cancel()
+            runCurrent()
+            val p = decodeMesh(mesh.broadcasts.drop(before).single())
+            assertEquals(Kind.CANCEL to 1, p.kind to p.seq)
+            assertTrue((mesh.broadcasts.map(::decodeMesh) + sms.sent.map { decodeSms(it.second) }).none { it.kind == Kind.UPDATE })
+            assertEquals(1, o.state.value.seq)
+        }
+    }
+
+    @Test
+    fun cancelAfterUpdateHasSeqTwo() = runTest {
+        with(EmergencyTestKit()) {
+            val o = orchestrator()
+            o.declare()
+            at(1_000)
+            location.fresh.complete(freshFix.copy(timeMs = NOW + 1_000))
+            runCurrent()
+            assertEquals(Kind.UPDATE, decodeMesh(mesh.broadcasts.last()).kind)
+            at(2_000)
+            o.cancel()
+            runCurrent()
+            val p = decodeMesh(mesh.broadcasts.last())
+            assertEquals(Kind.CANCEL to 2, p.kind to p.seq)
+            assertEquals(p, decodeSms(sms.sent.last().second))
+            assertEquals(3, sms.sent.size)
+            assertEquals(2, o.state.value.seq)
+            mesh.incoming.emit(meshAck(42, 1))
+            runCurrent()
+            assertEquals(EmergencyPhase.CANCELLING, o.state.value.phase)
+            mesh.incoming.emit(meshAck(42, 2))
+            runCurrent()
+            assertEquals(EmergencyPhase.CANCELLED, o.state.value.phase)
         }
     }
 

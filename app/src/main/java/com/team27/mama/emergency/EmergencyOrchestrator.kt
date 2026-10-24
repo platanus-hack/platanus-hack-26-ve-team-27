@@ -53,8 +53,9 @@ object EmergencyTiming {
  * frame (seq + 1); [cancel] replaces the frame with a signed CANCEL over the same channels.
  *
  * All work runs on [scope] and never switches dispatchers; production passes a
- * single-threaded scope, so the session state below needs no locking. [declare] and
- * [cancel] may be called from any thread.
+ * single-threaded scope, so the session state needs no locking. [declare] and [cancel]
+ * may be called from any thread: a short [lock] guards only `declared` and their phase
+ * compare-and-set.
  */
 class EmergencyOrchestrator(
     private val signer: PayloadSigner,
@@ -76,20 +77,24 @@ class EmergencyOrchestrator(
     /** The emergency in progress. Read and written only from coroutines on [scope]. */
     private var session: Session? = null
 
-    /** Makes the phase check and change of [declare] and [cancel] one step across threads. */
+    /** Guards [declared] and the phase compare-and-set of [declare] and [cancel]; no caller code runs under it. */
     private val lock = Any()
 
     /** The session of the last [declare]. Guarded by [lock]. */
     private var declared: Session? = null
 
     override fun declare(): Boolean {
+        // Caller code runs before the lock; the results are dropped when an emergency is already active.
+        val id = newEmergencyId()
+        val override = channelOverride()
+        val config = config()
+        val fix = orElse(null) { location.lastKnown() }
         val next = synchronized(lock) {
-            val id = newEmergencyId()
             val before = mutableState.getAndUpdate {
                 if (it.phase.isActive) it else EmergencyState(phase = EmergencyPhase.SENDING, emergencyId = id)
             }
             if (before.phase.isActive) return false
-            Session(id, channelOverride(), config(), orElse(null) { location.lastKnown() }).also { declared = it }
+            Session(id, override, config, fix).also { declared = it }
         }
         scope.launch { next.begin() }
         return true
@@ -148,7 +153,7 @@ class EmergencyOrchestrator(
 
         fun begin() {
             val declaredState = mutableState.value
-            if (declaredState.emergencyId != id || !declaredState.phase.isActive) return
+            if (declaredState.emergencyId != id || !declaredState.phase.isActive) return jobs.cancel()
             session?.jobs?.cancel()
             session = this
             // Cancelled before this ran: nothing went out, so there is nothing to cancel.
@@ -172,7 +177,7 @@ class EmergencyOrchestrator(
             } catch (_: Exception) {
                 null
             } ?: return
-            if (session !== this || cancelSeq != null) return
+            if (session !== this || !mutableState.value.phase.isCancellable) return
             val used = fix
             if (used != null && fresh.timeMs <= used.timeMs) return
             fix = fresh
@@ -214,8 +219,7 @@ class EmergencyOrchestrator(
             make()?.let { return emit(it) }
             if (emission?.isActive != true) {
                 update {
-                    val phase = if (it.phase in FALLBACK_PHASES) EmergencyPhase.NO_CHANNEL else it.phase
-                    it.copy(phase = phase, meshIssue = MeshIssue.UNAVAILABLE)
+                    if (it.phase in FALLBACK_PHASES) it.copy(phase = EmergencyPhase.NO_CHANNEL, meshIssue = MeshIssue.UNAVAILABLE) else it
                 }
             }
             pending = jobs.launch {
@@ -249,8 +253,9 @@ class EmergencyOrchestrator(
             if (ack.emergencyId != id || session !== this) return false
             val cancelling = cancelSeq
             update {
-                val acked = maxOf(it.ackedSeq ?: ack.seq, ack.seq)
-                if (cancelling != null) it.copy(ackedSeq = acked) else it.copy(phase = EmergencyPhase.NOTIFIED, ackedSeq = acked)
+                // CANCELLING is set on the caller thread before cancelSeq: never overwrite it.
+                val phase = if (cancelling != null || it.phase == EmergencyPhase.CANCELLING) it.phase else EmergencyPhase.NOTIFIED
+                it.copy(phase = phase, ackedSeq = maxOf(it.ackedSeq ?: ack.seq, ack.seq))
             }
             if (cancelling != null) {
                 if (ack.seq < cancelling) return false
