@@ -3,5 +3,6 @@
   "phone_number": "+584141234567",
   "family_numbers": ["+584241112233", "+584125556677"],
   "duress_phrase": "dile a la tía Carmen que llego tarde",
-  "app_version": "0.1.0"
+  "app_version": "0.1.0",
+  "ed25519_public_key": "Qjj0xMgcOctYzPP1+kmbgiXDnjbvMvg+Cm1vpph2NXo="
 }

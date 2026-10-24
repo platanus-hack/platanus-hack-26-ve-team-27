@@ -19,6 +19,7 @@ func TestRoundTripSamples(t *testing.T) {
 		into func() any
 	}{
 		{"device_registration.json", func() any { return new(DeviceRegistration) }},
+		{"remote_config.json", func() any { return new(RemoteConfig) }},
 		{"alert_event.json", func() any { return new(AlertEvent) }},
 		{"alert_response.json", func() any { return new(AlertResponse) }},
 		{"location_update.json", func() any { return new(LocationUpdate) }},
@@ -60,8 +61,8 @@ func TestEverySampleHasACase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 6 {
-		t.Fatalf("testdata has %d samples, TestRoundTripSamples covers 6: add the new one there", len(files))
+	if len(files) != 7 {
+		t.Fatalf("testdata has %d samples, TestRoundTripSamples covers 7: add the new one there", len(files))
 	}
 }
 

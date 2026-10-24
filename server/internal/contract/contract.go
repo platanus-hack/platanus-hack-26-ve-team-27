@@ -84,6 +84,19 @@ type DeviceRegistration struct {
 	FamilyNumbers []string `json:"family_numbers"` // E.164; the notifier writes to these
 	DuressPhrase  string   `json:"duress_phrase"`
 	AppVersion    string   `json:"app_version,omitempty"`
+	// Ed25519PublicKey is the device's Ed25519 identity public key (bitchat's,
+	// #56), std Base64 of 32 bytes in JSON; the server derives key_id from it
+	// to verify offline payloads (#57). Optional: omitted keeps the stored key.
+	Ed25519PublicKey []byte `json:"ed25519_public_key,omitempty"`
+}
+
+// RemoteConfig is server -> phone, the reply to GET /config; the phone caches
+// it and works offline from the cache. Keys are std Base64 of 32 bytes in
+// JSON. SMSNumber is E.164 and omitted when the server has none.
+type RemoteConfig struct {
+	SMSNumber              string `json:"sms_number,omitempty"`
+	ServerEd25519PublicKey []byte `json:"server_ed25519_public_key"`
+	ServerX25519PublicKey  []byte `json:"server_x25519_public_key"`
 }
 
 // AlertEvent is phone -> server when the person triggers an alert. The phone

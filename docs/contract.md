@@ -52,7 +52,7 @@ Kotlin mirror test both sides of every threshold.
 ## Messages
 
 Endpoints are listed for the slices that implement them (#17 intake,
-#18 call engine, #20 notifier); this ticket does not add routes.
+#18 call engine, #20 notifier, #55 `GET /config`); this ticket does not add routes.
 
 ### Point
 
@@ -66,8 +66,8 @@ optional.
 ### DeviceRegistration (phone → server, `POST /devices`)
 
 Sent at the end of first-run setup and whenever the setup changes; the server
-upserts the `devices` row. `app_version` is optional. Sample:
-`device_registration.json`.
+upserts the `devices` row. `app_version` and `ed25519_public_key` are
+optional. Sample: `device_registration.json`.
 
 ```json
 {
@@ -75,9 +75,40 @@ upserts the `devices` row. `app_version` is optional. Sample:
   "phone_number": "+584141234567",
   "family_numbers": ["+584241112233", "+584125556677"],
   "duress_phrase": "dile a la tía Carmen que llego tarde",
-  "app_version": "0.1.0"
+  "app_version": "0.1.0",
+  "ed25519_public_key": "Qjj0xMgcOctYzPP1+kmbgiXDnjbvMvg+Cm1vpph2NXo="
 }
 ```
+
+`ed25519_public_key` is the device's Ed25519 identity public key (bitchat's,
+#56): standard Base64 with padding of exactly 32 bytes. The server derives
+`key_id` from it to verify offline payloads (#57). It is optional: a
+registration without it keeps the stored key; a different key for the same
+`device_id` replaces it; a key already registered to another `device_id` is
+answered `409`; a malformed key is `400`.
+
+### RemoteConfig (server → phone, `GET /config`)
+
+Public, no auth. The reply is `200` with `Content-Type: application/json`.
+Sample: `remote_config.json`.
+
+```json
+{
+  "sms_number": "+15555550100",
+  "server_ed25519_public_key": "/x+fnERHrOfQ9HPdLiQP9ya2eBtqDNBmsrjsP9ZnMBE=",
+  "server_x25519_public_key": "14/r5bky56/VN9vYfVVwD79P59iaXXdMRrOvYZxUGj0="
+}
+```
+
+- `sms_number`: the central number for the SMS fallback, E.164; omitted when
+  the server has none.
+- `server_ed25519_public_key`: verifies the server's signed acks (std Base64,
+  32 bytes, always present).
+- `server_x25519_public_key`: the sealed-box key phones encrypt offline
+  payloads to (std Base64, 32 bytes, always present).
+
+The phone caches the last good reply and falls back to a build-time default
+SMS number.
 
 ### AlertEvent (phone → server, `POST /incidents`)
 
@@ -194,7 +225,8 @@ the newest call's verdict. Sample: `notifier_message.json`.
 
 ## Postgres schema
 
-`server/migrations/0001_init.sql`. The server applies pending migrations on
+`server/migrations/0001_init.sql`; `0002_device_keys.sql` adds
+`ed25519_public_key` and `key_id` to `devices`. The server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
 no-op. Without `DATABASE_URL` the server boots and skips migrations.
@@ -225,4 +257,7 @@ the shared test vectors are in
 `server/internal/emergency/payload/testdata/vectors.json`.
 
 Its 8-byte `device_id` (the first 8 bytes of SHA-256 of the device Ed25519
-public key) is not the UUID `device_id` used above. #55 maps one to the other.
+public key) is not the UUID `device_id` used above. `devices.key_id` stores
+those 8 bytes for every device that registered its key, and
+`devicekeys.Lookup` maps a payload's `device_id` to the device row and its
+public key.

@@ -114,6 +114,24 @@ data class DeviceRegistration(
     @SerialName("family_numbers") val familyNumbers: List<String>,
     @SerialName("duress_phrase") val duressPhrase: String,
     @SerialName("app_version") val appVersion: String? = null,
+    /**
+     * The device's Ed25519 identity public key (bitchat's, #56), std Base64
+     * of 32 bytes; the server derives key_id from it to verify offline
+     * payloads (#57).
+     */
+    @SerialName("ed25519_public_key") val ed25519PublicKey: String? = null,
+)
+
+/**
+ * Server -> phone, reply to GET /config; the phone caches it and works
+ * offline from the cache. Keys are std Base64 of 32 bytes.
+ */
+@Serializable
+data class RemoteConfig(
+    /** E.164; omitted when the server has none. */
+    @SerialName("sms_number") val smsNumber: String? = null,
+    @SerialName("server_ed25519_public_key") val serverEd25519PublicKey: String,
+    @SerialName("server_x25519_public_key") val serverX25519PublicKey: String,
 )
 
 /**

@@ -70,6 +70,8 @@ class ContractRoundTripTest {
 
     @Test fun deviceRegistration() = assertRoundTrip("device_registration.json", DeviceRegistration.serializer())
 
+    @Test fun remoteConfig() = assertRoundTrip("remote_config.json", RemoteConfig.serializer())
+
     @Test fun alertEvent() = assertRoundTrip("alert_event.json", AlertEvent.serializer())
 
     @Test fun alertResponse() = assertRoundTrip("alert_response.json", AlertResponse.serializer())
@@ -83,8 +85,8 @@ class ContractRoundTripTest {
     @Test
     fun everySampleHasACase() {
         val files = testdataDir.listFiles { f -> f.isFile && f.name.endsWith(".json") }.orEmpty()
-        if (files.size != 6) {
-            fail("testdata has ${files.size} samples, ContractRoundTripTest covers 6: add the new one here")
+        if (files.size != 7) {
+            fail("testdata has ${files.size} samples, ContractRoundTripTest covers 7: add the new one here")
         }
     }
 
