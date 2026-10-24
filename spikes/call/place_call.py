@@ -151,6 +151,7 @@ def main():
     else:
         print("twilio: call still open or status unreadable after --max-wait")
 
+    credits = ""
     # Credits: ElevenLabs fills the conversation metadata a few seconds after
     # the call ends. Print every cost/charging field it has; do not guess.
     if conv and env("ELEVENLABS_API_KEY", required=False):
@@ -159,13 +160,14 @@ def main():
                                 {"xi-api-key": env("ELEVENLABS_API_KEY")})
         meta = out.get("metadata", {}) if isinstance(out, dict) else {}
         cost = {k: v for k, v in meta.items() if "cost" in k or "charging" in k}
+        credits = str(meta.get("cost", ""))
         print(f"elevenlabs status   : {out.get('status') if isinstance(out, dict) else status}")
         print(f"elevenlabs cost     : {json.dumps(cost) if cost else 'not in metadata yet; check the dashboard'}")
 
     print()
     print("Row for spikes/call/RESULTS.md:")
     print(f"| {time.strftime('%H:%M')} | {mask(args.to)} | {final.get('status') if final else '?'} "
-          f"| {ms(t0, t_req)} | {ms(t0, t_ring)} | {ms(t_answer, first_word.get('t'))} | | {conv} |")
+          f"| {ms(t0, t_req)} | {ms(t0, t_ring)} | {ms(t_answer, first_word.get('t'))} | {credits} | {conv} |")
 
 
 if __name__ == "__main__":
