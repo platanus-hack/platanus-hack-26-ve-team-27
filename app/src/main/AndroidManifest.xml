@@ -24,6 +24,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- #16: hedge a slow Wi-Fi request on mobile data. -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <!-- Mamá's incoming call (#96): the call notification takes the whole locked
+         screen. Android 14+ also needs the "Full-screen notifications" special access. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <application
         android:name=".MamaApp"
@@ -89,6 +92,10 @@
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
+        <!-- Rechazar on Mamá's call notification (#96). -->
+        <receiver
+            android:name=".incomingcall.IncomingCallReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

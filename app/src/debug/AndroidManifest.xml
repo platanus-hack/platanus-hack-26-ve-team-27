@@ -13,5 +13,10 @@
             android:name="com.team27.mama.debug.MeshDebugReceiver"
             android:exported="true"
             android:permission="android.permission.DUMP" />
+        <!-- Debug builds only: rings Mamá's incoming call (#96) from adb, without the trigger. -->
+        <receiver
+            android:name="com.team27.mama.debug.IncomingCallDebugReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
     </application>
 </manifest>

@@ -9,12 +9,12 @@ import com.team27.mama.emergency.sms.ExecutorSmsScheduler
 import com.team27.mama.emergency.sms.SmsAckBus
 import com.team27.mama.emergency.sms.SmsAckFilter
 import com.team27.mama.emergency.sms.SmsChannel
+import com.team27.mama.incomingcall.NotificationIncomingCallLauncher
 import com.team27.mama.onboarding.ConnectivityNetworkStatus
 import com.team27.mama.onboarding.DeviceRegistrar
 import com.team27.mama.onboarding.OnboardingGate
 import com.team27.mama.server.HttpServerApi
 import com.team27.mama.server.ServerApi
-import com.team27.mama.trigger.ConfirmationScreenLauncher
 import com.team27.mama.trigger.IncomingCallLauncher
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -69,5 +69,5 @@ class AppGraph(
      * `call`. #96 swaps in the CallStyle incoming-call notification that opens
      * #94's "Llamada entrante"; until then it opens the confirmation screen.
      */
-    val incomingCall: IncomingCallLauncher = ConfirmationScreenLauncher(app)
+    val incomingCall: IncomingCallLauncher = NotificationIncomingCallLauncher(app)
 }
