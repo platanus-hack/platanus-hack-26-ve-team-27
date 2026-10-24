@@ -489,6 +489,24 @@ default; then every route below answers `404`). Code:
   for the next incident, using the database's clock, and opens its report
   when it arrives. The key is compared in constant time; a wrong or missing
   key answers `404`.
+- **Central dashboard (#99).** With `CENTRAL_KEY` set (and the report on),
+  `GET /central/` lists every incident live, newest first: name
+  (`devices.user_name`), masked number, time, last location and state
+  (`activo`, `en llamada`, `alerta` for a `duress` verdict, `cancelado` for
+  an explicit cancellation or a `no_duress` verdict that notified nobody,
+  `cerrado`). `GET /central/r/{incident_id}` follows one case: the stage
+  track, the call with the transcript as it is stored (also during the call),
+  the route and points, the timeline, `calls.ficha` (#106) when the column
+  exists, and the notified people per channel. Both stream through the same
+  live loop as `/i/{token}/live` (`/central/live`,
+  `/central/r/{incident_id}/live`, and their `estado.json`). Access:
+  `?key=<CENTRAL_KEY>` once, compared in constant time, sets an HttpOnly,
+  Secure, SameSite=Strict cookie (an HMAC of the key, 24 h) and redirects to
+  the URL without the key. No key, a wrong key or a bad cookie answers `404`,
+  the same as with `CENTRAL_KEY` unset. `?tema=claro` starts in light (dark is
+  the default); `?seguir=1` on the list opens the next new case by itself.
+  Opening a case creates its report link if it has none, for the recording
+  and the PDF.
 - **Clocks.** Each timeline row says which clock its time comes from: the
   phone (`triggered_at`, `gps_points.recorded_at`), the server
   (`incidents.created_at`, `calls.requested_at`, `verdict_at`, `notified_at`,
