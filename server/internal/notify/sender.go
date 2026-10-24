@@ -26,29 +26,15 @@ func NewSender(cfg config.Config) (Sender, error) {
 			Client:        client,
 		}, nil
 	case config.NotifierSMS:
-		return newSMS(cfg, client), nil
+		return &SMS{
+			BaseURL:    TwilioBaseURL,
+			AccountSID: cfg.Twilio.AccountSID,
+			AuthToken:  cfg.Twilio.AuthToken,
+			From:       cfg.Twilio.PhoneNumber,
+			Client:     client,
+		}, nil
 	}
 	return nil, fmt.Errorf("notify: NOTIFIER=%q is not %q or %q", cfg.Notifier, config.NotifierKapso, config.NotifierSMS)
-}
-
-// NewExtraSMS is the second channel of NOTIFY_SMS (#102), for WithSMS: the
-// Twilio SMS sender, or nil when NOTIFY_SMS is off or NOTIFIER=sms already
-// sends every recipient an SMS (so nobody gets the same SMS twice).
-func NewExtraSMS(cfg config.Config) *SMS {
-	if !cfg.NotifySMS || cfg.Notifier == config.NotifierSMS {
-		return nil
-	}
-	return newSMS(cfg, &http.Client{Timeout: sendTimeout})
-}
-
-func newSMS(cfg config.Config, client *http.Client) *SMS {
-	return &SMS{
-		BaseURL:    TwilioBaseURL,
-		AccountSID: cfg.Twilio.AccountSID,
-		AuthToken:  cfg.Twilio.AuthToken,
-		From:       cfg.Twilio.PhoneNumber,
-		Client:     client,
-	}
 }
 
 // errMissingConfig is wrapped when a sender lacks a credential.

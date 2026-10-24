@@ -7,7 +7,7 @@
 // The channel is a Sender: Kapso WhatsApp (the default) or Twilio SMS,
 // picked by the NOTIFIER env var (see NewSender). For the demo (#102),
 // NOTIFY_SELF adds the reporting device's own number to the recipients
-// (WithSelf) and NOTIFY_SMS sends every recipient a short SMS too (WithSMS).
+// (WithSelf).
 package notify
 
 import (
@@ -83,7 +83,6 @@ type Notifier struct {
 	deliveries DeliveryLog        // nil: sends are only logged
 	limit      *ratelimit.Limiter // nil: no cap
 	self       bool               // also send to the device's own number
-	sms        Sender             // nil: only sender; else every recipient also gets FormatSMS through it
 }
 
 var _ intake.Notifier = (*Notifier)(nil)
@@ -106,25 +105,18 @@ func (n *Notifier) WithSelf() *Notifier {
 	return n
 }
 
-// WithSMS also sends every recipient FormatSMS through sms (NOTIFY_SMS). A
-// failure on one channel never stops the other.
-func (n *Notifier) WithSMS(sms Sender) *Notifier {
-	n.sms = sms
-	return n
-}
-
-// send sends one message through s, with the provider's message id when it
-// gives one, and records the outcome.
-func (n *Notifier) send(ctx context.Context, s Sender, incidentID, to, body string) error {
+// send sends one message, with the provider's message id when it gives one,
+// and records the outcome.
+func (n *Notifier) send(ctx context.Context, incidentID, to, body string) error {
 	var id string
 	var err error
-	if is, ok := s.(IDSender); ok {
-		id, err = is.SendWithID(ctx, to, body)
+	if s, ok := n.sender.(IDSender); ok {
+		id, err = s.SendWithID(ctx, to, body)
 	} else {
-		err = s.Send(ctx, to, body)
+		err = n.sender.Send(ctx, to, body)
 	}
 	if n.deliveries != nil {
-		n.deliveries.Sent(context.WithoutCancel(ctx), incidentID, to, ChannelOf(s), id, err)
+		n.deliveries.Sent(context.WithoutCancel(ctx), incidentID, to, ChannelOf(n.sender), id, err)
 	}
 	return err
 }
@@ -138,8 +130,8 @@ func (n *Notifier) WithLimit(l *ratelimit.Limiter) *Notifier {
 }
 
 // cancelsAlert reports whether the verdict cancels the alert, so Notify sends
-// nothing to anyone, the reporter included, on any channel. No verdict does
-// yet: the "todo bien" phrase of #106 hooks in here.
+// nothing to anyone, the reporter included. No verdict does yet: the "todo
+// bien" phrase of #106 hooks in here.
 func cancelsAlert(contract.NotifierMessage) bool { return false }
 
 // recipients is the family numbers plus, WithSelf, the device's own number
@@ -158,13 +150,13 @@ func (n *Notifier) WithReportLinks(links ReportLinks) *Notifier {
 }
 
 // Notify sends the incident's message to every recipient (family, and the
-// device itself WithSelf) on every channel, once. It only logs failures: the
-// handoff has no caller to report to. A number over the limit (WithLimit) is
-// only logged: no send and no delivery row.
+// device itself WithSelf), once. It only logs failures: the handoff has no
+// caller to report to. A number over the limit (WithLimit) is only logged: no
+// send and no delivery row.
 //
-// If no recipient got the message on any channel, the claim is released so a
-// retry can send. Once any number got it, the claim stays, so a retry never
-// sends a second message.
+// If no recipient got the message, the claim is released so a retry can
+// send. Once any number got it, the claim stays, so a retry never sends a
+// second message.
 func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 	msg, err := n.store.Message(ctx, inc)
 	if err != nil {
@@ -191,29 +183,18 @@ func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 		return
 	}
 
-	body, smsBody := FormatWithReport(msg, n.reportURL(ctx, inc.ID)), FormatSMS(msg)
+	body := FormatWithReport(msg, n.reportURL(ctx, inc.ID))
 	sent := 0
 	for _, num := range to {
 		if err := n.limit.Allow(num); err != nil {
 			log.Printf("notify: incident %s: message to %s %v; not sent", inc.ID, Mask(num), err)
 			continue
 		}
-		reached := false
-		if err := n.send(ctx, n.sender, inc.ID, num, body); err != nil {
+		if err := n.send(ctx, inc.ID, num, body); err != nil {
 			log.Printf("notify: incident %s: send to %s: %v", inc.ID, Mask(num), err)
-		} else {
-			reached = true
+			continue
 		}
-		if n.sms != nil {
-			if err := n.send(ctx, n.sms, inc.ID, num, smsBody); err != nil {
-				log.Printf("notify: incident %s: SMS to %s: %v", inc.ID, Mask(num), err)
-			} else {
-				reached = true
-			}
-		}
-		if reached {
-			sent++
-		}
+		sent++
 	}
 	if sent > 0 {
 		log.Printf("notify: incident %s: sent to %d of %d recipients", inc.ID, sent, len(to))
@@ -271,25 +252,6 @@ func FormatWithReport(msg contract.NotifierMessage, reportURL string) string {
 		fmt.Fprintf(&b, "\nFicha: %s", reportURL)
 	}
 	return b.String()
-}
-
-// smsLimit is one GSM-7 SMS segment.
-const smsLimit = 160
-
-// asciiFold drops the accents of the Spanish labels: one accented letter
-// outside GSM-7 turns the SMS into UCS-2, whose segment is 70 characters.
-var asciiFold = strings.NewReplacer("á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u", "Á", "A")
-
-// FormatSMS is the short alert of the NOTIFY_SMS channel: plain ASCII within
-// one segment (smsLimit), the verdict, the time and the location as a Google
-// Maps link. Unlike Format it carries a link: an SMS has no other way to show
-// a map.
-//
-//	Alerta de MAMA: coaccion. 09:10 VET. https://maps.google.com/?q=10.4961,-66.8531
-func FormatSMS(msg contract.NotifierMessage) string {
-	return fmt.Sprintf("Alerta de MAMA: %s. %s VET. https://maps.google.com/?q=%.4f,%.4f",
-		asciiFold.Replace(verdictLabel(msg)), msg.TriggeredAt.In(vet).Format("15:04"),
-		msg.Location.Lat, msg.Location.Lng)
 }
 
 // verdictLabel is the Spanish verdict line. With no call (immediate_alert,

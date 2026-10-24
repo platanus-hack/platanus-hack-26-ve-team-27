@@ -299,24 +299,12 @@ several calls, the verdict is `duress` if any call says `duress`, otherwise
 the newest call's verdict. Sample: `notifier_message.json`.
 
 `reporter` is the reporting device's own `phone_number` (left out when
-unknown). Two demo flags (#102), both off by default, change who gets it and
-how; without them the notifier sends one message per family number on the
-`NOTIFIER` channel, as before:
-
-- `NOTIFY_SELF=true` adds `reporter` to the recipients, once even when it is
-  also a family number. Demo only: in production the aggressor may be looking
-  at that phone.
-- `NOTIFY_SMS=true` also sends every recipient a short SMS through Twilio,
-  next to the `NOTIFIER` channel. It is plain ASCII that fits one 160-character
-  GSM-7 segment, and unlike the WhatsApp text it carries a Google Maps link:
-  `Alerta de MAMA: coaccion. 09:10 VET. https://maps.google.com/?q=10.4961,-66.8531`.
-  A channel that fails never stops the other. With `NOTIFIER=sms` it adds
-  nothing (no second SMS). It needs the `TWILIO_*` credentials; the trial
-  number only texts verified numbers.
-
-The claim covers every recipient and channel: it is released only when no
-recipient got the alert on any channel. Every send is a `notify_deliveries`
-row with its own `channel`.
+unknown). With `NOTIFY_SELF=true` (#102, off by default) the notifier adds it
+to the recipients on the `NOTIFIER` channel (WhatsApp), once even when it is
+also a family number. It is for the demo only: in production the aggressor may
+be looking at that phone. Without it the notifier sends one message per family
+number, as before. The claim covers every recipient: it is released only when
+none got the alert.
 
 ```json
 {

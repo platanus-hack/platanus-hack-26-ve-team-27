@@ -172,9 +172,6 @@ func TestChannelName(t *testing.T) {
 	if channelName(config.Config{Notifier: config.NotifierSMS}) != "SMS" || channelName(config.Config{Notifier: config.NotifierKapso}) != "WhatsApp" {
 		t.Error("channelName")
 	}
-	if channelName(config.Config{Notifier: config.NotifierKapso, NotifySMS: true}) != "WhatsApp y SMS" || channelName(config.Config{Notifier: config.NotifierSMS, NotifySMS: true}) != "SMS" {
-		t.Error("channelName with NOTIFY_SMS")
-	}
 }
 
 // The report's key never stops the boot: unset or malformed gives no key

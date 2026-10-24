@@ -62,10 +62,6 @@ type Config struct {
 	// demo shows it arriving on the same phone. Demo only: in production the
 	// aggressor may be looking at that phone.
 	NotifySelf bool
-	// NotifySMS is NOTIFY_SMS, "true" or "1"; off by default. On, every
-	// recipient also gets a short SMS through Twilio next to the NOTIFIER
-	// channel (#102). With NOTIFIER=sms it adds nothing.
-	NotifySMS bool
 
 	ElevenLabs ElevenLabs
 	Twilio     Twilio
@@ -186,7 +182,6 @@ func LoadFrom(getenv func(string) string) Config {
 		PublicURL:     get("PUBLIC_URL"),
 		CallWhenStill: isOn(get("CALL_WHEN_STILL")),
 		NotifySelf:    isOn(get("NOTIFY_SELF")),
-		NotifySMS:     isOn(get("NOTIFY_SMS")),
 		ElevenLabs: ElevenLabs{
 			APIKey:           get("ELEVENLABS_API_KEY"),
 			AgentID:          get("ELEVENLABS_AGENT_ID"),
@@ -303,7 +298,6 @@ func (c Config) String() string {
 		fmt.Sprintf("EMERGENCY_OFFLINE_ENABLED=%t", c.Emergency.Enabled),
 		fmt.Sprintf("CALL_WHEN_STILL=%t", c.CallWhenStill),
 		fmt.Sprintf("NOTIFY_SELF=%t", c.NotifySelf),
-		fmt.Sprintf("NOTIFY_SMS=%t", c.NotifySMS),
 		fmt.Sprintf("INCIDENT_REPORT_ENABLED=%t", c.Report.Enabled)}, setOrUnset(c.vars())...)
 	return fmt.Sprintf("config{%s}", strings.Join(parts, " "))
 }
