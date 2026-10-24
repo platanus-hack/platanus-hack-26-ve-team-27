@@ -21,7 +21,9 @@ const DefaultLLMTimeout = 6 * time.Second
 // not allowed to raise one on a call Rules cleared either. Widening the LLM's
 // reach (for example the call where only a third party talks, which Rules
 // reads as no duress) needs measured LLM numbers in server/evals/results.md
-// first.
+// first. The LLM does settle unclear calls both ways, so a third party who
+// talks the model into "no_duress" can only silence a call that was already
+// unclear; the prompt fences the transcript as data to make that harder.
 //
 // Chain never errors and always answers within Timeout plus the rules' own
 // microseconds: on any LLM failure (no key, HTTP error, timeout, bad JSON)
@@ -91,9 +93,5 @@ func fallbackCause(ctx context.Context, err error) string {
 	case errors.Is(err, context.Canceled):
 		return "canceled"
 	}
-	msg := err.Error()
-	if len(msg) > 120 {
-		msg = msg[:120] + "..."
-	}
-	return msg
+	return truncate(err.Error(), 120)
 }
