@@ -44,6 +44,10 @@ settings.gradle.kts, build.gradle.kts, gradle/libs.versions.toml, gradlew   Grad
 
 - **Gradle:** the repo root is the Gradle root. Kotlin DSL, versions only in `gradle/libs.versions.toml`. One Android module, `app/`.
 - **App:** namespace and applicationId `com.team27.mama`, label "MAMÁ", minSdk 26, compileSdk 37 (the Compose BOM requires it), targetSdk 36. Jetpack Compose + Material3 through the Compose BOM. kotlinx-serialization is available (plugin + `kotlinx-serialization-json`). Unit tests are JUnit4 under `app/src/test/`.
-- **App theme and navigation:** `app/src/main/java/com/team27/mama/ui/theme/` and navigation belong to ticket #5. The current `Theme.kt` is a placeholder.
+- **App theme and navigation:** `app/src/main/java/com/team27/mama/ui/theme/` and navigation belong to ticket #5. See `app/UI_RULES.md`.
 - **Server:** module `github.com/platanus-hack/platanus-hack-26-ve-team-27/server`, `go 1.24`, standard library `net/http` only. It listens on `$PORT` (default 8080). Register every route in `newMux()` in `server/cmd/server/routes.go`. Put packages under `server/internal/`.
 - **Secrets:** never commit keys, keystores, `.env*` or `local.properties`. The secret scan hook in `scripts/build.sh` belongs to ticket #4.
+
+### App UI
+
+Before touching app screens, read `app/UI_RULES.md` (one theme file, Material3 components only, Spanish copy).
