@@ -91,7 +91,10 @@ nothing sleeps. Every push to `main` deploys.
 ### Deploy it (once)
 
 1. Render can't be connected to this org repo (see above), so mirror it to a
-   personal repo that keeps `main` in sync with this one.
+   personal repo. Merges made in the GitHub UI don't reach the mirror on their
+   own: a scheduled Action in the mirror (every 5 min, plus manual runs)
+   force-pushes this repo's `main` into the mirror's `main`. SHAs stay
+   identical, so `/version` still matches this repo.
 2. In the Render dashboard: **New > Blueprint**, pick the mirror repo, branch
    `main`. Render reads `render.yaml` and creates `mama-server` and `mama-db`.
    `DATABASE_URL` is wired from the database automatically.
