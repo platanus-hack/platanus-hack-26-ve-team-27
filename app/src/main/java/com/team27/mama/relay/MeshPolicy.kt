@@ -2,6 +2,7 @@ package com.team27.mama.relay
 
 import android.Manifest
 import com.team27.mama.emergency.EmergencyPhase
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -31,25 +32,36 @@ class MeshController(
     private val startService: () -> Unit,
     private val stopService: () -> Unit,
     private val scope: CoroutineScope,
+    private val onError: (String) -> Unit = {},
 ) {
     fun start() {
         scope.launch {
             combine(appVisible, relayEnabled, emergencyActive, ::meshMode).collect { mode ->
                 when (mode) {
                     MeshMode.OFF -> {
-                        stopService()
-                        stopGateway()
+                        guarded("stopService", stopService)
+                        guarded("stopGateway", stopGateway)
                     }
                     MeshMode.APP_ONLY -> {
-                        stopService()
-                        startGateway()
+                        guarded("stopService", stopService)
+                        guarded("startGateway", startGateway)
                     }
                     MeshMode.SERVICE -> {
-                        startService()
-                        startGateway()
+                        guarded("startService", startService)
+                        guarded("startGateway", startGateway)
                     }
                 }
             }
+        }
+    }
+
+    /** One failing call (a refused service start, a BLE SecurityException) must not end the collector. */
+    private fun guarded(tag: String, call: () -> Unit) {
+        try {
+            call()
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            onError(tag)
         }
     }
 }

@@ -43,6 +43,7 @@ class ServerRelayUploader(
     }
 
     private fun ackOrFailed(body: String): UploadResult {
+        // Trimmed on purpose: the returned ack is the trimmed text, never the raw body.
         val ack = body.trim()
         val frame = try {
             MamaText.parseMesh(ack)

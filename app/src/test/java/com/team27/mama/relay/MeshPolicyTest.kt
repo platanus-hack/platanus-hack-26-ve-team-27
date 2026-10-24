@@ -86,6 +86,39 @@ class MeshPolicyTest {
     }
 
     @Test
+    fun failingCallDoesNotEndTheController() = runTest {
+        val visible = MutableStateFlow(false)
+        val relay = MutableStateFlow(true)
+        val calls = mutableListOf<String>()
+        val errors = mutableListOf<String>()
+        var failOnce = true
+        MeshController(
+            visible,
+            relay,
+            MutableStateFlow(false),
+            startGateway = { calls += "startGateway" },
+            stopGateway = { calls += "stopGateway" },
+            startService = {
+                if (failOnce) {
+                    failOnce = false
+                    throw IllegalStateException("refused")
+                }
+                calls += "startService"
+            },
+            stopService = { calls += "stopService" },
+            scope = backgroundScope,
+            onError = { errors += it },
+        ).start()
+        runCurrent()
+        assertEquals(listOf("startGateway"), calls)
+        assertEquals(listOf("startService"), errors)
+        calls.clear()
+        visible.value = true
+        runCurrent()
+        assertEquals(listOf("startService", "startGateway"), calls)
+    }
+
+    @Test
     fun permissions() {
         assertEquals(listOf(P.ACCESS_FINE_LOCATION, P.ACCESS_COARSE_LOCATION), MeshPermissions.required(30))
         assertEquals(
