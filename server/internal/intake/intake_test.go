@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -247,9 +248,18 @@ func TestAlertUnknownDeviceIs422(t *testing.T) {
 
 func TestAlertIncidentOfAnotherDeviceIs409(t *testing.T) {
 	e := newEnv(t)
-	other := bytes.Replace(sample(t, "device_registration.json"), []byte(deviceID), []byte("other-device"), 1)
+	// Without the sample's key: deviceID already holds it, and its
+	// signature covers deviceID only.
+	var m map[string]any
+	if err := json.Unmarshal(sample(t, "device_registration.json"), &m); err != nil {
+		t.Fatal(err)
+	}
+	m["device_id"] = "other-device"
+	delete(m, "ed25519_public_key")
+	delete(m, "ed25519_signature")
+	other, _ := json.Marshal(m)
 	if rec := e.post("/devices", other); rec.Code != http.StatusNoContent {
-		t.Fatalf("register other = %d", rec.Code)
+		t.Fatalf("register other = %d %s", rec.Code, rec.Body)
 	}
 	if rec := e.post("/incidents", alert(incidentID, ptr(0.4))); rec.Code != http.StatusCreated {
 		t.Fatalf("first = %d", rec.Code)
@@ -340,7 +350,10 @@ func TestDeviceRegistrationUpserts(t *testing.T) {
 	if err := e.pool.QueryRow(`SELECT updated_at FROM devices WHERE id = $1`, deviceID).Scan(&firstUpdated); err != nil {
 		t.Fatal(err)
 	}
-	changed := []byte(`{"device_id":"` + deviceID + `","phone_number":"+584149998877","family_numbers":["+584241112233"],"duress_phrase":"otra frase"}`)
+	// The device has a key bound, so the update carries it with its proof.
+	r := signedReg(deviceID, vectorKey)
+	r.PhoneNumber, r.FamilyNumbers, r.DuressPhrase = "+584149998877", []string{"+584241112233"}, "otra frase"
+	changed, _ := json.Marshal(r)
 	if rec := e.post("/devices", changed); rec.Code != http.StatusNoContent {
 		t.Fatalf("re-register = %d %s", rec.Code, rec.Body)
 	}
@@ -375,6 +388,8 @@ func TestBadInputIs400(t *testing.T) {
 		{"bad trigger", "/incidents", strings.Replace(good, `"volume_pattern"`, `"shake"`, 1)},
 		{"incident_id not a UUID", "/incidents", strings.Replace(good, incidentID, "abc", 1)},
 		{"lat out of range", "/incidents", strings.Replace(good, `10.4961`, `100.4961`, 1)},
+		{"key not Base64", "/devices", `{"device_id":"x","phone_number":"+584141234567","family_numbers":[],"duress_phrase":"p","ed25519_public_key":"!!!"}`},
+		{"key 31 bytes", "/devices", `{"device_id":"x","phone_number":"+584141234567","family_numbers":[],"duress_phrase":"p","ed25519_public_key":"` + base64.StdEncoding.EncodeToString(make([]byte, 31)) + `"}`},
 		{"device without phone", "/devices", `{"device_id":"x","phone_number":"","family_numbers":[],"duress_phrase":"p"}`},
 	}
 	for _, c := range cases {
