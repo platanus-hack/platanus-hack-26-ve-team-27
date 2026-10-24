@@ -178,6 +178,12 @@ first (`incidents.device_id` references `devices`): for an unknown
 `device_id` the server answers `422`, and the phone re-sends its
 DeviceRegistration and then the alert. Sample: `alert_event.json`.
 
+An offline emergency (`POST /emergencies`, the inbound SMS webhook or
+`POST /emergencies/relay`) also opens an incident, server-side only: its id is
+derived from the `emergency_id`, `trigger` is `offline` (migration 0007; a phone
+never sends it), the branch is `immediate_alert`, and each frame with a fix adds
+a GPS point. An emergency already cancelled opens nothing.
+
 ```json
 {
   "incident_id": "9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f",

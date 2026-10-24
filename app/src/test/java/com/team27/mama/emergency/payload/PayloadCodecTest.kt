@@ -2,6 +2,7 @@ package com.team27.mama.emergency.payload
 
 import java.security.SecureRandom
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.fail
@@ -48,6 +49,21 @@ class PayloadCodecTest {
         assertThrows(IllegalArgumentException::class.java) { b.copy(seq = 65536) }
         assertThrows(IllegalArgumentException::class.java) { b.copy(locAgeS = 65535, latE5 = 1) }
         assertThrows(IllegalArgumentException::class.java) { b.copy(timestamp = -1) }
+    }
+
+    /** Exception text reaches logs (#59): a rejected coordinate must never appear in it. */
+    @Test
+    fun rejectedCoordinatesAreNotInTheMessage() {
+        val b = ok()
+        val messages = listOf(
+            assertThrows(IllegalArgumentException::class.java) { b.copy(latE5 = 9_123_457) }.message,
+            assertThrows(IllegalArgumentException::class.java) { b.copy(lonE5 = -18_123_457) }.message,
+            assertThrows(IllegalArgumentException::class.java) { PayloadCodec.degreesToE5(181.23457) }.message,
+        )
+        for (m in messages) {
+            assertFalse(m, m.orEmpty().contains("123457"))
+            assertFalse(m, m.orEmpty().contains("1.23457"))
+        }
     }
 
     @Test

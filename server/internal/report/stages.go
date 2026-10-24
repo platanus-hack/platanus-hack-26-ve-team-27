@@ -229,6 +229,8 @@ func triggerShort(t contract.Trigger) string {
 		return "ajustes rápidos"
 	case contract.TriggerInApp:
 		return "desde la app"
+	case contract.TriggerOffline:
+		return "sin conexión"
 	}
 	return ""
 }
