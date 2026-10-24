@@ -103,6 +103,7 @@
     {{- with .Audio}}
     <audio id="audio-{{$c.N}}" data-call="{{$c.N}}" controls preload="none" src="{{.URL}}"></audio>
     <p class="notice" id="audio-error-{{$c.N}}" hidden>Audio no disponible: no se pudo cargar la grabación.</p>
+    <p class="rec-meta">Grabación guardada a las {{.Stored}} (servidor) · {{.Size}} · SHA-256 <span class="hash">{{.SHA256}}</span></p>
     {{- if $c.Turns}}<p class="tap-hint">Toca un turno para escucharlo desde ese segundo.</p>{{end}}
     {{- else}}
     <p class="notice">{{.NoAudio}}</p>

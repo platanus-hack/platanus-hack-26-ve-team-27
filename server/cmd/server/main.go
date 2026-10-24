@@ -43,11 +43,17 @@ func main() {
 
 	pool := openAndMigrate(cfg.DatabaseURL)
 	notifier := newNotifier(cfg, pool)
-	reports := newReports(cfg, pool)
+	reports, closer := newReports(cfg, pool)
+	calls := newCallRoutes(cfg, pool)
+	// The post-call hooks, in order (call.Hooks). #21 adds "duress detector
+	// -> save verdict -> notify" first, so the report closes after them.
+	calls.SetFinished(call.Hooks(
+		reportHook(closer),
+	))
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newMux(pool, notifier, newCallRoutes(cfg, pool), offline, reports),
+		Handler:           newMux(pool, notifier, calls, offline, reports),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -188,23 +194,42 @@ func newCallRoutes(cfg config.Config, pool *sql.DB) *call.Routes {
 	return call.NewRoutes(cfg, call.NewDBStore(pool))
 }
 
-// newReports builds the incident report page (#76), or nil when
-// INCIDENT_REPORT_ENABLED is off or there is no database: then GET /i/{token}
-// answers 404. Nothing about the report ever stops the boot.
-func newReports(cfg config.Config, pool *sql.DB) *report.Handler {
+// newReports builds the incident report page (#76) and the closer that
+// stores each call's recording, or nils when INCIDENT_REPORT_ENABLED is off
+// or there is no database: then GET /i/{token} answers 404 and finished
+// calls are left alone. Nothing about the report ever stops the boot.
+func newReports(cfg config.Config, pool *sql.DB) (*report.Handler, *report.Closer) {
 	if !cfg.Report.Enabled {
 		log.Print("report: incident report page is off (INCIDENT_REPORT_ENABLED is not true)")
-		return nil
+		return nil, nil
 	}
 	if pool == nil {
 		log.Print("report: WARNING: INCIDENT_REPORT_ENABLED is on but DATABASE_URL is not set; GET /i/{token} answers 404")
-		return nil
+		return nil, nil
 	}
 	if cfg.PublicURL == "" {
 		log.Print("report: WARNING: PUBLIC_URL (or RENDER_EXTERNAL_URL) is not set; report links will be bare paths")
 	}
+	store := report.NewDBStore(pool)
+	closer := &report.Closer{Store: store}
+	if cfg.ElevenLabs.APIKey != "" {
+		closer.Audio = &report.ElevenLabsAudio{APIKey: cfg.ElevenLabs.APIKey}
+	} else {
+		log.Print("report: WARNING: ELEVENLABS_API_KEY is not set; call recordings are not stored")
+	}
 	log.Printf("report: incident report page is on; links live %d days", cfg.Report.TTLDays)
-	return report.NewHandler(report.NewDBStore(pool), report.Options{Channel: channelName(cfg)})
+	return report.NewHandler(store, report.Options{Channel: channelName(cfg)}), closer
+}
+
+// reportHook is the post-call hook that closes the report: it stores the
+// recording in the background. nil without a closer.
+func reportHook(c *report.Closer) func(context.Context, call.Finished) {
+	if c == nil {
+		return nil
+	}
+	return func(ctx context.Context, f call.Finished) {
+		c.CallFinished(ctx, f.IncidentID, f.ConversationID, f.Status)
+	}
 }
 
 // channelName is how the report names the family message channel.

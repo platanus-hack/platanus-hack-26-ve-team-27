@@ -174,6 +174,8 @@ h2 { font-weight: 500; font-size: 14px; line-height: 20px; letter-spacing: 0.1px
 .call .failed { color: var(--error); }
 audio { display: block; width: 100%; margin-top: var(--s-m); }
 .notice { margin-top: var(--s-m); padding: var(--s-s) var(--s-m); border-radius: var(--r-s); background: var(--surface-high); color: var(--on-surface-variant); font-size: 14px; line-height: 20px; }
+.rec-meta { margin-top: var(--s-s); font-size: 12px; line-height: 16px; color: var(--on-surface-variant); overflow-wrap: anywhere; }
+.hash { font-variant-numeric: tabular-nums; }
 .tap-hint { margin-top: var(--s-s); font-size: 12px; line-height: 16px; color: var(--on-surface-variant); }
 
 .turns { margin-top: var(--s-m); display: flex; flex-direction: column; gap: var(--s-s); }

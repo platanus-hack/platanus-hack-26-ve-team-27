@@ -130,12 +130,19 @@ func (stubReports) ByToken(context.Context, string) (report.Record, error) {
 	return report.Record{}, report.ErrNotFound
 }
 
+func (stubReports) Audio(context.Context, string, int) ([]byte, report.Recording, error) {
+	return nil, report.Recording{}, report.ErrNotFound
+}
+
 func TestReportRoutesOnlyWhenEnabledWithADatabase(t *testing.T) {
-	if newReports(config.Config{}, nil) != nil {
+	if h, c := newReports(config.Config{}, nil); h != nil || c != nil {
 		t.Error("newReports with INCIDENT_REPORT_ENABLED off is not nil")
 	}
-	if newReports(config.Config{Report: config.Report{Enabled: true, TTLDays: 30}}, nil) != nil {
+	if h, c := newReports(config.Config{Report: config.Report{Enabled: true, TTLDays: 30}}, nil); h != nil || c != nil {
 		t.Error("newReports without a database is not nil")
+	}
+	if reportHook(nil) != nil {
+		t.Error("reportHook(nil) is not nil")
 	}
 
 	off := newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.Config{}, nil), nil, nil)

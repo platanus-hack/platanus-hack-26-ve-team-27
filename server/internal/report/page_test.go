@@ -22,10 +22,28 @@ func (f fakeSource) ByToken(_ context.Context, token string) (Record, error) {
 	return Record{}, ErrNotFound
 }
 
+// Audio serves "fake mp3" (the fixture's recording) for a call that has one.
+func (f fakeSource) Audio(_ context.Context, token string, n int) ([]byte, Recording, error) {
+	rec, ok := f[token]
+	if !ok {
+		return nil, Recording{}, ErrNotFound
+	}
+	for i := len(rec.Calls) - 1; i >= 0; i-- {
+		if r := rec.Calls[i].Recording; r != nil && (n == 0 || n == i+1) {
+			return []byte("fake mp3"), *r, nil
+		}
+	}
+	return nil, Recording{}, ErrNotFound
+}
+
 type failingSource struct{}
 
 func (failingSource) ByToken(context.Context, string) (Record, error) {
 	return Record{}, errors.New("db down")
+}
+
+func (failingSource) Audio(context.Context, string, int) ([]byte, Recording, error) {
+	return nil, Recording{}, errors.New("db down")
 }
 
 func serve(t *testing.T, src Source, path string) *httptest.ResponseRecorder {
@@ -177,5 +195,41 @@ func TestPageURL(t *testing.T) {
 	}
 	if got := (Link{Token: testToken}).URL(""); got != "/i/"+testToken {
 		t.Errorf("URL(\"\") = %q", got)
+	}
+}
+
+func TestAudioIsServedWithRangesAndPrivacyHeaders(t *testing.T) {
+	src := fakeSource{testToken: sealedRecord()}
+	rec := serve(t, src, "/i/"+testToken+"/audio.mp3?llamada=1")
+	if rec.Code != http.StatusOK || rec.Body.String() != "fake mp3" || rec.Header().Get("Content-Type") != "audio/mpeg" || rec.Header().Get("Accept-Ranges") != "bytes" {
+		t.Fatalf("GET audio = %d %q %q ranges=%q", rec.Code, rec.Body.String(), rec.Header().Get("Content-Type"), rec.Header().Get("Accept-Ranges"))
+	}
+	checkPrivacyHeaders(t, rec)
+
+	mux := http.NewServeMux()
+	NewHandler(src, Options{}).Register(mux)
+	req := httptest.NewRequest(http.MethodGet, "/i/"+testToken+"/audio.mp3", nil)
+	req.Header.Set("Range", "bytes=5-")
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusPartialContent || rr.Body.String() != "mp3" {
+		t.Errorf("GET audio Range 5- = %d %q, want 206 \"mp3\"", rr.Code, rr.Body.String())
+	}
+
+	for _, path := range []string{
+		"/i/" + testToken + "/audio.mp3?llamada=2",
+		"/i/" + testToken + "/audio.mp3?llamada=0",
+		"/i/" + testToken + "/audio.mp3?llamada=x",
+		"/i/BBBBBBBBBBBBBBBBBBBBBB/audio.mp3",
+	} {
+		if rec := serve(t, src, path); rec.Code != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404", path, rec.Code)
+		}
+	}
+	if rec := serve(t, fakeSource{testToken: openRecord()}, "/i/"+testToken+"/audio.mp3"); rec.Code != http.StatusNotFound {
+		t.Errorf("GET audio without a recording = %d, want 404", rec.Code)
+	}
+	if rec := serve(t, failingSource{}, "/i/"+testToken+"/audio.mp3"); rec.Code != http.StatusInternalServerError {
+		t.Errorf("GET audio with the store down = %d, want 500", rec.Code)
 	}
 }

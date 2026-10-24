@@ -3,6 +3,7 @@ package report
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -254,4 +255,69 @@ func nullTime(t sql.NullTime) *time.Time {
 	}
 	v := t.Time
 	return &v
+}
+
+// ErrUnknownCall means no call has the conversation_id.
+var ErrUnknownCall = errors.New("report: unknown call")
+
+// HasRecording reports whether the call with conversationID has its
+// recording stored.
+func (s DBStore) HasRecording(ctx context.Context, conversationID string) (bool, error) {
+	var has bool
+	err := s.pool.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM call_recordings r JOIN calls c ON c.id = r.call_id WHERE c.conversation_id = $1)`,
+		conversationID).Scan(&has)
+	return has, err
+}
+
+// SaveRecording stores the recording of the call with conversationID and
+// its SHA-256, once: a recording already stored is kept as it is.
+// ErrUnknownCall when no call has conversationID.
+func (s DBStore) SaveRecording(ctx context.Context, conversationID, contentType string, audio []byte) error {
+	sum := sha256.Sum256(audio)
+	res, err := s.pool.ExecContext(ctx, `
+		INSERT INTO call_recordings (call_id, content_type, audio, sha256)
+		SELECT id, $2, $3, $4 FROM calls WHERE conversation_id = $1
+		ON CONFLICT (call_id) DO NOTHING`,
+		conversationID, contentType, audio, sum[:])
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n > 0 {
+		return err
+	}
+	if has, err := s.HasRecording(ctx, conversationID); err != nil || has {
+		return err
+	}
+	return ErrUnknownCall
+}
+
+// Audio returns the recording of the n-th call (1-based, in the order the
+// calls were requested) of the incident behind a live token; n = 0 picks
+// the newest call that has one. ErrNotFound when there is none.
+func (s DBStore) Audio(ctx context.Context, token string, n int) ([]byte, Recording, error) {
+	id, err := s.incidentByToken(ctx, token)
+	if err != nil {
+		return nil, Recording{}, err
+	}
+	var audio, sum []byte
+	var r Recording
+	err = s.pool.QueryRowContext(ctx, `
+		WITH c AS (
+			SELECT id, row_number() OVER (ORDER BY requested_at, id) AS n
+			FROM calls WHERE incident_id = $1
+		)
+		SELECT r.audio, r.content_type, r.sha256, r.stored_at
+		FROM c JOIN call_recordings r ON r.call_id = c.id
+		WHERE $2 = 0 OR c.n = $2
+		ORDER BY c.n DESC LIMIT 1`, id, n).Scan(&audio, &r.ContentType, &sum, &r.StoredAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, Recording{}, ErrNotFound
+	}
+	if err != nil {
+		return nil, Recording{}, err
+	}
+	copy(r.SHA256[:], sum)
+	r.Size = int64(len(audio))
+	return audio, r, nil
 }

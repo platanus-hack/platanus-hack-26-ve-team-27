@@ -65,6 +65,9 @@ type Source interface {
 	// ByToken loads the record behind a live token; ErrNotFound for an
 	// unknown, malformed or expired one.
 	ByToken(ctx context.Context, token string) (Record, error)
+	// Audio returns the recording of the n-th call (1-based; 0 = the newest
+	// recorded) of the incident behind a live token; ErrNotFound when none.
+	Audio(ctx context.Context, token string, n int) ([]byte, Recording, error)
 }
 
 // Handler serves the report routes. Create it with NewHandler.
@@ -79,9 +82,10 @@ func NewHandler(src Source, opts Options) *Handler {
 	return &Handler{src: src, opts: opts}
 }
 
-// Register mounts GET /i/{token} and the static files.
+// Register mounts GET /i/{token}, its recording and the static files.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+PagePrefix+"{token}", h.page)
+	mux.HandleFunc("GET "+PagePrefix+"{token}/audio.mp3", h.audio)
 	mux.HandleFunc("GET "+StaticPrefix+"{file}", serveStatic)
 }
 
@@ -122,6 +126,34 @@ func (h *Handler) page(w http.ResponseWriter, r *http.Request) {
 	opts := h.opts
 	opts.Token = token
 	render(w, http.StatusOK, "page", Build(rec, opts))
+}
+
+// audio serves a call's recording from our own server (never a link to
+// ElevenLabs), with Range support so the player can seek. ?llamada=N picks
+// the call (1-based); without it, the newest recorded call.
+func (h *Handler) audio(w http.ResponseWriter, r *http.Request) {
+	privacy(w)
+	n := 0
+	if v := r.URL.Query().Get("llamada"); v != "" {
+		var err error
+		if n, err = strconv.Atoi(v); err != nil || n < 1 {
+			notFound(w)
+			return
+		}
+	}
+	audio, rec, err := h.src.Audio(r.Context(), r.PathValue("token"), n)
+	if errors.Is(err, ErrNotFound) {
+		notFound(w)
+		return
+	}
+	if err != nil {
+		log.Printf("report: audio: %v", err)
+		http.Error(w, "No se pudo cargar la grabación.", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", rec.ContentType)
+	w.Header().Set("Content-Disposition", `inline; filename="llamada.mp3"`)
+	http.ServeContent(w, r, "", rec.StoredAt, bytes.NewReader(audio))
 }
 
 func notFound(w http.ResponseWriter) {

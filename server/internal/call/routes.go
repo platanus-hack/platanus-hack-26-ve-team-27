@@ -78,6 +78,37 @@ func (forcedFailure) Place(context.Context, string, string) (Placed, error) {
 	return Placed{}, errForcedFailure
 }
 
+// SetFinished sets the engine's post-call hook (Engine.Finished); compose
+// several with Hooks. Without a database there is no engine and no webhook
+// is stored, so it does nothing.
+func (rt *Routes) SetFinished(f func(ctx context.Context, f Finished)) {
+	if rt.engine != nil {
+		rt.engine.Finished = f
+	}
+}
+
+// Hooks runs each post-call hook in order, skipping nil ones, so main can
+// list them in one place: the duress verdict and the family alert (#21)
+// before the incident report (#76), which seals what they stored. It returns
+// nil when every hook is nil. Each hook runs inside the webhook request, so
+// a slow one must start its own goroutine.
+func Hooks(hooks ...func(ctx context.Context, f Finished)) func(ctx context.Context, f Finished) {
+	var list []func(ctx context.Context, f Finished)
+	for _, h := range hooks {
+		if h != nil {
+			list = append(list, h)
+		}
+	}
+	if len(list) == 0 {
+		return nil
+	}
+	return func(ctx context.Context, f Finished) {
+		for _, h := range list {
+			h(ctx, f)
+		}
+	}
+}
+
 // Starter is what intake hands BranchCall incidents to: the engine, or
 // intake.LogHandoff without a database.
 func (rt *Routes) Starter() intake.CallStarter {

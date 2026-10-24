@@ -348,6 +348,17 @@ default; then every route below answers `404`). Code:
   anyone else. There is no map with tiles: each location has an "Abrir en
   Maps" link and the path is drawn in SVG. The page never shows the full phone
   number (only `+58 ···67`), the device id or the duress phrase.
+- **Recording.** The server's post-call hooks are a list in `main.go`
+  (`call.Hooks`), run in order after the webhook stored the transcript. The
+  report's hook takes a `done` call and, in the background, asks ElevenLabs
+  for its audio with `ELEVENLABS_API_KEY` (`GET
+  /v1/convai/conversations/{id}`, then `.../audio` once `has_audio` is true),
+  retrying for about 2 minutes. It stores the bytes and their SHA-256 in
+  `call_recordings` once per call. `GET /i/{token}/audio.mp3?llamada=N`
+  serves it from this server (never a link to ElevenLabs), with Range
+  support; `N` is the call's 1-based number in request order, and without it
+  the newest recorded call. No recording: `404`, and the page says "Audio no
+  disponible" and keeps the transcript.
 - **Clocks.** Each timeline row says which clock its time comes from: the
   phone (`triggered_at`, `gps_points.recorded_at`), the server
   (`incidents.created_at`, `calls.requested_at`, `verdict_at`, `notified_at`,
