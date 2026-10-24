@@ -35,9 +35,20 @@ object TriggerScreens {
 }
 
 /**
- * The default [IncomingCallLauncher] until #96: the `call` branch opens the
- * trigger confirmation screen ("Mamá te va a llamar"), like the other branches.
+ * Opens the trigger confirmation screen ("Mamá te va a llamar") on the `call`
+ * branch. Not the demo's launcher any more: see [PhoneCallOnlyLauncher].
  */
 class ConfirmationScreenLauncher(private val context: Context) : IncomingCallLauncher {
     override fun ring(incidentId: String) = TriggerScreens.openConfirmation(context, incidentId)
+}
+
+/**
+ * The demo's [IncomingCallLauncher]: on the `call` branch the app shows
+ * nothing. "Mamá" rings as a normal phone call (the server's Twilio call,
+ * #18) and the person answers it from the phone's own call screen. It only
+ * logs, so the trigger log still shows the hand-off.
+ */
+class PhoneCallOnlyLauncher(private val context: Context) : IncomingCallLauncher {
+    override fun ring(incidentId: String) =
+        TriggerLog.log(context, "call branch for $incidentId: the phone call rings, the app stays closed")
 }

@@ -14,7 +14,7 @@ import com.team27.mama.onboarding.DeviceRegistrar
 import com.team27.mama.onboarding.OnboardingGate
 import com.team27.mama.server.HttpServerApi
 import com.team27.mama.server.ServerApi
-import com.team27.mama.trigger.ConfirmationScreenLauncher
+import com.team27.mama.trigger.PhoneCallOnlyLauncher
 import com.team27.mama.trigger.IncomingCallLauncher
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -66,8 +66,8 @@ class AppGraph(
 
     /**
      * What the trigger (#16) runs when the server answers an alert with branch
-     * `call`. #96 swaps in the CallStyle incoming-call notification that opens
-     * #94's "Llamada entrante"; until then it opens the confirmation screen.
+     * `call`. The demo answers "Mamá" as a normal phone call (Twilio, #18), so
+     * the app opens nothing. The in-app call (#94, #96) is out of the demo.
      */
-    val incomingCall: IncomingCallLauncher = ConfirmationScreenLauncher(app)
+    val incomingCall: IncomingCallLauncher = PhoneCallOnlyLauncher(app)
 }
