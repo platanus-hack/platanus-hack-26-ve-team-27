@@ -8,7 +8,7 @@ import (
 
 func TestRootReturnsOK(t *testing.T) {
 	rec := httptest.NewRecorder()
-	newMux().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	newMux(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET / status = %d, want %d", rec.Code, http.StatusOK)
