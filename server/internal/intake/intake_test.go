@@ -350,7 +350,10 @@ func TestDeviceRegistrationUpserts(t *testing.T) {
 	if err := e.pool.QueryRow(`SELECT updated_at FROM devices WHERE id = $1`, deviceID).Scan(&firstUpdated); err != nil {
 		t.Fatal(err)
 	}
-	changed := []byte(`{"device_id":"` + deviceID + `","phone_number":"+584149998877","family_numbers":["+584241112233"],"duress_phrase":"otra frase"}`)
+	// The device has a key bound, so the update carries it with its proof.
+	r := signedReg(deviceID, vectorKey)
+	r.PhoneNumber, r.FamilyNumbers, r.DuressPhrase = "+584149998877", []string{"+584241112233"}, "otra frase"
+	changed, _ := json.Marshal(r)
 	if rec := e.post("/devices", changed); rec.Code != http.StatusNoContent {
 		t.Fatalf("re-register = %d %s", rec.Code, rec.Body)
 	}

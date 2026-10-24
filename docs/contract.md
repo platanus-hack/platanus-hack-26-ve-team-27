@@ -84,9 +84,12 @@ upserts the `devices` row. `app_version`, `ed25519_public_key` and
 `ed25519_public_key` is the device's Ed25519 identity public key (bitchat's,
 #56): standard Base64 with padding of exactly 32 bytes. The server derives
 `key_id` from it to verify offline payloads (#57). It is optional: a
-registration without it keeps the stored key; a different key for the same
-`device_id` replaces it; a key already registered to another `device_id` is
-answered `409`; a malformed key is `400`.
+device with no key bound yet may register without one (and bind one later).
+Once a key is bound to a `device_id`, every later registration for it must
+carry that same key with a valid proof; a registration with no key or a
+different key is answered `409` and changes nothing. A key already registered
+to another `device_id` is also `409`; a malformed key is `400`. A phone that
+loses its key (reinstall, cleared data) therefore needs a new `device_id`.
 
 `ed25519_signature` proves the phone holds the key's private half: standard
 Base64 with padding of the 64-byte Ed25519 signature, by that key, over the
@@ -98,7 +101,12 @@ database access:
 - `ed25519_public_key` present: `ed25519_signature` is required and must
   verify, else `400`.
 - `ed25519_signature` without `ed25519_public_key`: `400`.
-- neither: the registration behaves as without a key (the stored key stays).
+- neither: allowed only while the device has no bound key, else `409`.
+
+The proof covers only `device_id`: it shows the sender holds the key, not that
+the other fields (`phone_number`, `family_numbers`, `duress_phrase`,
+`app_version`) are the owner's. It gates who may update a bound device; it does
+not authenticate the content.
 
 Why: bitchat broadcasts every device's Ed25519 public key on the mesh, so
 without the proof anyone in range could register a victim's key to their own

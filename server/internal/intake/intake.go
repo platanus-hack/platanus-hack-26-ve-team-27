@@ -75,6 +75,9 @@ func (h *Handler) handleDevice(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, errKeyTaken):
 		writeError(w, http.StatusConflict, "ed25519_public_key is registered to another device")
 		return
+	case errors.Is(err, errKeyRequired):
+		writeError(w, http.StatusConflict, "device has a registered key; registration must carry it")
+		return
 	case err != nil:
 		internalError(w, "upsert device", err)
 		return
