@@ -16,6 +16,7 @@ var allVars = []string{
 	"ELEVENLABS_API_KEY", "ELEVENLABS_AGENT_ID", "ELEVENLABS_PHONE_NUMBER_ID", "ELEVENLABS_WEBHOOK_SECRET",
 	"TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER",
 	"KAPSO_API_KEY", "KAPSO_PHONE_NUMBER_ID",
+	"ANTHROPIC_API_KEY",
 }
 
 func TestEmptyEnvDefaultsPortAndReportsEverythingMissing(t *testing.T) {
@@ -50,6 +51,7 @@ func TestLoadReadsEveryVar(t *testing.T) {
 		"TWILIO_PHONE_NUMBER":        c.Twilio.PhoneNumber,
 		"KAPSO_API_KEY":              c.Kapso.APIKey,
 		"KAPSO_PHONE_NUMBER_ID":      c.Kapso.PhoneNumberID,
+		"ANTHROPIC_API_KEY":          c.Anthropic.APIKey,
 	}
 	for name, got := range checks {
 		if got != env[name] {
@@ -93,6 +95,18 @@ func TestFormattingNeverPrintsValues(t *testing.T) {
 		}
 		if !strings.Contains(out, "TWILIO_AUTH_TOKEN=set") {
 			t.Errorf("Sprintf(%q, cfg) = %s, want it to show TWILIO_AUTH_TOKEN=set", verb, out)
+		}
+	}
+}
+
+func TestDuressModelIsOptional(t *testing.T) {
+	c := LoadFrom(envFrom(map[string]string{"DURESS_LLM_MODEL": " claude-test-model "}))
+	if c.Anthropic.DuressModel != "claude-test-model" {
+		t.Errorf("DuressModel = %q, want claude-test-model", c.Anthropic.DuressModel)
+	}
+	for _, name := range LoadFrom(envFrom(nil)).Missing() {
+		if name == "DURESS_LLM_MODEL" {
+			t.Errorf("Missing() lists the optional DURESS_LLM_MODEL")
 		}
 	}
 }
