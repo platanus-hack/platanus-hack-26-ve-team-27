@@ -3,6 +3,8 @@ package main
 import (
 	"database/sql"
 	"net/http"
+
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
 )
 
 // newMux registers every HTTP route. Add new routes here so there is one
@@ -11,6 +13,8 @@ func newMux(pool *sql.DB) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleRoot)
 	registerDeployRoutes(mux, pool)
+	// The call engine (#18) and the notifier (#20) replace LogHandoff.
+	intake.New(pool, intake.LogHandoff{}, intake.LogHandoff{}).Register(mux)
 	return mux
 }
 
