@@ -20,6 +20,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.team27.mama.MainActivity
+import com.team27.mama.MamaApp
 import com.team27.mama.R
 
 /** Keeps the process alive while the relay is on or an emergency needs the mesh. The controller owns the gateway's stop. */
@@ -44,16 +45,20 @@ class RelayForegroundService : Service() {
             !startForegroundOrFalse(notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         ) {
             Log.w(LOG_TAG, "service: startForeground refused")
-            stopSelf()
+            // With startId: a newer startForegroundService already queued keeps the service, which then must
+            // reach startForeground; a plain stopSelf() would tear it down first and crash the app.
+            stopSelf(startId)
             return START_NOT_STICKY
         }
+        // A sticky restart after process death: this process's gate has not seen the controller's start yet.
+        if (intent == null) gate.onRestarted(relayEnabled())
         if (!gate.onForegrounded()) {
             Log.w(LOG_TAG, "service: stopped before it started")
-            return giveUp()
+            return giveUp(startId)
         }
         if (!MeshPermissions.satisfied(Build.VERSION.SDK_INT, granted)) {
             Log.w(LOG_TAG, "service: missing mesh permission")
-            return giveUp()
+            return giveUp(startId)
         }
         // No gateway.start() here: MeshController always calls startGateway right after startService,
         // on its background thread (the first start loads the key store, which must stay off main).
@@ -65,11 +70,15 @@ class RelayForegroundService : Service() {
         super.onDestroy()
     }
 
-    private fun giveUp(): Int {
+    /** Stops only when [startId] is the latest start (see the refused path in [onStartCommand]). */
+    private fun giveUp(startId: Int): Int {
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        stopSelf(startId)
         return START_NOT_STICKY
     }
+
+    /** The opt-in as this process sees it; false with the offline emergency flag off. */
+    private fun relayEnabled(): Boolean = (application as? MamaApp)?.graph?.relaySettings?.enabled?.value == true
 
     private fun startForegroundOrFalse(notification: Notification, type: Int): Boolean = try {
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)

@@ -31,6 +31,28 @@ class ForegroundGateTest {
     }
 
     @Test
+    fun `a sticky restart with the relay on keeps the service`() {
+        val gate = ForegroundGate()
+        gate.onRestarted(relayEnabled = true)
+        assertTrue(gate.onForegrounded())
+    }
+
+    @Test
+    fun `a sticky restart with the relay off gives up`() {
+        val gate = ForegroundGate()
+        gate.onRestarted(relayEnabled = false)
+        assertFalse(gate.onForegrounded())
+    }
+
+    @Test
+    fun `a sticky restart with the relay off keeps a start the controller already requested`() {
+        val gate = ForegroundGate()
+        gate.onStartRequested()
+        gate.onRestarted(relayEnabled = false)
+        assertTrue(gate.onForegrounded())
+    }
+
+    @Test
     fun `destroy clears the foreground flag`() {
         val gate = ForegroundGate()
         gate.onStartRequested()

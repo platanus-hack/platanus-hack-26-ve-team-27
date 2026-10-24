@@ -27,6 +27,15 @@ class ForegroundGate {
         wanted = true
     }
 
+    /**
+     * Call on a sticky restart (null intent) before [onForegrounded]. After process death this gate
+     * is new, so [wanted] is false until the controller's first start, which may come later: with
+     * the relay on, the restart is the start. With it off, nothing changes.
+     */
+    fun onRestarted(relayEnabled: Boolean) {
+        if (relayEnabled) wanted = true
+    }
+
     /** Returns true when stopService should be called. */
     fun onStopRequested(): Boolean {
         wanted = false
