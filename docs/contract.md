@@ -235,6 +235,9 @@ Kotlin.
 | `frase_alerta` | `devices.duress_phrase` |
 | `frase_segura` | `devices.safe_phrase`, or `""` when unset |
 
+The fallback page (`GET /call/fallback`, no auth) shows these in its HTML
+while an incident is open there (up to 15 minutes), phrases included.
+
 The call speaks with `devices.voice_id` when set, otherwise with the global
 `ELEVENLABS_VOICE_ID`, otherwise with the agent's own voice.
 
