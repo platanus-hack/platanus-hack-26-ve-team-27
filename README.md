@@ -153,7 +153,7 @@ the ones that are unset, never the values.
 | `ELEVENLABS_AGENT_ID` | The "Mamá" agent's `agent_id` | ElevenLabs > Agents > the agent > settings / URL |
 | `ELEVENLABS_PHONE_NUMBER_ID` | `agent_phone_number_id` of the Twilio number imported into ElevenLabs | ElevenLabs > Agents > Phone Numbers, after importing the Twilio number |
 | `ELEVENLABS_WEBHOOK_SECRET` | HMAC secret that signs the post-call webhook | ElevenLabs > Agents > Settings > Post-call webhook (shown when the webhook is created) |
-| `ELEVENLABS_VOICE_ID` | Optional. Voice that overrides the agent's on each call (Mariana's cloned voice, #35); the agent must allow the voice override | ElevenLabs > Voices > the voice > ID |
+| `ELEVENLABS_VOICE_ID` | Optional. Voice that overrides the agent's on each call; the agent must allow the voice override. Set it to Mariana's cloned voice, `SnLK0h3jnPTd3J6pYcO3` (#35), a voice ID, not a secret | ElevenLabs > Voices > the voice > ID |
 | `CALL_SPIKE_TOKEN` | Optional, spike #11 only. Bearer token that turns on `POST /spike/call`; unset keeps the route off | Any random string, e.g. `openssl rand -hex 16` |
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID (`AC...`) | console.twilio.com > Account Info |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token | console.twilio.com > Account Info |
