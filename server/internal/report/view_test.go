@@ -39,7 +39,7 @@ func TestTimelineHasEveryEventInTimeOrderWithItsClock(t *testing.T) {
 		{EventReceived, "09:10:00", ClockServer, "Llegó al servidor", "Recibido 0,4 s después"},
 		{EventBranch, "09:10:00", ClockServer, "Rama elegida", "Caminando (4 km/h): Mamá llama"},
 		{EventCallRequested, "09:10:01", ClockServer, "Mamá llamó", "Llamando a +58 ···67"},
-		{EventAnswered, "09:10:04", ClockCall, "Contestó", "5 turnos de conversación; escúchala en «La llamada»"},
+		{EventAnswered, "09:10:04", ClockCall, "Contestó", "5 turnos de conversación"},
 		{EventPhrase, "09:10:19", ClockCall, "Dijo la frase acordada", ""},
 		{EventPoint, "09:10:45", ClockPhone, "Ubicación", "Ubicación ±8 m · caminando · 5 km/h"},
 		{EventHungUp, "09:11:05", ClockCall, "Colgó", "Llamada de 1 min 1 s"},

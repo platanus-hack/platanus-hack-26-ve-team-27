@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -143,7 +144,7 @@ func decodeSnapshot(t *testing.T, m sseMessage) Snapshot {
 	if err := json.Unmarshal([]byte(m.data), &s); err != nil {
 		t.Fatalf("update data: %v", err)
 	}
-	if s.Version == "" || m.id != s.Version || len(s.Sections) != len(liveSections) {
+	if s.Version == "" || m.id != s.Version || len(s.Sections) != len(FamilySections) {
 		t.Fatalf("snapshot id %q version %q, %d sections", m.id, s.Version, len(s.Sections))
 	}
 	return s
@@ -165,9 +166,12 @@ func TestLiveSendsEachChangeInOrderAndEndsWhenSealed(t *testing.T) {
 		resp.Header.Get("Cache-Control") != "no-store" || resp.Header.Get("Referrer-Policy") != "no-referrer" {
 		t.Fatalf("stream = %d %v", resp.StatusCode, resp.Header)
 	}
+	node := func(snap Snapshot, state, stage string) bool {
+		return strings.Contains(snap.Sections["track"], `class="node node-`+state+`" data-stage="stage-`+stage+`"`)
+	}
 	first := decodeSnapshot(t, next(t, msgs))
-	if !first.Live || first.State != "open" || strings.Contains(first.Sections["timeline"], "Aviso a la familia") ||
-		!strings.Contains(first.Sections["latency"], "esperando") {
+	if !first.Live || first.State != "open" || !node(first, "done", "ended") || !node(first, "current", "verdict") ||
+		!strings.Contains(first.Sections["status"], "En vivo") || !strings.Contains(first.Sections["header"], "Esperando veredicto") {
 		t.Fatalf("first snapshot: live %t state %s", first.Live, first.State)
 	}
 
@@ -175,22 +179,20 @@ func TestLiveSendsEachChangeInOrderAndEndsWhenSealed(t *testing.T) {
 	rec.Calls[0].Verdict, rec.Calls[0].VerdictAt, rec.Calls[0].VerdictReason = "duress", ptr(at("2026-10-24T13:11:07Z")), "the user said the duress phrase"
 	src.set(testToken, rec)
 	second := decodeSnapshot(t, next(t, msgs))
-	if second.Version == first.Version || !strings.Contains(second.Sections["timeline"], "Veredicto") || strings.Contains(second.Sections["timeline"], "Aviso a la familia") {
+	if second.Version == first.Version || !node(second, "done", "verdict") || !node(second, "current", "family") ||
+		!strings.Contains(second.Sections["header"], ">Coacción<") {
 		t.Fatal("second update is not the verdict alone")
 	}
 	rec.Incident.NotifiedAt = ptr(at("2026-10-24T13:11:08Z"))
 	src.set(testToken, rec)
 	third := decodeSnapshot(t, next(t, msgs))
-	if !strings.Contains(third.Sections["timeline"], "Aviso a la familia") || strings.Contains(third.Sections["latency"], "esperando") {
+	if !node(third, "done", "family") || !node(third, "current", "sealed") || !strings.Contains(third.Sections["family"], "WhatsApp enviado a 2 familiares") {
 		t.Fatal("third update lacks the family message")
-	}
-	if strings.Index(third.Sections["timeline"], "Veredicto") > strings.Index(third.Sections["timeline"], "Aviso a la familia") {
-		t.Error("the timeline puts the family message before the verdict")
 	}
 
 	src.set(testToken, sealedRecord())
 	sealed := decodeSnapshot(t, next(t, msgs))
-	if !sealed.End || sealed.Live || sealed.State != "sealed" || !strings.Contains(sealed.Sections["seal"], "Sellada el") {
+	if !sealed.End || sealed.Live || sealed.State != "sealed" || !node(sealed, "done", "sealed") || !strings.Contains(sealed.Sections["status"], "Sellada") {
 		t.Fatalf("sealed snapshot: end %t live %t state %s", sealed.End, sealed.Live, sealed.State)
 	}
 	if m := next(t, msgs); m.event != "end" {
@@ -314,5 +316,63 @@ func waitDone(t *testing.T, done <-chan struct{}) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("the stream handler did not return")
+	}
+}
+
+// The blocks the family page leaves out still render, for other pages that
+// mount them (the central dashboard, #99).
+func TestBlockSectionsRender(t *testing.T) {
+	rec := sealedRecord()
+	rec.Emergencies = []Emergency{{ID: "00000000000000aa", Status: "open", Channels: []string{"sms"}, FirstReceivedAt: at("2026-10-24T13:09:50Z")}}
+	s, err := RenderSections(rec, Options{Token: testToken, Channel: "WhatsApp", Now: at("2026-10-24T13:20:00Z")}, BlockSections)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"timeline":    "Recibido 0,4 s después",
+		"points":      "Abrir en Maps",
+		"latency":     "Gesto → WhatsApp",
+		"calls":       "La frase acordada",
+		"emergencies": "Emergencia 00000000000000aa",
+		"seal":        "Sellada el",
+	} {
+		if !strings.Contains(html.UnescapeString(s.Sections[name]), want) {
+			t.Errorf("section %s lacks %q", name, want)
+		}
+	}
+	if _, err := RenderSections(rec, Options{}, []string{"nope"}); err == nil {
+		t.Error("an unknown section rendered")
+	}
+}
+
+// Another page streams any sections with its own loader, here by incident id.
+func TestStreamWithAnotherLoader(t *testing.T) {
+	h := NewHandler(fakeSource{}, Options{})
+	h.LivePoll, h.KeepAlive = 10*time.Millisecond, time.Hour
+	h.Now = func() time.Time { return at("2026-10-24T13:11:40Z") }
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /central/r/{id}/live", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		h.Stream(w, r, func(context.Context) (Record, error) {
+			if id != testIncidentID {
+				return Record{}, ErrUnknownIncident
+			}
+			return sealedRecord(), nil
+		}, Options{}, []string{"timeline", "calls"})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	resp, msgs := openStream(t, context.Background(), srv.URL+"/central/r/"+testIncidentID+"/live")
+	defer resp.Body.Close()
+	m := next(t, msgs)
+	var s Snapshot
+	if err := json.Unmarshal([]byte(m.data), &s); err != nil || len(s.Sections) != 2 || !strings.Contains(s.Sections["timeline"], "Ficha sellada") {
+		t.Fatalf("stream: %v %+v", err, s.Sections)
+	}
+	if next(t, msgs).event != "end" {
+		t.Error("a sealed case did not end the stream")
+	}
+	if r, _ := http.Get(srv.URL + "/central/r/00000000-0000-4000-8000-000000000000/live"); r.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown incident = %d", r.StatusCode)
 	}
 }

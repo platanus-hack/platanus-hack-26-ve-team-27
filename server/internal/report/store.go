@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -131,11 +132,12 @@ func (s DBStore) Load(ctx context.Context, incidentID string) (Record, error) {
 	var trigger, branch string
 	err = tx.QueryRowContext(ctx, `
 		SELECT i.id, i.device_id, i.trigger, i.branch, i.speed_mps, i.triggered_at, i.created_at, i.notified_at,
-		       d.phone_number, cardinality(d.family_numbers), d.duress_phrase
+		       d.phone_number, cardinality(d.family_numbers), d.duress_phrase,
+		       COALESCE(to_jsonb(d) ->> 'user_name', '')
 		FROM incidents i JOIN devices d ON d.id = i.device_id
 		WHERE i.id = $1`, incidentID).
 		Scan(&inc.ID, &inc.DeviceID, &trigger, &branch, &speed, &inc.TriggeredAt, &inc.CreatedAt, &notified,
-			&rec.Device.PhoneNumber, &rec.Device.FamilyNumbers, &rec.Device.DuressPhrase)
+			&rec.Device.PhoneNumber, &rec.Device.FamilyNumbers, &rec.Device.DuressPhrase, &rec.Device.UserName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Record{}, ErrUnknownIncident
 	}
@@ -153,6 +155,9 @@ func (s DBStore) Load(ctx context.Context, incidentID string) (Record, error) {
 		return Record{}, err
 	}
 	if rec.Seal, err = loadSeal(ctx, tx, incidentID); err != nil {
+		return Record{}, err
+	}
+	if rec.Deliveries, err = loadDeliveries(ctx, tx, incidentID); err != nil {
 		return Record{}, err
 	}
 	from, to := rec.span()
@@ -486,4 +491,98 @@ func (s DBStore) Now(ctx context.Context) (time.Time, error) {
 	var t time.Time
 	err := s.pool.QueryRowContext(ctx, `SELECT now()`).Scan(&t)
 	return t, err
+}
+
+func loadDeliveries(ctx context.Context, tx *sql.Tx, incidentID string) ([]Delivery, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT recipient, channel, COALESCE(message_id, ''), status, COALESCE(error, ''), sent_at, delivered_at, read_at
+		FROM notify_deliveries WHERE incident_id = $1 ORDER BY id`, incidentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Delivery
+	for rows.Next() {
+		var d Delivery
+		var delivered, read sql.NullTime
+		if err := rows.Scan(&d.Recipient, &d.Channel, &d.MessageID, &d.Status, &d.Error, &d.SentAt, &delivered, &read); err != nil {
+			return nil, err
+		}
+		d.DeliveredAt, d.ReadAt = nullTime(delivered), nullTime(read)
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// SaveDelivery records one family message the notifier sent: accepted with
+// the provider's message id, or failed with the error.
+func (s DBStore) SaveDelivery(ctx context.Context, incidentID, recipient, channel, messageID, status, errText string) error {
+	_, err := s.pool.ExecContext(ctx, `
+		INSERT INTO notify_deliveries (incident_id, recipient, channel, message_id, status, error)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5, NULLIF($6, ''))
+		ON CONFLICT (message_id) DO NOTHING`,
+		incidentID, recipient, channel, messageID, status, errText)
+	return err
+}
+
+// UpdateDelivery applies a provider status to the message with messageID,
+// only forward (accepted < sent < delivered < read; failed unless read), so
+// a late or repeated webhook never moves it back. It reports whether a row
+// changed; an unknown id is no error.
+func (s DBStore) UpdateDelivery(ctx context.Context, messageID, status string, at time.Time, errText string) (bool, error) {
+	res, err := s.pool.ExecContext(ctx, `
+		UPDATE notify_deliveries SET
+			status       = $2,
+			delivered_at = CASE WHEN $2 IN ('delivered', 'read') THEN COALESCE(delivered_at, $3) ELSE delivered_at END,
+			read_at      = CASE WHEN $2 = 'read' THEN COALESCE(read_at, $3) ELSE read_at END,
+			error        = CASE WHEN $2 = 'failed' THEN NULLIF($4, '') ELSE error END,
+			updated_at   = $3
+		WHERE message_id = $1 AND (
+			($2 = 'failed' AND status NOT IN ('failed', 'read')) OR
+			(CASE $2 WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 ELSE -1 END) >
+			(CASE status WHEN 'accepted' THEN 0 WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 ELSE 99 END))`,
+		messageID, status, at, errText)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// DeliveryLog records the notifier's sends (notify.DeliveryLog) for the
+// report, with the number masked.
+type DeliveryLog struct {
+	Store   DBStore
+	Channel string // whatsapp or sms, when the sender does not say
+}
+
+// Sent records one send; a store failure is only logged, never the alert's.
+func (l DeliveryLog) Sent(ctx context.Context, incidentID, to, channel, messageID string, sendErr error) {
+	if channel == "" {
+		channel = l.Channel
+	}
+	status, errText := "accepted", ""
+	if sendErr != nil {
+		status, errText = "failed", sendErr.Error()
+		if len(errText) > 300 {
+			errText = errText[:300]
+		}
+	}
+	if err := l.Store.SaveDelivery(ctx, incidentID, MaskRecipient(to), channel, messageID, status, errText); err != nil {
+		log.Printf("report: incident %s: record delivery to %s: %v", incidentID, MaskRecipient(to), err)
+	}
+}
+
+// MaskRecipient shows a family number the way the report does: the country
+// and area codes and the last two digits of a +58 number, "+58 424 ···33";
+// only the last two of any other.
+func MaskRecipient(phone string) string {
+	if len(phone) < 4 {
+		return "···"
+	}
+	last := phone[len(phone)-2:]
+	if strings.HasPrefix(phone, "+58") && len(phone) >= 9 {
+		return "+58 " + phone[3:6] + " ···" + last
+	}
+	return "···" + last
 }

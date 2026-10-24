@@ -84,8 +84,8 @@
 
   // ------------------------------------------------------------ live state
 
-  var badge = document.querySelector("[data-live-badge]");
   function setBadge(mode) {
+    var badge = document.querySelector("[data-live-badge]");
     if (!badge) { return; }
     var text = badge.querySelector("[data-live-text]");
     badge.hidden = mode === "off";
@@ -151,6 +151,11 @@
   function format(ms, kind) {
     if (ms < 0) { ms = 0; }
     var s = ms / 1000;
+    if (kind === "ago") {
+      if (s < 60) { return "hace " + Math.floor(s) + " s"; }
+      if (s < 3600) { return "hace " + Math.floor(s / 60) + " min"; }
+      return "hace " + Math.floor(s / 3600) + " h";
+    }
     if (kind === "latency") {
       if (s < 60) { return s.toFixed(1).replace(".", ",") + " s"; }
       return Math.floor(s / 60) + " min " + Math.floor(s % 60) + " s";
@@ -167,19 +172,36 @@
     });
   }
 
-  // ------------------------------------------------------------ timeline
+  // ------------------------------------------------------------ track
 
+  // afterUpdate fills the track's line up to the last step that happened,
+  // half way into the step the case waits for, and brings that step into
+  // view on a phone, where the track scrolls sideways.
   function afterUpdate() {
-    var list = document.querySelector('[data-live="timeline"]');
-    var fill = document.querySelector("[data-rail]");
-    if (list) {
-      var items = list.children;
-      Array.prototype.forEach.call(items, function (li) { li.classList.remove("now"); });
-      var last = items[items.length - 1];
-      if (last && body.hasAttribute("data-open")) { last.classList.add("now"); }
-      if (fill && last) {
-        // The rail starts 8px down; the last dot's center is 14px into its item.
-        fill.style.height = body.hasAttribute("data-open") ? (last.offsetTop + 6) + "px" : "100%";
+    var track = document.querySelector('[data-live="track"]');
+    var fill = document.querySelector("[data-track-fill]");
+    var scroller = document.querySelector("[data-track-scroll]");
+    if (track && fill) {
+      var nodes = Array.prototype.slice.call(track.children);
+      var inner = track.parentNode;
+      if (inner && inner.style) { inner.style.setProperty("--nodes", String(nodes.length || 1)); }
+      var center = function (n) { return n.offsetLeft + n.offsetWidth / 2; };
+      var last = -1, current = -1;
+      nodes.forEach(function (n, i) {
+        if (n.classList.contains("node-done") || n.classList.contains("node-skipped")) { last = i; }
+        if (n.classList.contains("node-current")) { current = i; }
+      });
+      if (nodes.length > 1) {
+        var start = center(nodes[0]);
+        var to = last >= 0 ? center(nodes[last]) : start;
+        if (current > last && last >= 0) { to += (center(nodes[current]) - to) * 0.5; }
+        fill.style.width = Math.max(0, to - start) + "px";
+      }
+      var focus = nodes[current >= 0 ? current : Math.max(last, 0)];
+      if (scroller && focus && scroller.scrollWidth > scroller.clientWidth + 1) {
+        var left = focus.offsetLeft - (scroller.clientWidth - focus.offsetWidth) / 2;
+        scroller.scrollTo({ left: Math.max(0, left), behavior: motion && scroller._seen ? "smooth" : "auto" });
+        scroller._seen = true;
       }
     }
     initPlayers();
@@ -203,7 +225,15 @@
   }
 
   document.addEventListener("click", function (ev) {
-    var el = ev.target.closest && ev.target.closest("[data-seek]");
+    if (!ev.target.closest) { return; }
+    var play = ev.target.closest("[data-play]");
+    if (play) {
+      var a = audioOf(play.getAttribute("data-play"));
+      if (a) { if (a.paused) { seek(a, a.currentTime || 0); } else { a.pause(); } }
+      return;
+    }
+    if (ev.target.closest("[data-expand]")) { body.setAttribute("data-expanded", ""); return; }
+    var el = ev.target.closest("[data-seek]");
     if (!el) { return; }
     var audio = audioOf(el.getAttribute("data-call"));
     if (!audio) { return; }
@@ -234,15 +264,26 @@
         if (best) { best.classList.add("playing"); best.setAttribute("aria-current", "true"); }
         current = best;
       }
-      audio.addEventListener("timeupdate", mark);
-      audio.addEventListener("seeked", mark);
+      function button() { return document.querySelector('[data-play="' + call + '"]'); }
+      function readout() {
+        var block = audio.closest("[data-player]");
+        var t = block && block.querySelector("[data-ptime]");
+        if (t) { t.textContent = format(audio.currentTime * 1000, "clock").replace(/,\d$/, ""); }
+      }
+      audio.addEventListener("play", function () { var b = button(); if (b) { b.classList.add("playing"); b.setAttribute("aria-label", "Pausar la llamada"); } });
+      audio.addEventListener("pause", function () { var b = button(); if (b) { b.classList.remove("playing"); b.setAttribute("aria-label", "Reproducir la llamada"); } });
+      audio.addEventListener("timeupdate", function () { mark(); readout(); });
+      audio.addEventListener("seeked", function () { mark(); readout(); });
       audio.addEventListener("ended", function () {
         if (current) { current.classList.remove("playing"); current.removeAttribute("aria-current"); }
         current = null;
+        var b = button();
+        if (b) { b.classList.remove("playing"); }
       });
       audio.addEventListener("error", function () {
-        var note = document.getElementById("audio-error-" + call);
-        if (note && !audio._blob) { note.hidden = false; audio.hidden = true; }
+        var block = audio.closest("[data-player]");
+        var st = block && block.querySelector("[data-wave-status]");
+        if (st && !audio._blob) { st.textContent = "Audio no disponible"; }
       });
     });
   }
@@ -276,6 +317,8 @@
         })
         .then(function (decoded) {
           wave.duration = decoded.duration;
+          var t = block.querySelector("[data-ptime]");
+          if (t) { t.textContent = format(decoded.duration * 1000, "clock").replace(/,\d$/, ""); }
           wave.data = decoded.getChannelData(0);
           block.querySelector(".wave").classList.add("ready");
           draw();
@@ -302,9 +345,9 @@
         var bar = 3, gap = 2, n = Math.max(1, Math.floor(w / (bar + gap)));
         if (!wave.peaks || wave.peaks.length !== n) { wave.peaks = peaks(wave.data, n); }
         var played = wave.duration ? audio.currentTime / wave.duration : 0;
-        var on = color("--primary"), off = color("--outline-variant"), mid = h / 2 - 6;
+        var on = color("--primary"), off = color("--outline"), mid = h / 2 - 3;
         for (var i = 0; i < n; i++) {
-          var a = Math.max(2, wave.peaks[i] * (mid - 4) * 2);
+          var a = Math.max(2, wave.peaks[i] * (h - 14));
           g.fillStyle = i / n < played ? on : off;
           g.fillRect(i * (bar + gap), mid - a / 2, bar, a);
         }
@@ -312,8 +355,8 @@
         Array.prototype.forEach.call(document.querySelectorAll('.turn[data-call="' + audio.getAttribute("data-call") + '"]'), function (el) {
           var x = (parseFloat(el.getAttribute("data-seek")) || 0) / wave.duration * w;
           var phrase = el.classList.contains("phrase");
-          g.fillStyle = phrase ? on : color("--outline");
-          g.fillRect(x, h - (phrase ? 12 : 8), phrase ? 4 : 2, phrase ? 12 : 8);
+          g.fillStyle = phrase ? on : color("--outline-variant");
+          g.fillRect(x, h - (phrase ? 8 : 5), phrase ? 4 : 2, phrase ? 8 : 5);
         });
         g.fillStyle = color("--on-background");
         g.fillRect(Math.min(w - 2, played * w), 0, 2, h);
@@ -356,9 +399,9 @@
   function start() {
     snapshot(document);
     if (body.hasAttribute("data-demo-wait")) { demoWait(body.getAttribute("data-demo-wait")); return; }
-    var list = document.querySelector('[data-live="timeline"]');
-    if (list) { Array.prototype.forEach.call(list.children, function (li, i) { animateIn(li, i); }); }
-    Array.prototype.forEach.call(document.querySelectorAll('[data-live="latency"] > *, .turns > li'), function (n, i) { animateIn(n, i % 12); });
+    var track = document.querySelector('[data-live="track"]');
+    if (track) { Array.prototype.forEach.call(track.children, function (li, i) { li.classList.add("enter"); li.style.setProperty("--i", String(i)); li.addEventListener("animationend", function () { li.classList.remove("enter"); }, { once: true }); }); }
+    Array.prototype.forEach.call(document.querySelectorAll(".panel, .turns > li, .fam"), function (n, i) { animateIn(n, i % 10); });
     afterUpdate();
     tick();
     setInterval(tick, 100);

@@ -1,0 +1,131 @@
+{{/*
+  Blocks the family page (/i/{token}) does not show, kept for other pages
+  that mount the same live sections, such as the central dashboard (#99):
+  render them with report.RenderSections or stream them with
+  report.Handler.Stream, into [data-live="<name>"] containers:
+
+  - timeline:    every event, vertical, with its clock     (container: <ol>)
+  - points:      one <tr> per GPS point                     (container: <tbody> of a 4-column table)
+  - latency:     the gesture-to-X latency numbers           (container: <div>)
+  - calls:       every call with player and full transcript (container: <div>)
+  - emergencies: linked offline emergencies                 (container: <section>)
+  - seal:        the seal, hashes and how to verify         (container: <div>)
+
+  Their styles are in ficha.css under "Blocks for other pages".
+*/}}
+
+{{define "sec-timeline" -}}
+{{range .Timeline -}}
+<li data-key="{{.Key}}" class="ev ev-{{.Kind}}{{if .Error}} ev-error{{end}}">
+  <p class="ev-meta"><time datetime="{{.ISO}}">{{.Time}}</time><span class="clock clock-{{.Clock}}" title="Reloj del {{.Clock.Label}}">{{.Clock.Label}}</span>{{if and $.MultiCall .Call}}<span class="callno">Llamada {{.Call}}</span>{{end}}</p>
+  <p class="ev-title">{{.Title}}</p>
+  {{- if .Detail}}<p class="ev-detail">{{.Detail}}</p>{{end}}
+  {{- if .Quote}}
+  <button type="button" class="quote" data-call="{{.Call}}" data-seek="{{.Seek}}" data-scroll><span class="play">▶ Escuchar:</span> «{{.Quote}}»</button>
+  {{- end}}
+</li>
+{{end -}}
+{{- end}}
+
+{{define "sec-points" -}}
+{{range .Points -}}
+<tr data-key="{{.Key}}"><td>{{.At}}<span class="coords">{{.LatLng}}</span></td><td>{{.Accuracy}}</td><td>{{.Speed}}</td><td><a class="maps" href="{{.MapsURL}}" target="_blank" rel="noopener noreferrer">Abrir en Maps</a></td></tr>
+{{end -}}
+{{- end}}
+
+{{define "sec-latency" -}}
+{{range .Latencies -}}
+<div data-key="lat-{{.Key}}-{{.Value}}-{{.Pending}}" data-reveal class="lat{{if .Pending}} pending{{end}}">
+  <p class="lat-label">{{.Label}}</p>
+  <p class="lat-value">{{if .Pending}}<span class="ticker" data-since="{{$.TriggerISO}}" data-format="latency">—</span>{{else}}{{.Value}}{{end}}</p>
+  <p class="lat-note">{{if .Pending}}esperando…{{else}}{{.Note}}{{end}}</p>
+</div>
+{{end -}}
+{{- end}}
+
+{{define "sec-calls" -}}
+{{if .NoCall}}<p data-key="nocall" class="hint">{{.NoCall}}</p>{{end}}
+{{- if .Fallback}}<p data-key="fallback" class="notice notice-error">Ninguna llamada conectó: MAMÁ abrió la página de respaldo (WebRTC) para hablar por el navegador. Esto se deduce del registro de llamadas.</p>{{end}}
+{{- range $c := .Calls}}
+<article data-key="{{.Key}}" data-live-children class="card call{{if .Active}} active{{end}}{{if .Failed}} failed{{end}}" id="llamada-{{.N}}">
+  <div data-key="head" class="call-head">
+    <p class="call-kicker">{{if $.MultiCall}}Llamada {{.N}}{{if .Retry}} · reintento{{end}}{{else}}Llamada{{end}}</p>
+    <h3>Mamá llamó a {{.Number}}</h3>
+    {{- if .Active}}
+    <p class="callnow"><span class="ring" aria-hidden="true"></span>{{.Phase}} <span class="ticker" data-since="{{.Since}}" data-format="clock">—</span></p>
+    {{- end}}
+    <dl class="facts">
+      <div><dt>Pedida</dt><dd>{{.Requested}} <span class="clk">servidor</span></dd></div>
+      {{- if .Ringing}}<div><dt>Sonó</dt><dd>{{.Ringing}} <span class="clk">servidor</span></dd></div>{{end}}
+      {{- if .PickedUp}}<div><dt>Contestó</dt><dd>{{.PickedUp}} <span class="clk">servidor</span></dd></div>{{end}}
+      <div><dt>Estado</dt><dd{{if .Failed}} class="failed"{{end}}>{{.Outcome}}{{if .Duration}} · {{.Duration}}{{end}}</dd></div>
+    </dl>
+    {{- if .Verdict}}<p data-reveal class="call-verdict">{{.Verdict}}</p>{{end}}
+  </div>
+  {{- with .Audio}}
+  <div data-key="audio-{{.SHA256}}" class="player-block" data-player="{{$c.N}}">
+    <div class="wave"><canvas class="wave-canvas" data-call="{{$c.N}}" aria-label="Forma de onda de la grabación; tócala para saltar" role="img"></canvas><p class="wave-status" data-wave-status>Dibujando la grabación…</p></div>
+    <audio id="audio-{{$c.N}}" data-call="{{$c.N}}" controls preload="none" src="{{.URL}}"></audio>
+    <p class="notice" id="audio-error-{{$c.N}}" hidden>Audio no disponible: no se pudo cargar la grabación.</p>
+    <p class="rec-meta">Grabación guardada a las {{.Stored}} (servidor) · {{.Size}} · SHA-256 <span class="hash">{{.SHA256}}</span></p>
+    {{- if $c.Turns}}<p class="tap-hint">Toca un turno o la onda para escucharla desde ese segundo.</p>{{end}}
+  </div>
+  {{- else}}
+  <p data-key="noaudio-{{.NoAudio}}" class="notice">{{.NoAudio}}</p>
+  {{- end}}
+  {{- if .Turns}}
+  <ol data-key="turns" data-live-children class="turns" aria-label="Transcripción">
+  {{- range $i, $t := .Turns}}
+    <li data-key="turn-{{$i}}" class="{{if .Agent}}agent{{else}}user{{end}}"><button type="button" class="turn{{if .Phrase}} phrase{{end}}" data-call="{{$c.N}}" data-seek="{{.Seek}}"{{if not $c.Audio}} disabled{{end}}><span class="who"><span>{{.Speaker}}</span><span>{{.Offset}}{{if .At}} · {{.At}}{{end}}</span></span><span class="msg">{{.Message}}</span>{{if .Phrase}}<span class="phrase-tag">La frase acordada</span>{{end}}</button></li>
+  {{- end}}
+  </ol>
+  {{- else if not .Active}}
+  <p data-key="noturns" class="hint">Sin transcripción.</p>
+  {{- else}}
+  <p data-key="noturns-live" class="hint">La transcripción llega cuando la llamada termina.</p>
+  {{- end}}
+</article>
+{{- end}}
+{{- end}}
+
+{{define "sec-emergencies" -}}
+{{if .Emergencies -}}
+<h2 data-key="h">Emergencias sin conexión</h2>
+<p data-key="note" class="hint">Del mismo teléfono y en la misma hora que esta alerta: se enlazan por eso, no por un identificador. No forman parte del sello.</p>
+{{range .Emergencies -}}
+<article data-key="{{.Key}}-{{.Status}}-{{.Channels}}" class="card emergency">
+  <p class="call-kicker">Emergencia {{.ID}} · {{.Status}}</p>
+  <p>Llegó por {{.Channels}} a las {{.Received}} (servidor). El teléfono la envió a las {{.Sent}}.</p>
+  {{- if .MapsURL}}<p><a class="maps" href="{{.MapsURL}}" target="_blank" rel="noopener noreferrer">Abrir en Maps</a> <span class="coords">{{.LatLng}}</span></p>{{end}}
+</article>
+{{end -}}
+{{- end}}
+{{- end}}
+
+{{define "sec-seal" -}}
+{{with .Seal -}}
+{{if .Sealed -}}
+<div data-key="sealed" data-reveal class="seal-body">
+  <p class="seal-state"><span class="seal-badge" aria-hidden="true">✓</span>Sellada el {{.SealedAt}}</p>
+  <dl>
+    <dt>SHA-256 de la ficha (ficha.json)</dt><dd>{{.DocSHA256}}</dd>
+    {{- range .Recordings}}
+    <dt>SHA-256 de la grabación{{if $.MultiCall}} de la llamada {{.Call}}{{end}}</dt><dd>{{.SHA256}}</dd>
+    {{- end}}
+    <dt>Llave pública del servidor (la misma de GET /config)</dt><dd>{{.Key}}</dd>
+    <dt>Huella de la llave (SHA-256)</dt><dd>{{.Fingerprint}}</dd>
+  </dl>
+  <p class="downloads"><a class="button" href="{{.JSONURL}}" download="ficha.json">Descargar ficha.json</a><a class="button secondary" href="{{.SigURL}}" download="ficha.sig">Descargar ficha.sig</a></p>
+  <div class="honest">
+    <p>El sello prueba que el registro no cambió desde que el servidor de MAMÁ lo cerró. No es una firma electrónica certificada ni reemplaza una experticia.</p>
+    <p>Para comprobarlo: <code>go run ./cmd/verify-ficha ficha.json ficha.sig {{.Key}}</code></p>
+  </div>
+</div>
+{{- else -}}
+<div data-key="unsealed-{{.Why}}" class="seal-body">
+  <p class="seal-state">Sin sellar</p>
+  <p class="hint">{{.Why}}</p>
+</div>
+{{- end}}
+{{- end}}
+{{- end}}

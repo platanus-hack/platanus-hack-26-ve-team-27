@@ -106,7 +106,7 @@ func TestWebhookStoresTheRecordingAndThePagePlaysIt(t *testing.T) {
 		return rr
 	}
 	body := html.UnescapeString(get("/i/" + link.Token).Body.String())
-	if !strings.Contains(body, `<audio id="audio-1"`) || !strings.Contains(body, "SHA-256 <span class=\"hash\">"+hex.EncodeToString(want[:])+"</span>") || strings.Contains(body, "todavía no entregó la grabación") {
+	if !strings.Contains(body, `<audio id="audio-1"`) || !strings.Contains(body, `data-player="1"`) || strings.Contains(body, "todavía no entregó la grabación") {
 		t.Errorf("page has no player or no hash:\n%s", body)
 	}
 	if a := get("/i/" + link.Token + "/audio.mp3?llamada=1"); a.Code != http.StatusOK || a.Body.String() != "ID3 the call" {

@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeSource serves records by token from memory.
@@ -49,7 +50,9 @@ func (failingSource) Audio(context.Context, string, int) ([]byte, Recording, err
 func serve(t *testing.T, src Source, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	mux := http.NewServeMux()
-	NewHandler(src, Options{CanSeal: true, Channel: "WhatsApp"}).Register(mux)
+	h := NewHandler(src, Options{CanSeal: true, Channel: "WhatsApp"})
+	h.Now = func() time.Time { return at("2026-10-24T13:11:40Z") } // the fixture's case is live
+	h.Register(mux)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	return rec
@@ -75,19 +78,23 @@ func TestPageRendersTheSealedReport(t *testing.T) {
 	checkPrivacyHeaders(t, rec)
 	body := html.UnescapeString(rec.Body.String())
 	for _, want := range []string{
-		"Cerrado y sellado", ">Coacción<", "mama_lista.webp",
-		"Pidió ayuda con el gesto de volumen", "Recibido 0,4 s después", "Caminando (4 km/h): Mamá llama",
-		"Llamando a +58 ···67", "Llamada de 1 min 1 s", "Coacción: dijo la frase acordada",
-		"WhatsApp enviado a 2 familiares", "Grabación guardada", "Ficha sellada",
-		`<audio id="audio-1" data-call="1" controls preload="none" src="/i/` + testToken + `/audio.mp3?llamada=1">`,
-		`data-seek="15"`, "La frase acordada", "Tu familiar", "Mamá",
-		`class="clock clock-phone"`, `class="clock clock-server"`, `class="clock clock-elevenlabs"`,
-		"Abrir en Maps", "±12 m", `class="seg" pathLength="1"`, `class="dot newest"`,
-		`href="/i/` + testToken + `/ficha.json"`, `href="/i/` + testToken + `/ficha.sig"`,
-		"El sello prueba que el registro no cambió desde que el servidor de MAMÁ lo cerró. No es una firma electrónica certificada ni reemplaza una experticia.",
+		"Sellada ✓", ">Coacción<", "mama_lista.webp", "Pidió ayuda · sáb 24 oct, 09:10", "duró",
+		`class="node node-done" data-stage="stage-trigger"`, `class="node node-done" data-stage="stage-verdict"`,
+		`class="node node-done" data-stage="stage-family"`, `class="node node-done" data-stage="stage-sealed"`,
+		`class="node node-skipped" data-stage="stage-rang"`, ">09:11:25<", "Familia avisada",
+		`<audio id="audio-1" data-call="1" preload="none" src="/i/` + testToken + `/audio.mp3?llamada=1">`,
+		`data-play="1"`, `data-seek="15"`, "La frase acordada", "Tu familiar", "Coacción: dijo la frase acordada",
+		`class="seg" pathLength="1"`, `class="dot newest"`, "recorridos", "Abrir en Maps",
+		`href="/i/` + testToken + `/reporte.pdf"`, "Descargar PDF", "WhatsApp enviado a 2 familiares.",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
+		}
+	}
+	// The redesign leaves these to the PDF, or drops them.
+	for _, gone := range []string{"Caminando (4 km/h)", "SHA-256", "El sello prueba", "Toca un turno", "<footer", "lat-value", "En vivo"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("page still has %q", gone)
 		}
 	}
 	// The full phone number and the device id never reach the page.
@@ -100,18 +107,13 @@ func TestPageRendersTheSealedReport(t *testing.T) {
 
 func TestPageWithoutAudioSaysSoAndKeepsTheTranscript(t *testing.T) {
 	body := html.UnescapeString(serve(t, fakeSource{testToken: openRecord()}, "/i/"+testToken).Body.String())
-	for _, want := range []string{"Abierto", "mama_escuchando.webp", "Audio no disponible", "dile a la tía Carmen que llego tarde", "Sin sellar", "Toca"} {
-		if want == "Toca" {
-			if strings.Contains(body, "Toca un turno") {
-				t.Error("page offers tap-to-seek without audio")
-			}
-			continue
-		}
+	for _, want := range []string{"En vivo", "mama_escuchando.webp", "Audio no disponible", "dile a la tía Carmen que llego tarde",
+		`class="node node-current" data-stage="stage-sealed"`, "desde el gesto", "Ver toda la llamada", `class="user keep"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
 		}
 	}
-	if strings.Contains(body, "<audio") {
+	if strings.Contains(body, "<audio") || strings.Contains(body, "data-play") {
 		t.Error("page has a player without a recording")
 	}
 }
@@ -147,7 +149,7 @@ func TestPageMakesNoThirdPartyRequest(t *testing.T) {
 		if strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") {
 			continue
 		}
-		if strings.HasPrefix(u, "https://www.google.com/maps/search/") && strings.Contains(body, `<a class="maps" href="`+u+`"`) {
+		if strings.HasPrefix(u, "https://www.google.com/maps/search/") && strings.Contains(body, `class="maps-btn" href="`+u+`"`) {
 			continue
 		}
 		t.Errorf("page references %q", u)

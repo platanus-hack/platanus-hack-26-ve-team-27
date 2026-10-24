@@ -26,9 +26,15 @@ const (
 	defaultMaxStream = 30 * time.Minute
 )
 
-// liveSections are the page parts the live stream sends, each rendered by
-// the "sec-<name>" template into the [data-live="<name>"] container.
-var liveSections = []string{"hero", "latency", "timeline", "map", "points", "calls", "emergencies", "seal"}
+// FamilySections are the sections of the family page GET /i/{token}, each
+// rendered by the "sec-<name>" template into its [data-live="<name>"]
+// container, and what GET /i/{token}/live streams.
+var FamilySections = []string{"status", "header", "track", "call", "route", "family"}
+
+// BlockSections are sections the family page does not show, for other pages
+// that mount the same live data, such as the central dashboard (#99):
+// templates/blocks.html says where each one goes.
+var BlockSections = []string{"timeline", "points", "latency", "calls", "emergencies", "seal"}
 
 // Snapshot is one state of the page for the live stream and estado.json.
 type Snapshot struct {
@@ -40,18 +46,27 @@ type Snapshot struct {
 	Sections  map[string]string `json:"sections"`
 }
 
-// snapshot renders the record's live sections.
+// snapshot renders the family page's sections of the record.
 func (h *Handler) snapshot(rec Record, token string) (Snapshot, error) {
 	opts := h.opts
 	opts.Token = token
 	opts.Now = h.now()
+	return RenderSections(rec, opts, FamilySections)
+}
+
+// RenderSections renders the named sections of rec ("sec-<name>" templates:
+// FamilySections, BlockSections) into a Snapshot whose Version changes when
+// any of them does. opts.Token builds the file links; opts.Now decides what
+// is still live. Another page mounts the HTML into its own [data-live]
+// containers, and ficha.js keeps them up to date.
+func RenderSections(rec Record, opts Options, names []string) (Snapshot, error) {
 	page := Build(rec, opts)
 	s := Snapshot{
 		State: page.State, Live: page.Live, End: rec.Seal != nil,
-		ServerNow: iso(opts.Now), Sections: make(map[string]string, len(liveSections)),
+		ServerNow: iso(opts.Now), Sections: make(map[string]string, len(names)),
 	}
 	sum := sha256.New()
-	for _, name := range liveSections {
+	for _, name := range names {
 		var buf bytes.Buffer
 		if err := tmpl.ExecuteTemplate(&buf, "sec-"+name, page); err != nil {
 			return Snapshot{}, fmt.Errorf("render %s: %w", name, err)
@@ -82,21 +97,47 @@ func (h *Handler) state(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(s)
 }
 
-// live answers GET /i/{token}/live with Server-Sent Events: an "update"
-// event with the snapshot at once, then one each time the case changes (it
-// re-reads it every LivePoll), a ": keep-alive" comment every KeepAlive, and
-// an "end" event once the case is sealed or its link is gone, after which
-// the stream closes. It also stops when the client goes away, and after
-// MaxStream (EventSource reconnects by itself).
+// live answers GET /i/{token}/live: Stream of the family page's sections.
+// An unknown, malformed or expired token is 404 before any stream starts.
 func (h *Handler) live(w http.ResponseWriter, r *http.Request) {
 	rec, token, ok := h.load(w, r)
 	if !ok {
 		return
 	}
+	load := func(ctx context.Context) (Record, error) { return h.src.ByToken(ctx, token) }
+	opts := h.opts
+	opts.Token = token
+	h.stream(w, r, rec, load, opts, FamilySections)
+}
+
+// Stream serves Server-Sent Events of the named sections of the record load
+// returns, for any page that mounts them (the central dashboard, #99): an
+// "update" event with the Snapshot at once, then one each time it changes
+// (load runs every LivePoll), a ": keep-alive" comment every KeepAlive, and
+// an "end" event once the record is sealed or load answers ErrNotFound,
+// after which the stream closes. It also stops when the client goes away,
+// and after MaxStream (EventSource reconnects by itself). The caller sets
+// its own access checks and privacy headers first.
+func (h *Handler) Stream(w http.ResponseWriter, r *http.Request, load func(context.Context) (Record, error), opts Options, names []string) {
+	rec, err := load(r.Context())
+	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrUnknownIncident) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		log.Printf("report: stream: %v", err)
+		http.Error(w, "No se pudo cargar el caso.", http.StatusInternalServerError)
+		return
+	}
+	h.stream(w, r, rec, load, opts, names)
+}
+
+func (h *Handler) stream(w http.ResponseWriter, r *http.Request, rec Record, load func(context.Context) (Record, error), opts Options, names []string) {
 	rc := http.NewResponseController(w)
 	_ = rc.SetWriteDeadline(time.Time{}) // a stream outlives any server write timeout
 	hdr := w.Header()
 	hdr.Set("Content-Type", "text/event-stream; charset=utf-8")
+	hdr.Set("Cache-Control", "no-store")
 	hdr.Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
@@ -112,7 +153,9 @@ func (h *Handler) live(w http.ResponseWriter, r *http.Request) {
 	// stream must stop (sealed, or the client is gone).
 	push := func(rec Record) (stop bool) {
 		h.closer.Recover(rec)
-		s, err := h.snapshot(rec, token)
+		o := opts
+		o.Now = h.now()
+		s, err := RenderSections(rec, o, names)
 		if err != nil {
 			log.Printf("report: live: %v", err)
 			return false
@@ -152,8 +195,8 @@ func (h *Handler) live(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-poll.C:
-			rec, err := h.src.ByToken(ctx, token)
-			if errors.Is(err, ErrNotFound) {
+			rec, err := load(ctx)
+			if errors.Is(err, ErrNotFound) || errors.Is(err, ErrUnknownIncident) {
 				write("event: end\ndata: {\"gone\":true}\n\n")
 				return
 			}

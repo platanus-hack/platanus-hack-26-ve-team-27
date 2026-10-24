@@ -45,11 +45,38 @@ type ReportLinks interface {
 	ReportURL(ctx context.Context, incidentID string) (string, error)
 }
 
+// IDSender is a Sender that also returns the provider's message id
+// (*Kapso: the WhatsApp wamid).
+type IDSender interface {
+	SendWithID(ctx context.Context, to, body string) (string, error)
+}
+
+// DeliveryLog records the outcome of each send, so the incident report
+// (#76) can show that every relative was notified. report.DeliveryLog is
+// the real one. channel is "whatsapp" or "sms" (ChannelOf the sender that
+// sent it); messageID is "" when the send failed or the provider gave none.
+type DeliveryLog interface {
+	Sent(ctx context.Context, incidentID, to, channel, messageID string, err error)
+}
+
+// ChannelOf names a Sender's channel for the delivery log: "whatsapp" for
+// Kapso, "sms" for Twilio, "" for anything else.
+func ChannelOf(s Sender) string {
+	switch s.(type) {
+	case *Kapso:
+		return "whatsapp"
+	case *SMS:
+		return "sms"
+	}
+	return ""
+}
+
 // Notifier implements intake.Notifier. Create it with New.
 type Notifier struct {
-	store  Store
-	sender Sender
-	links  ReportLinks // nil: no report line
+	store      Store
+	sender     Sender
+	links      ReportLinks // nil: no report line
+	deliveries DeliveryLog // nil: sends are only logged
 }
 
 var _ intake.Notifier = (*Notifier)(nil)
@@ -57,6 +84,28 @@ var _ intake.Notifier = (*Notifier)(nil)
 // New returns a Notifier that claims through store and sends through sender.
 func New(store Store, sender Sender) *Notifier {
 	return &Notifier{store: store, sender: sender}
+}
+
+// WithDeliveries records every send's outcome in log.
+func (n *Notifier) WithDeliveries(log DeliveryLog) *Notifier {
+	n.deliveries = log
+	return n
+}
+
+// send sends one message, with the provider's message id when it gives one,
+// and records the outcome.
+func (n *Notifier) send(ctx context.Context, incidentID, to, body string) error {
+	var id string
+	var err error
+	if s, ok := n.sender.(IDSender); ok {
+		id, err = s.SendWithID(ctx, to, body)
+	} else {
+		err = n.sender.Send(ctx, to, body)
+	}
+	if n.deliveries != nil {
+		n.deliveries.Sent(context.WithoutCancel(ctx), incidentID, to, ChannelOf(n.sender), id, err)
+	}
+	return err
 }
 
 // WithReportLinks adds the "Ficha: <url>" line to every message, from links.
@@ -95,7 +144,7 @@ func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 	body := FormatWithReport(msg, n.reportURL(ctx, inc.ID))
 	sent := 0
 	for _, to := range msg.To {
-		if err := n.sender.Send(ctx, to, body); err != nil {
+		if err := n.send(ctx, inc.ID, to, body); err != nil {
 			log.Printf("notify: incident %s: send to %s: %v", inc.ID, mask(to), err)
 			continue
 		}

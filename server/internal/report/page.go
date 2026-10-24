@@ -35,16 +35,19 @@ func AudioPath(token string, n int) string {
 // DocumentPath is the sealed document, served byte for byte.
 func DocumentPath(token string) string { return PagePrefix + token + "/ficha.json" }
 
+// PDFPath is the detailed report as a PDF.
+func PDFPath(token string) string { return PagePrefix + token + "/reporte.pdf" }
+
 // SignaturePath is the seal's signature.
 func SignaturePath(token string) string { return PagePrefix + token + "/ficha.sig" }
 
-//go:embed templates/ficha.html
+//go:embed templates/*.html
 var templateFS embed.FS
 
 //go:embed static
 var staticFS embed.FS
 
-var tmpl = template.Must(template.ParseFS(templateFS, "templates/ficha.html"))
+var tmpl = template.Must(template.ParseFS(templateFS, "templates/*.html"))
 
 // staticTypes are the only files StaticPrefix serves, with their type.
 var staticTypes = map[string]string{
@@ -79,6 +82,7 @@ type Handler struct {
 	opts   Options
 	closer *Closer
 	demo   *Demo
+	kapso  *KapsoWebhook
 
 	// Live stream timing; the defaults when zero (tests shorten them).
 	LivePoll  time.Duration
@@ -91,6 +95,12 @@ type Handler struct {
 // has its own).
 func NewHandler(src Source, opts Options) *Handler {
 	return &Handler{src: src, opts: opts}
+}
+
+// WithKapso mounts POST /webhooks/kapso (KapsoWebhook).
+func (h *Handler) WithKapso(k *KapsoWebhook) *Handler {
+	h.kapso = k
+	return h
 }
 
 // WithDemo mounts the presenter's demo routes (Demo).
@@ -121,8 +131,12 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+PagePrefix+"{token}/ficha.sig", h.signature)
 	mux.HandleFunc("GET "+PagePrefix+"{token}/live", h.live)
 	mux.HandleFunc("GET "+PagePrefix+"{token}/estado.json", h.state)
+	mux.HandleFunc("GET "+PagePrefix+"{token}/reporte.pdf", h.pdf)
 	if h.demo != nil {
 		h.demo.register(mux)
+	}
+	if h.kapso != nil {
+		mux.Handle("POST /webhooks/kapso", h.kapso)
 	}
 	mux.HandleFunc("GET "+StaticPrefix+"{file}", serveStatic)
 }

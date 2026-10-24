@@ -23,6 +23,9 @@ type Record struct {
 	Points   []Point // oldest first
 	Calls    []Call  // in the order they were requested
 	Seal     *Seal   // nil until sealed
+	// Deliveries are the family messages the notifier sent, oldest first,
+	// with what the provider reported since (notify_deliveries).
+	Deliveries []Delivery
 	// Emergencies are offline emergencies (#57) of the same device whose
 	// time span overlaps the incident's: linked by device and time only,
 	// since the schema has no link. Shown, never sealed.
@@ -48,6 +51,9 @@ type Device struct {
 	// DuressPhrase only finds the transcript turn that says it, to highlight
 	// it. It is never shown and never sealed.
 	DuressPhrase string
+	// UserName is devices.user_name when that column exists (#104 adds it);
+	// "" otherwise. Shown, never sealed.
+	UserName string
 }
 
 // Point is one gps_points row.
@@ -123,4 +129,17 @@ func (c Call) AnsweredAt() (t time.Time, ok bool) {
 		return time.Time{}, false
 	}
 	return c.EndedAt.Add(-time.Duration(*c.DurationSecs) * time.Second), true
+}
+
+// Delivery is one family message: to whom (masked), whether the provider
+// took it, and what its status webhooks said since.
+type Delivery struct {
+	Recipient   string // masked, "+58 424 ···33"
+	Channel     string // whatsapp or sms
+	MessageID   string
+	Status      string // accepted, failed, sent, delivered or read
+	Error       string
+	SentAt      time.Time  // server clock
+	DeliveredAt *time.Time // server clock, when the webhook said so
+	ReadAt      *time.Time
 }

@@ -44,7 +44,7 @@ func main() {
 
 	pool := openAndMigrate(cfg.DatabaseURL)
 	reports, closer := newReports(cfg, pool, reportSigningKey(cfg, offline))
-	notifier := newNotifier(cfg, pool, reportLinks(cfg, pool, reports != nil))
+	notifier := newNotifier(cfg, pool, reportLinks(cfg, pool, reports != nil), deliveryLog(cfg, pool, reports != nil))
 	calls := newCallRoutes(cfg, pool)
 	// The post-call hooks, in order (call.Hooks). #21 adds "duress detector
 	// -> save verdict -> notify" first, so the report closes after them.
@@ -173,7 +173,7 @@ func openAndMigrate(url string) *sql.DB {
 // deploy instead of alerting through a channel nobody chose. Without a
 // database intake answers 503 and never hands off, so LogHandoff is enough.
 // links, when not nil, adds the incident report line to every message.
-func newNotifier(cfg config.Config, pool *sql.DB, links notify.ReportLinks) intake.Notifier {
+func newNotifier(cfg config.Config, pool *sql.DB, links notify.ReportLinks, deliveries notify.DeliveryLog) intake.Notifier {
 	sender, err := notify.NewSender(cfg)
 	if err != nil {
 		log.Fatalf("notifier: %v", err)
@@ -190,7 +190,23 @@ func newNotifier(cfg config.Config, pool *sql.DB, links notify.ReportLinks) inta
 		log.Print("notifier: family messages carry the incident report link")
 		n.WithReportLinks(links)
 	}
+	if deliveries != nil {
+		n.WithDeliveries(deliveries)
+	}
 	return n
+}
+
+// deliveryLog records each family message for the report (#76): only when
+// the report page is mounted. A nil interface otherwise.
+func deliveryLog(cfg config.Config, pool *sql.DB, reportsOn bool) notify.DeliveryLog {
+	if !reportsOn || pool == nil {
+		return nil
+	}
+	channel := "whatsapp"
+	if cfg.Notifier == config.NotifierSMS {
+		channel = "sms"
+	}
+	return report.DeliveryLog{Store: report.NewDBStore(pool), Channel: channel}
 }
 
 // reportLinks is the family message's report link (#76): only when the
@@ -241,7 +257,13 @@ func newReports(cfg config.Config, pool *sql.DB, signing ed25519.PrivateKey) (*r
 		log.Print("report: WARNING: no server signing key; reports stay unsealed (\"Sin sellar\")")
 	}
 	log.Printf("report: incident report page is on; links live %d days", cfg.Report.TTLDays)
-	h := report.NewHandler(store, report.Options{Channel: channelName(cfg), CanSeal: signing != nil}).RecoverWith(closer)
+	h := report.NewHandler(store, report.Options{Channel: channelName(cfg), CanSeal: signing != nil, BaseURL: cfg.PublicURL}).RecoverWith(closer)
+	if cfg.Kapso.WebhookSecret != "" {
+		log.Print("report: Kapso message statuses arrive at POST /webhooks/kapso")
+		h.WithKapso(&report.KapsoWebhook{Secret: cfg.Kapso.WebhookSecret, Store: store})
+	} else {
+		log.Print("report: KAPSO_WEBHOOK_SECRET is not set; the report shows each family message as sent, without delivery or read receipts")
+	}
 	if cfg.Report.DemoKey != "" {
 		log.Print("report: demo shortcuts GET /demo/latest and /demo/next are on (DEMO_KEY is set)")
 		h.WithDemo(&report.Demo{Key: cfg.Report.DemoKey, Store: store, TTLDays: cfg.Report.TTLDays})

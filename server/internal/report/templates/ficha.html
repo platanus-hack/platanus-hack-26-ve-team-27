@@ -6,13 +6,16 @@
   the drawn route) and animates only what is new. A child with
   data-live-children is updated child by child; data-reveal swaps with the
   reveal animation instead of the plain entrance.
+
+  Mobile first (the family opens the link from WhatsApp); from 1024 px wide
+  the page is one screen with no page scroll (projector).
 */}}
 
 {{define "head"}}<!doctype html>
 <html lang="es-VE">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow, noarchive">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
@@ -24,136 +27,141 @@
 </head>
 {{end}}
 
-{{define "topbar"}}
-<header class="top">
-  <span class="wordmark" role="img" aria-label="MAMÁ"><img class="mark" src="/ficha/static/mama_mark.webp" alt="" width="32" height="32"><span aria-hidden="true">MAMÁ</span></span>
-  <span class="top-right">
-    <span class="live-badge" data-live-badge hidden><span class="live-dot" aria-hidden="true"></span><span data-live-text>En vivo</span></span>
-    <span class="label">Ficha del incidente</span>
-  </span>
-</header>
-{{end}}
-
-{{define "foot"}}
-<footer>
-  <p>Este enlace es privado y vence solo. Compártelo solo con quien lo necesite, por ejemplo con el CICPC o la fiscalía.</p>
-  <p>Letra Lexend, <a href="/ficha/static/Lexend-OFL.txt">licencia SIL OFL 1.1</a>. Esta página no le pide nada a ningún otro sitio.</p>
-</footer>
-</div>
-</body>
-</html>{{end}}
+{{define "wordmark"}}<span class="wordmark" role="img" aria-label="MAMÁ"><img class="mark" src="/ficha/static/mama_mark.webp" alt="" width="28" height="28"><span aria-hidden="true">MAMÁ</span></span>{{end}}
 
 {{define "missing"}}{{template "head"}}
-<body>
-<div class="wrap">
-{{template "topbar"}}
+<body class="plain">
+<header class="top">{{template "wordmark"}}</header>
 <main class="missing">
   <img src="/ficha/static/mama_escuchando.webp" alt="" width="128" height="128">
   <h1>Esta ficha no existe o ya venció</h1>
   <p>Revisa que el enlace esté completo. Los enlaces de MAMÁ vencen después de un tiempo.</p>
 </main>
-{{template "foot"}}{{end}}
+</body>
+</html>{{end}}
 
 {{define "demo-wait"}}{{template "head"}}
-<body data-demo-wait="{{.}}">
-<div class="wrap">
-{{template "topbar"}}
+<body class="plain" data-demo-wait="{{.}}">
+<header class="top">{{template "wordmark"}}</header>
 <main class="missing demo-wait">
   <img class="mama-wait" src="/ficha/static/mama_escuchando.webp" alt="" width="160" height="160">
   <h1>Esperando la próxima alerta</h1>
   <p>Haz el gesto en el teléfono. La ficha se abre sola apenas llegue al servidor.</p>
   <p class="since-wait"><span class="live-dot" aria-hidden="true"></span> Escuchando</p>
 </main>
-{{template "foot"}}{{end}}
+</body>
+</html>{{end}}
 
 {{define "page"}}{{template "head"}}
 <body data-state="{{.State}}" data-live-url="/i/{{.Token}}/live" data-json-url="/i/{{.Token}}/estado.json"{{if .Live}} data-open{{end}}>
-<div class="wrap">
-{{template "topbar"}}
-<main class="layout">
-<section class="hero" aria-label="Resumen" data-live="hero">{{template "sec-hero" .}}</section>
+<div class="app">
+<header class="top">
+  {{template "wordmark"}}
+  <div class="top-right">
+    <span class="status" data-live="status">{{template "sec-status" .}}</span>
+    <a class="pdf-btn" href="{{.PDFURL}}" download aria-label="Descargar PDF"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V9h5.5L13 3.5ZM12 11a1 1 0 0 0-1 1v4.59l-1.3-1.3a1 1 0 1 0-1.4 1.42l3 3a1 1 0 0 0 1.4 0l3-3a1 1 0 0 0-1.4-1.42L13 16.6V12a1 1 0 0 0-1-1Z"/></svg><span class="pdf-text">Descargar PDF</span></a>
+  </div>
+</header>
 
-<section class="latency" aria-label="Latencias" data-live="latency">{{template "sec-latency" .}}</section>
+<section class="head" aria-label="Estado del caso" data-live="header">{{template "sec-header" .}}</section>
 
-<section id="linea" class="col-timeline" aria-labelledby="h-linea">
-  <h2 id="h-linea">Línea de tiempo</h2>
-  <p class="hint">Cada hora dice de qué reloj viene: {{if .HasCallBranch}}el del teléfono, el del servidor o el de ElevenLabs (la llamada){{else}}el del teléfono o el del servidor{{end}}. Pueden no coincidir.</p>
-  <p class="legend" aria-hidden="true"><span class="clock clock-phone">teléfono</span><span class="clock clock-server">servidor</span>{{if .HasCallBranch}}<span class="clock clock-elevenlabs">ElevenLabs</span>{{end}}</p>
-  <div class="timeline">
-    <div class="rail" aria-hidden="true"><div class="rail-fill" data-rail></div></div>
-    <ol data-live="timeline">{{template "sec-timeline" .}}</ol>
+<section class="track-box" aria-label="Línea de tiempo">
+  <div class="track-scroll" data-track-scroll>
+    <div class="track-inner">
+      <div class="track-line" aria-hidden="true"><div class="track-fill" data-track-fill></div></div>
+      <ol class="track" data-live="track">{{template "sec-track" .}}</ol>
+    </div>
   </div>
 </section>
 
-<div class="col-side">
-<section id="ubicaciones" aria-labelledby="h-ubicaciones">
-  <h2 id="h-ubicaciones">Recorrido</h2>
-  <p class="hint">Hora del teléfono. Toca un punto o «Abrir en Maps» para verlo en Google Maps; esta página no carga ningún mapa.</p>
-  <div class="map" data-live="map">{{template "sec-map" .}}</div>
-  <table class="points">
-    <thead><tr><th scope="col">Hora</th><th scope="col">Precisión</th><th scope="col">Movimiento</th><th scope="col"><span class="visually-hidden">Mapa</span></th></tr></thead>
-    <tbody data-live="points">{{template "sec-points" .}}</tbody>
-  </table>
-</section>
-
-<section id="llamada" aria-labelledby="h-llamada">
-  <h2 id="h-llamada">La llamada</h2>
-  <div data-live="calls">{{template "sec-calls" .}}</div>
-</section>
-
-<section id="sin-conexion" class="emergencies" aria-label="Emergencias sin conexión" data-live="emergencies">{{template "sec-emergencies" .}}</section>
-</div>
-
-<section id="sello" class="seal" aria-labelledby="h-sello">
-  <h2 id="h-sello">El sello</h2>
-  <div data-live="seal">{{template "sec-seal" .}}</div>
-</section>
+<main class="panels">
+  <section class="panel panel-call" aria-labelledby="h-call">
+    <h2 id="h-call">La llamada</h2>
+    <div class="panel-body" data-live="call">{{template "sec-call" .}}</div>
+  </section>
+  <section class="panel panel-route" aria-labelledby="h-route">
+    <h2 id="h-route">Recorrido</h2>
+    <div class="panel-body" data-live="route">{{template "sec-route" .}}</div>
+  </section>
+  <section class="panel panel-family" aria-labelledby="h-family">
+    <h2 id="h-family">La familia</h2>
+    <div class="panel-body" data-live="family">{{template "sec-family" .}}</div>
+  </section>
 </main>
-{{template "foot"}}{{end}}
+</div>
+</body>
+</html>{{end}}
 
-{{define "sec-hero" -}}
-<img data-key="art-{{.Character}}" data-reveal class="mama" src="/ficha/static/mama_{{.Character}}.webp" alt="" width="128" height="128">
-<div data-key="hero-text" data-live-children class="hero-text">
-  <p data-key="state-{{.State}}" data-reveal class="state state-{{.State}}">{{.StateLabel}}</p>
-  <h1 data-key="verdict-{{.VerdictKind}}-{{.Verdict}}" data-reveal class="verdict verdict-{{.VerdictKind}}">{{.Verdict}}</h1>
-  <p data-key="when" class="when">Pidió ayuda el {{.Triggered}}.</p>
-  <p data-key="branch-{{.Branch}}" class="branch">{{.Branch}}</p>
-  {{- if .Live}}
-  <p data-key="since" class="since">Desde el gesto <span class="ticker" data-since="{{.TriggerISO}}" data-format="clock">—</span></p>
-  {{- end}}
-  {{- if .CallActive}}
-  <p data-key="callnow-{{.CallPhase}}" data-reveal class="callnow" aria-label="Llamada en curso: {{.CallPhase}}"><span class="ring" aria-hidden="true"></span><span>{{.CallPhase}}</span><span class="ticker" data-since="{{.CallSince}}" data-format="clock">—</span></p>
-  {{- end}}
+{{define "sec-status" -}}
+{{if .Sealed -}}
+<span data-key="sealed" data-reveal class="chip chip-sealed">Sellada ✓</span>
+{{- else if .Live -}}
+<span data-key="live" class="chip chip-live" data-live-badge><span class="live-dot" aria-hidden="true"></span><span data-live-text>En vivo</span></span>
+{{- end}}
+{{- end}}
+
+{{define "sec-header" -}}
+<img data-key="art-{{.Character}}" data-reveal class="mama" src="/ficha/static/mama_{{.Character}}.webp" alt="" width="80" height="80">
+<div data-key="head-text" data-live-children class="head-text">
+  <h1 data-key="title-{{.TitleKind}}-{{.Title}}" data-reveal class="title title-{{.TitleKind}}">{{.Title}}</h1>
+  <p data-key="when-{{.UserName}}" class="when">{{if .UserName}}{{.UserName}} pidió ayuda{{else}}Pidió ayuda{{end}} · {{.TriggeredShort}}</p>
+</div>
+<div data-key="clock-{{.Live}}-{{.Elapsed}}" class="head-clock">
+  {{- if .Live}}<span class="clock-label">desde el gesto</span><span class="big-clock ticker" data-since="{{.TriggerISO}}" data-format="clock">—</span>
+  {{- else if .Elapsed}}<span class="clock-label">duró</span><span class="big-clock">{{.Elapsed}}</span>{{end -}}
 </div>
 {{- end}}
 
-{{define "sec-latency" -}}
-{{range .Latencies -}}
-<div data-key="lat-{{.Key}}-{{.Value}}-{{.Pending}}" data-reveal class="lat{{if .Pending}} pending{{end}}">
-  <p class="lat-label">{{.Label}}</p>
-  <p class="lat-value">{{if .Pending}}<span class="ticker" data-since="{{$.TriggerISO}}" data-format="latency">—</span>{{else}}{{.Value}}{{end}}</p>
-  <p class="lat-note">{{if .Pending}}esperando…{{else}}{{.Note}}{{end}}</p>
-</div>
-{{end -}}
-{{- end}}
-
-{{define "sec-timeline" -}}
-{{range .Timeline -}}
-<li data-key="{{.Key}}" class="ev ev-{{.Kind}}{{if .Error}} ev-error{{end}}">
-  <p class="ev-meta"><time datetime="{{.ISO}}">{{.Time}}</time><span class="clock clock-{{.Clock}}" title="Reloj del {{.Clock.Label}}">{{.Clock.Label}}</span>{{if and $.MultiCall .Call}}<span class="callno">Llamada {{.Call}}</span>{{end}}</p>
-  <p class="ev-title">{{.Title}}</p>
-  {{- if .Detail}}<p class="ev-detail">{{.Detail}}</p>{{end}}
-  {{- if .Quote}}
-  <button type="button" class="quote" data-call="{{.Call}}" data-seek="{{.Seek}}" data-scroll><span class="play">▶ Escuchar:</span> «{{.Quote}}»</button>
-  {{- end}}
+{{define "sec-track" -}}
+{{range .Stages -}}
+<li data-key="{{.Key}}-{{.State}}-{{.Time}}-{{.Sub}}-{{.Mark}}-{{.Error}}" data-reveal class="node node-{{.State}}{{if .Error}} node-error{{end}}" data-stage="{{.Key}}">
+  <span class="node-dot" aria-hidden="true">{{if eq .State "done"}}{{if .Error}}!{{else}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9.5 16.6 5.4 12.5 4 13.9l5.5 5.5L20 8.9l-1.4-1.4z"/></svg>{{end}}{{end}}</span>
+  <span class="node-time">{{if .Time}}{{.Time}}{{else if eq .State "skipped"}}—{{else if eq .State "current"}}ahora{{else}}·{{end}}</span>
+  <span class="node-label">{{.Label}}</span>
+  {{- if .Sub}}<span class="node-sub">{{.Sub}}</span>{{end}}
+  {{- if .Mark}}<span class="node-mark">{{.Mark}}</span>{{end}}
 </li>
 {{end -}}
 {{- end}}
 
-{{define "sec-map" -}}
+{{define "sec-call" -}}
+{{if .CallActive -}}
+<div data-key="live-call-{{.CallPhase}}" data-reveal class="call-live">
+  <span class="ring" aria-hidden="true"></span>
+  <div><p class="call-live-label">Llamada en curso</p><p class="call-live-phase">{{.CallPhase}} · <span class="ticker" data-since="{{.CallSince}}" data-format="clock">—</span></p></div>
+</div>
+{{- end}}
+{{- with .Call}}
+<article data-key="call-card-{{.N}}" data-live-children data-reveal class="call-card">
+  {{- if .Verdict}}<p data-key="verdict-{{.Verdict}}" data-reveal class="verdict-pill">{{.Verdict}}</p>{{end}}
+  {{- with .Audio}}
+  <div data-key="player-{{.SHA256}}" class="player" data-player="{{$.Call.N}}">
+    <button type="button" class="play" data-play="{{$.Call.N}}" aria-label="Reproducir la llamada"><svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14Z"/></svg><svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>
+    <div class="wave"><canvas class="wave-canvas" data-call="{{$.Call.N}}" role="img" aria-label="Forma de onda de la grabación; tócala para saltar"></canvas><span class="wave-status" data-wave-status>Cargando…</span></div>
+    <span class="ptime" data-ptime>0:00</span>
+    <audio id="audio-{{$.Call.N}}" data-call="{{$.Call.N}}" preload="none" src="{{.URL}}"></audio>
+  </div>
+  {{- else}}
+  <p data-key="noaudio-{{.NoAudio}}" class="panel-note">{{.NoAudio}}</p>
+  {{- end}}
+  {{- if .Turns}}
+  <ol data-key="turns" data-live-children class="turns" aria-label="Transcripción">
+  {{- range $i, $t := .Turns}}
+    <li data-key="turn-{{$i}}" class="{{if .Agent}}agent{{else}}user{{end}}{{if .Keep}} keep{{end}}"><button type="button" class="turn{{if .Phrase}} phrase{{end}}" data-call="{{$.Call.N}}" data-seek="{{.Seek}}"{{if not $.Call.Audio}} disabled{{end}}><span class="who"><span>{{.Speaker}}</span><span>{{.Offset}}</span></span><span class="msg">{{.Message}}</span>{{if .Phrase}}<span class="phrase-tag">La frase acordada</span>{{end}}</button></li>
+  {{- end}}
+  </ol>
+  {{- if .More}}<button data-key="more" type="button" class="more" data-expand>Ver toda la llamada</button>{{end}}
+  {{- end}}
+</article>
+{{- end}}
+{{- if .CallNote}}
+<p data-key="note-{{.CallNote}}" class="panel-note">{{.CallNote}}</p>
+{{- end}}
+{{- end}}
+
+{{define "sec-route" -}}
 {{with .Route -}}
-<svg data-key="route" data-live-children class="route" viewBox="0 0 {{.Width}} {{.Height}}" role="img" aria-label="Recorrido de {{.DistanceKM}}, sin mapa de fondo">
-  <rect data-key="bg" class="route-bg" x="0" y="0" width="{{.Width}}" height="{{.Height}}" rx="16"/>
+<svg data-key="route" data-live-children class="route" viewBox="0 0 {{.Width}} {{.Height}}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Recorrido de {{.DistanceKM}}, sin mapa de fondo">
   {{- range .Segments}}
   <line data-key="{{.Key}}" class="seg" pathLength="1" x1="{{.X1}}" y1="{{.Y1}}" x2="{{.X2}}" y2="{{.Y2}}"/>
   {{- end}}
@@ -161,104 +169,24 @@
   {{- if .Newest}}
   <circle data-key="pulse-{{.Key}}" class="pulse" cx="{{.X}}" cy="{{.Y}}" r="7"/>
   {{- end}}
-  <a data-key="{{.Key}}" href="{{.MapsURL}}" target="_blank" rel="noopener noreferrer"><title>{{.Title}} · Abrir en Maps</title><circle class="dot{{if .First}} first{{end}}{{if .Newest}} newest{{end}}" cx="{{.X}}" cy="{{.Y}}" r="{{if .Newest}}7{{else}}5{{end}}"/></a>
+  <circle data-key="{{.Key}}" class="dot{{if .First}} first{{end}}{{if .Newest}} newest{{end}}" cx="{{.X}}" cy="{{.Y}}" r="{{if .Newest}}7{{else}}4{{end}}"><title>{{.Title}}</title></circle>
   {{- end}}
 </svg>
-<p data-key="dist-{{.DistanceKM}}" class="route-note">Recorrido de {{.DistanceKM}}. El círculo vacío es el primer punto; el que late, el último.</p>
+<p data-key="sum-{{.DistanceKM}}-{{$.Live}}-{{$.RouteLastClock}}" class="route-sum">Última ubicación {{if $.Live}}<span class="ticker" data-since="{{$.RouteLast}}" data-format="ago">—</span>{{else}}a las {{$.RouteLastClock}}{{end}} · {{.DistanceKM}} recorridos</p>
+<a data-key="maps-{{$.RouteMaps}}" class="maps-btn" href="{{$.RouteMaps}}" target="_blank" rel="noopener noreferrer">Abrir en Maps</a>
 {{- else -}}
-<p data-key="nopoints" class="hint">Todavía no llegó ninguna ubicación.</p>
+<p data-key="nopoints" class="panel-note">Todavía no llegó ninguna ubicación.</p>
 {{- end}}
 {{- end}}
 
-{{define "sec-points" -}}
-{{range .Points -}}
-<tr data-key="{{.Key}}"><td>{{.At}}<span class="coords">{{.LatLng}}</span></td><td>{{.Accuracy}}</td><td>{{.Speed}}</td><td><a class="maps" href="{{.MapsURL}}" target="_blank" rel="noopener noreferrer">Abrir en Maps</a></td></tr>
-{{end -}}
+{{define "sec-family" -}}
+{{if .Family -}}
+<ul data-key="fam-list" data-live-children class="fam-list">
+{{- range .Family}}
+  <li data-key="{{.Key}}" data-reveal class="fam fam-{{.Status}}"><span class="fam-num">{{.Recipient}}</span><span class="fam-status"><span class="ticks" aria-hidden="true">{{.Ticks}}</span> {{.Label}}</span><span class="fam-time">{{.Time}}</span></li>
 {{- end}}
-
-{{define "sec-calls" -}}
-{{if .NoCall}}<p data-key="nocall" class="hint">{{.NoCall}}</p>{{end}}
-{{- if .Fallback}}<p data-key="fallback" class="notice notice-error">Ninguna llamada conectó: MAMÁ abrió la página de respaldo (WebRTC) para hablar por el navegador. Esto se deduce del registro de llamadas.</p>{{end}}
-{{- range $c := .Calls}}
-<article data-key="{{.Key}}" data-live-children class="card call{{if .Active}} active{{end}}{{if .Failed}} failed{{end}}" id="llamada-{{.N}}">
-  <div data-key="head" class="call-head">
-    <p class="call-kicker">{{if $.MultiCall}}Llamada {{.N}}{{if .Retry}} · reintento{{end}}{{else}}Llamada{{end}}</p>
-    <h3>Mamá llamó a {{.Number}}</h3>
-    {{- if .Active}}
-    <p class="callnow"><span class="ring" aria-hidden="true"></span>{{.Phase}} <span class="ticker" data-since="{{.Since}}" data-format="clock">—</span></p>
-    {{- end}}
-    <dl class="facts">
-      <div><dt>Pedida</dt><dd>{{.Requested}} <span class="clk">servidor</span></dd></div>
-      {{- if .Ringing}}<div><dt>Sonó</dt><dd>{{.Ringing}} <span class="clk">servidor</span></dd></div>{{end}}
-      {{- if .PickedUp}}<div><dt>Contestó</dt><dd>{{.PickedUp}} <span class="clk">servidor</span></dd></div>{{end}}
-      <div><dt>Estado</dt><dd{{if .Failed}} class="failed"{{end}}>{{.Outcome}}{{if .Duration}} · {{.Duration}}{{end}}</dd></div>
-    </dl>
-    {{- if .Verdict}}<p data-reveal class="call-verdict">{{.Verdict}}</p>{{end}}
-  </div>
-  {{- with .Audio}}
-  <div data-key="audio-{{.SHA256}}" class="player" data-player="{{$c.N}}">
-    <div class="wave"><canvas class="wave-canvas" data-call="{{$c.N}}" aria-label="Forma de onda de la grabación; tócala para saltar" role="img"></canvas><p class="wave-status" data-wave-status>Dibujando la grabación…</p></div>
-    <audio id="audio-{{$c.N}}" data-call="{{$c.N}}" controls preload="none" src="{{.URL}}"></audio>
-    <p class="notice" id="audio-error-{{$c.N}}" hidden>Audio no disponible: no se pudo cargar la grabación.</p>
-    <p class="rec-meta">Grabación guardada a las {{.Stored}} (servidor) · {{.Size}} · SHA-256 <span class="hash">{{.SHA256}}</span></p>
-    {{- if $c.Turns}}<p class="tap-hint">Toca un turno o la onda para escucharla desde ese segundo.</p>{{end}}
-  </div>
-  {{- else}}
-  <p data-key="noaudio-{{.NoAudio}}" class="notice">{{.NoAudio}}</p>
-  {{- end}}
-  {{- if .Turns}}
-  <ol data-key="turns" data-live-children class="turns" aria-label="Transcripción">
-  {{- range $i, $t := .Turns}}
-    <li data-key="turn-{{$i}}" class="{{if .Agent}}agent{{else}}user{{end}}"><button type="button" class="turn{{if .Phrase}} phrase{{end}}" data-call="{{$c.N}}" data-seek="{{.Seek}}"{{if not $c.Audio}} disabled{{end}}><span class="who"><span>{{.Speaker}}</span><span>{{.Offset}}{{if .At}} · {{.At}}{{end}}</span></span><span class="msg">{{.Message}}</span>{{if .Phrase}}<span class="phrase-tag">La frase acordada</span>{{end}}</button></li>
-  {{- end}}
-  </ol>
-  {{- else if not .Active}}
-  <p data-key="noturns" class="hint">Sin transcripción.</p>
-  {{- else}}
-  <p data-key="noturns-live" class="hint">La transcripción llega cuando la llamada termina.</p>
-  {{- end}}
-</article>
-{{- end}}
-{{- end}}
-
-{{define "sec-emergencies" -}}
-{{if .Emergencies -}}
-<h2 data-key="h">Emergencias sin conexión</h2>
-<p data-key="note" class="hint">Del mismo teléfono y en la misma hora que esta alerta: se enlazan por eso, no por un identificador. No forman parte del sello.</p>
-{{range .Emergencies -}}
-<article data-key="{{.Key}}-{{.Status}}-{{.Channels}}" class="card emergency">
-  <p class="call-kicker">Emergencia {{.ID}} · {{.Status}}</p>
-  <p>Llegó por {{.Channels}} a las {{.Received}} (servidor). El teléfono la envió a las {{.Sent}}.</p>
-  {{- if .MapsURL}}<p><a class="maps" href="{{.MapsURL}}" target="_blank" rel="noopener noreferrer">Abrir en Maps</a> <span class="coords">{{.LatLng}}</span></p>{{end}}
-</article>
-{{end -}}
-{{- end}}
-{{- end}}
-
-{{define "sec-seal" -}}
-{{with .Seal -}}
-{{if .Sealed -}}
-<div data-key="sealed" data-reveal class="seal-body">
-  <p class="seal-state"><span class="seal-badge" aria-hidden="true">✓</span>Sellada el {{.SealedAt}}</p>
-  <dl>
-    <dt>SHA-256 de la ficha (ficha.json)</dt><dd>{{.DocSHA256}}</dd>
-    {{- range .Recordings}}
-    <dt>SHA-256 de la grabación{{if $.MultiCall}} de la llamada {{.Call}}{{end}}</dt><dd>{{.SHA256}}</dd>
-    {{- end}}
-    <dt>Llave pública del servidor (la misma de GET /config)</dt><dd>{{.Key}}</dd>
-    <dt>Huella de la llave (SHA-256)</dt><dd>{{.Fingerprint}}</dd>
-  </dl>
-  <p class="downloads"><a class="button" href="{{.JSONURL}}" download="ficha.json">Descargar ficha.json</a><a class="button secondary" href="{{.SigURL}}" download="ficha.sig">Descargar ficha.sig</a></p>
-  <div class="honest">
-    <p>El sello prueba que el registro no cambió desde que el servidor de MAMÁ lo cerró. No es una firma electrónica certificada ni reemplaza una experticia.</p>
-    <p>Para comprobarlo: <code>go run ./cmd/verify-ficha ficha.json ficha.sig {{.Key}}</code></p>
-  </div>
-</div>
+</ul>
 {{- else -}}
-<div data-key="unsealed-{{.Why}}" class="seal-body">
-  <p class="seal-state">Sin sellar</p>
-  <p class="hint">{{.Why}}</p>
-</div>
-{{- end}}
+<p data-key="fam-note-{{.FamilyNote}}" class="panel-note">{{.FamilyNote}}</p>
 {{- end}}
 {{- end}}

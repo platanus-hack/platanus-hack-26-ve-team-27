@@ -116,6 +116,23 @@ type Page struct {
 	Latencies     []Latency
 	Emergencies   []EmergencyView
 	Fallback      bool // every call failed and the WebRTC fallback opened
+
+	// The redesigned page (one screen on wide displays).
+	Sealed         bool
+	UserName       string // devices.user_name when it exists (#104)
+	Title          string // header title: the verdict, or what the case waits for
+	TitleKind      string // a contract.Verdict, "waiting" or "none"
+	TriggeredShort string // "sáb 24 oct, 15:22"
+	Elapsed        string // a closed case's length, "1:05"; "" while live
+	Stages         []Stage
+	RouteLast      string    // the newest point's arrival (ISO, server clock), for "hace 12 s"
+	RouteLastClock string    // the newest point's time of day, once the case is closed
+	RouteMaps      string    // "Abrir en Maps" for the newest point
+	Call           *CallView // the finished call the call panel shows; nil while none
+	CallNote       string    // the call panel's line when there is no card
+	Family         []FamilyChip
+	FamilyNote     string
+	PDFURL         string
 }
 
 // PointRow is one row of the locations table.
@@ -148,6 +165,7 @@ type CallView struct {
 	Turns     []TurnView
 	Audio     *AudioView // nil: "Audio no disponible"
 	NoAudio   string     // why there is no audio
+	More      bool       // the collapsed transcript hides turns
 }
 
 // TurnView is one transcript turn.
@@ -159,6 +177,7 @@ type TurnView struct {
 	Offset  string  // "0:04"
 	At      string  // time of day on ElevenLabs' clock; "" when the start is unknown
 	Phrase  bool    // the turn that says the duress phrase
+	Keep    bool    // shown while the transcript is collapsed on a phone
 }
 
 // AudioView is a stored recording.
@@ -193,6 +212,7 @@ type Options struct {
 	Token   string
 	CanSeal bool   // the server has a signing key
 	Channel string // the family message channel: "WhatsApp" or "SMS"
+	BaseURL string // the server's public URL, for the PDF's links; blank gives paths
 	// Now is the server time of the render; zero skips the checks that need
 	// it (a call left "in progress" long ago is not shown as live).
 	Now time.Time
@@ -249,6 +269,49 @@ func Build(rec Record, opts Options) Page {
 	p.Latencies = Latencies(rec, p.Live, p.CallActive)
 	p.Emergencies = emergencyViews(rec.Emergencies)
 	p.Seal = sealView(rec, opts)
+
+	p.Sealed = rec.Seal != nil
+	p.UserName = rec.Device.UserName
+	p.Title, p.TitleKind = title(rec, p.Live, p.CallActive)
+	p.TriggeredShort = shortDate(rec.Incident.TriggeredAt)
+	if !p.Live {
+		end := last
+		if rec.Seal != nil {
+			end = rec.Seal.SealedAt
+		}
+		p.Elapsed = elapsedText(end.Sub(rec.Incident.TriggeredAt))
+	}
+	p.Stages = Stages(rec, opts.Channel, p.Live)
+	if n := len(rec.Points); n > 0 {
+		pt := rec.Points[n-1]
+		p.RouteLast, p.RouteLastClock, p.RouteMaps = iso(pt.ReceivedAt), clock(pt.RecordedAt), MapsURL(pt.Lat, pt.Lng)
+	}
+	if !p.CallActive {
+		for i := len(p.Calls) - 1; i >= 0; i-- {
+			if c := p.Calls[i]; len(c.Turns) > 0 || c.Audio != nil {
+				p.Call = &p.Calls[i]
+				break
+			}
+		}
+	}
+	switch {
+	case p.Call != nil || p.CallActive:
+	case rec.Incident.Branch != contract.BranchCall:
+		p.CallNote = noCallReason(rec.Incident.Branch)
+	case len(rec.Calls) > 0 && p.Fallback:
+		p.CallNote = "Ninguna llamada conectó: MAMÁ abrió la página de respaldo para hablar por el navegador."
+	case len(rec.Calls) > 0:
+		p.CallNote = "La llamada no conectó."
+	case p.Live:
+		p.CallNote = "Mamá va a llamar en un momento."
+	default:
+		p.CallNote = "No se registró la llamada."
+	}
+	p.Family = familyChips(rec.Deliveries)
+	if len(p.Family) == 0 {
+		p.FamilyNote = familyNote(rec, opts.Channel, p.Live)
+	}
+	p.PDFURL = PDFPath(opts.Token)
 	return p
 }
 
@@ -441,6 +504,24 @@ func callView(n int, c Call, dev Device, token string) CallView {
 		}
 		v.Turns = append(v.Turns, tv)
 	}
+	// Collapsed on a phone, the transcript keeps the phrase turn, or the
+	// first two turns when none says it.
+	kept := 0
+	for i := range v.Turns {
+		if v.Turns[i].Phrase {
+			v.Turns[i].Keep = true
+			kept++
+		}
+	}
+	if kept == 0 {
+		for i := range v.Turns {
+			if i < 2 {
+				v.Turns[i].Keep = true
+				kept++
+			}
+		}
+	}
+	v.More = kept < len(v.Turns)
 	if r := c.Recording; r != nil {
 		v.Audio = &AudioView{
 			URL:    AudioPath(token, n),
@@ -750,9 +831,9 @@ func receivedLabel(d time.Duration) string {
 
 func turnsLabel(n int) string {
 	if n == 1 {
-		return "1 turno de conversación; escúchala en «La llamada»"
+		return "1 turno de conversación"
 	}
-	return strconv.Itoa(n) + " turnos de conversación; escúchala en «La llamada»"
+	return strconv.Itoa(n) + " turnos de conversación"
 }
 
 func notifiedLabel(channel string, family int) string {

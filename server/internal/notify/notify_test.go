@@ -338,3 +338,73 @@ func TestKapsoSendsTheReportLinkWithoutPreview(t *testing.T) {
 		t.Errorf("text = %v, want the link with preview_url false", text)
 	}
 }
+
+// #76: Kapso answers with Meta's shape; messages[0].id is the wamid its
+// status webhooks carry.
+func TestKapsoSendWithIDReturnsTheMessageID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"messaging_product":"whatsapp","contacts":[{"input":"584241112233","wa_id":"584241112233"}],"messages":[{"id":"wamid.HBgN123=="}]}`))
+	}))
+	defer srv.Close()
+	k := &Kapso{BaseURL: srv.URL, APIKey: "k", PhoneNumberID: "1", Client: srv.Client()}
+	id, err := k.SendWithID(context.Background(), "+584241112233", "hola")
+	if err != nil || id != "wamid.HBgN123==" {
+		t.Fatalf("SendWithID = %q, %v", id, err)
+	}
+}
+
+type deliveryEntry struct {
+	incident, to, id string
+	failed           bool
+}
+
+type fakeDeliveries struct {
+	mu      sync.Mutex
+	entries []deliveryEntry
+}
+
+func (f *fakeDeliveries) Sent(_ context.Context, incidentID, to, _, messageID string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.entries = append(f.entries, deliveryEntry{incidentID, to, messageID, err != nil})
+}
+
+// idSender returns a message id per number and fails for the ones in fail.
+type idSender struct{ fail map[string]bool }
+
+func (s idSender) Send(ctx context.Context, to, body string) error {
+	_, err := s.SendWithID(ctx, to, body)
+	return err
+}
+
+func (s idSender) SendWithID(_ context.Context, to, _ string) (string, error) {
+	if s.fail[to] {
+		return "", errors.New("provider down")
+	}
+	return "wamid." + to[len(to)-4:], nil
+}
+
+// Every send is recorded, the failed one too, with the provider's id.
+func TestNotifyRecordsEveryDelivery(t *testing.T) {
+	msg := sampleMessage()
+	msg.To = []string{"+584241112233", "+584125556677"}
+	log := &fakeDeliveries{}
+	New(&fakeStore{msg: msg}, idSender{fail: map[string]bool{"+584125556677": true}}).WithDeliveries(log).
+		Notify(context.Background(), intake.Incident{ID: incidentID})
+	want := []deliveryEntry{{incidentID, "+584241112233", "wamid.2233", false}, {incidentID, "+584125556677", "", true}}
+	if len(log.entries) != 2 || log.entries[0] != want[0] || log.entries[1] != want[1] {
+		t.Errorf("deliveries = %+v, want %+v", log.entries, want)
+	}
+	// A plain Sender (Twilio SMS) still records, with no id.
+	log = &fakeDeliveries{}
+	New(&fakeStore{msg: sampleMessage()}, &fakeSender{}).WithDeliveries(log).Notify(context.Background(), intake.Incident{ID: incidentID})
+	if len(log.entries) != 1 || log.entries[0].id != "" || log.entries[0].failed {
+		t.Errorf("plain sender deliveries = %+v", log.entries)
+	}
+}
+
+func TestChannelOf(t *testing.T) {
+	if ChannelOf(&Kapso{}) != "whatsapp" || ChannelOf(&SMS{}) != "sms" || ChannelOf(&fakeSender{}) != "" {
+		t.Error("ChannelOf")
+	}
+}

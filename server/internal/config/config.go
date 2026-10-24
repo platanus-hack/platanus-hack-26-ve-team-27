@@ -85,6 +85,11 @@ type Twilio struct {
 type Kapso struct {
 	APIKey        string // KAPSO_API_KEY, sent as the X-API-Key header
 	PhoneNumberID string // KAPSO_PHONE_NUMBER_ID, the WhatsApp phone_number_id
+	// WebhookSecret is KAPSO_WEBHOOK_SECRET, optional: the secret of the
+	// phone number's webhook that reports message statuses (sent, delivered,
+	// read, failed) to POST /webhooks/kapso for the incident report (#76).
+	// Blank leaves the route off.
+	WebhookSecret string
 }
 
 // Anthropic is the LLM step of the duress detector (#22). Without a key the
@@ -150,6 +155,7 @@ func LoadFrom(getenv func(string) string) Config {
 		Kapso: Kapso{
 			APIKey:        get("KAPSO_API_KEY"),
 			PhoneNumberID: get("KAPSO_PHONE_NUMBER_ID"),
+			WebhookSecret: get("KAPSO_WEBHOOK_SECRET"),
 		},
 		Anthropic: Anthropic{
 			APIKey:      get("ANTHROPIC_API_KEY"),

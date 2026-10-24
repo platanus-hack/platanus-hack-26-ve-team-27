@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -181,10 +182,19 @@ func TestWebhookSealsTheReportWithVerdictAndRecording(t *testing.T) {
 		t.Errorf("ficha.sig = %d %q (%v)", sigResp.Code, sigResp.Body.String(), err)
 	}
 	body := html.UnescapeString(get("/i/" + link.Token).Body.String())
-	for _, want := range []string{"Cerrado y sellado", "mama_lista.webp", "Ficha sellada", hex.EncodeToString(sum[:]), Fingerprint(testKey().Public().(ed25519.PublicKey))} {
+	for _, want := range []string{"Sellada ✓", "mama_lista.webp", `class="node node-done" data-stage="stage-sealed"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
 		}
+	}
+	// The seal's details are in the PDF.
+	rep, err := buildPDF(rec, PDFOptions{Token: link.Token})
+	if err != nil || rep.Draft || !strings.Contains(fmt.Sprint(rep.Seal), Fingerprint(testKey().Public().(ed25519.PublicKey))) ||
+		!strings.Contains(fmt.Sprint(rep.Calls), hex.EncodeToString(sum[:])) {
+		t.Errorf("PDF content: %v %+v", err, rep.Seal)
+	}
+	if p := get("/i/" + link.Token + "/reporte.pdf"); p.Code != http.StatusOK || !bytes.HasPrefix(p.Body.Bytes(), []byte("%PDF-")) {
+		t.Errorf("reporte.pdf = %d", p.Code)
 	}
 
 	// Sealed once: a repeated webhook changes nothing.
