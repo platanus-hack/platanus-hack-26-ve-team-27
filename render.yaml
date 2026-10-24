@@ -22,6 +22,7 @@ databases:
   - name: mama-db
     region: virginia # must match the web service for the private network
     plan: 0.1c-256mb # smallest paid Postgres plan (free expires)
+    diskSizeGB: 1 # minimum; Basic plans default to 15 GB, billed separately
     databaseName: mama
     user: mama
     # ipAllowList omitted: external connections allowed (password-protected)

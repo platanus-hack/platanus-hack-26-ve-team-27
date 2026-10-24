@@ -8,9 +8,10 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver
 )
 
-// Open returns a pool for url, or nil when url is empty so the server can
-// still boot (and /health reports 503) without a database. sql.Open does not
-// connect; the first query or ping does.
+// Open returns a pool for url, or a nil pool when url is empty so the server
+// can still boot without a database. sql.Open does not connect; the first
+// query or ping does. Don't pass a nil *sql.DB where an interface is
+// expected: it becomes a non-nil interface holding a nil pointer.
 func Open(url string) (*sql.DB, error) {
 	if url == "" {
 		return nil, nil
