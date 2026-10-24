@@ -45,7 +45,7 @@ import kotlinx.serialization.json.put
  * What both triggers start: a foreground service (location, and microphone
  * when Android allows it) that sends the frozen AlertEvent with the best fix
  * it has at once, then a fresh fix as a LocationUpdate, then a spike-only
- * note with the mic probe and the timings.
+ * note with the mic and camera probes and the timings.
  */
 class TriggerSpikeService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -76,7 +76,7 @@ class TriggerSpikeService : Service() {
         super.onDestroy()
     }
 
-    /** Tries location+microphone, then location only. Returns the types it got, for the log. */
+    /** Tries location+microphone+camera, then without camera, then location only. Returns the types it got, for the log. */
     private fun goForeground(): String {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Sincronización", NotificationManager.IMPORTANCE_LOW))
@@ -86,6 +86,10 @@ class TriggerSpikeService : Service() {
             .setContentText("Sincronizando")
             .build()
         val attempts = listOf(
+            (
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                ) to "location|microphone|camera",
             (ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) to "location|microphone",
             ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION to "location",
         )
@@ -106,6 +110,7 @@ class TriggerSpikeService : Service() {
         val triggeredAtMs = System.currentTimeMillis() - (SystemClock.elapsedRealtime() - detectedAt)
         val base = BuildConfig.SERVER_URL
         val mic = async { probeMic() }
+        val camera = async { CameraProbe.record(this@TriggerSpikeService, incidentId) }
         val fresh = async { freshFix() }
 
         val last = lastKnownFix()
@@ -130,11 +135,13 @@ class TriggerSpikeService : Service() {
         }
 
         val micResult = mic.await()
+        val cameraResult = camera.await()
         val note = buildJsonObject {
             put("incident_id", incidentId)
             put("trigger", trigger.name)
             put("fgs_types", fgs)
             put("mic", micResult)
+            put("camera", cameraResult)
             put("first_fix_provider", first?.provider)
             put("first_fix_age_ms", first?.let(::ageMs))
             put("fresh_fix_provider", freshFix?.provider)
