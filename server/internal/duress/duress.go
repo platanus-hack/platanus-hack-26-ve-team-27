@@ -53,10 +53,13 @@ const (
 //   - The phrase, or most of its key words close together in what the user
 //     said, is duress, unless a negation sits inside or just before it
 //     ("no se me quemaron").
-//   - Half of the key words, or a negated match, is unclear.
+//   - Half of the key words, or most of them negated or out of order, is
+//     unclear.
 //   - Anything else is no duress.
 //
 // Only user turns count: "Mamá" saying the phrase is not the user saying it.
+// A third party is heard on the user's channel, so a call where only the
+// robber talks is not silence; the LLM step has to judge that one.
 type Rules struct{}
 
 var _ Detector = Rules{}
@@ -92,8 +95,12 @@ func (Rules) Detect(_ context.Context, transcript []contract.TranscriptTurn, phr
 		return Result{contract.VerdictDuress, fmt.Sprintf(
 			"the user said a close variant of the duress phrase (%d of %d key words)", n, total)}, nil
 	case levelNegated:
+		how := "with a negation"
+		if !best.negated {
+			how = "out of order or without its first word"
+		}
 		return Result{contract.VerdictUnclear, fmt.Sprintf(
-			"the user said the duress phrase with a negation (%d of %d key words)", n, total)}, nil
+			"the user said the duress phrase's words %s (%d of %d key words)", how, n, total)}, nil
 	case levelPartial:
 		return Result{contract.VerdictUnclear, fmt.Sprintf(
 			"the user said part of the duress phrase (%d of %d key words)", n, total)}, nil
@@ -200,7 +207,7 @@ var stopwords = set("a", "al", "con", "de", "del", "el", "en", "la", "las", "le"
 
 // negations flip a phrase's meaning when they appear around it and the
 // phrase itself has none ("no se me olvidó la cédula").
-var negations = set("no", "nunca", "tampoco", "ni")
+var negations = set("no", "nunca", "jamas", "tampoco", "ni")
 
 func set(words ...string) map[string]bool {
 	m := make(map[string]bool, len(words))
@@ -242,10 +249,13 @@ func newPattern(phrase string) pattern {
 
 // hit is the best window found in one run. exact marks a run that holds the
 // whole phrase word for word.
+// ordered marks a window where the matched key words keep the phrase's
+// order and include its first key word.
 type hit struct {
 	matched int
 	negated bool
 	exact   bool
+	ordered bool
 }
 
 // level ranks a hit, most alarming last.
@@ -254,7 +264,7 @@ type level int
 const (
 	levelNone    level = iota
 	levelPartial       // unclear: half the key words
-	levelNegated       // unclear: the phrase with a negation
+	levelNegated       // unclear: most key words, negated or scrambled
 	levelVariant       // duress: most key words
 	levelExact         // duress: the phrase word for word
 )
@@ -264,7 +274,10 @@ func (p pattern) level(h hit) level {
 	switch {
 	case h.exact && !h.negated:
 		return levelExact
-	case share >= matchShare && !h.negated:
+	case share >= matchShare && !h.negated && (h.matched == len(p.keys) || h.ordered):
+		// Missing a key word is only a variant when the rest keep the
+		// phrase's order and its lead word, so "la tía Carmen llegó tarde"
+		// is not "dile a la tía Carmen que llego tarde".
 		return levelVariant
 	case share >= matchShare:
 		return levelNegated
@@ -303,22 +316,34 @@ func (p pattern) bestHit(run []token) hit {
 // once, and checks for a negation inside the matched span or just before it.
 func (p pattern) window(run []token, start, end int) hit {
 	used := make([]bool, end-start)
-	first, last, matched := -1, -1, 0
-	for _, k := range p.keys {
+	first, last, matched, prev := -1, -1, 0, -1
+	ordered := true
+	for ki, k := range p.keys {
+		found := false
 		for i := start; i < end; i++ {
 			if used[i-start] || !wordMatches(k, run[i]) {
 				continue
 			}
 			used[i-start] = true
 			matched++
+			found = true
 			if first < 0 || i < first {
 				first = i
 			}
 			last = max(last, i)
+			ordered = ordered && i > prev
+			prev = i
 			break
 		}
+		if ki == 0 && !found {
+			ordered = false
+		}
 	}
-	return hit{matched: matched, negated: matched > 0 && p.negatedAt(run, first, last, used, start)}
+	return hit{
+		matched: matched,
+		negated: matched > 0 && p.negatedAt(run, first, last, used, start),
+		ordered: ordered,
+	}
 }
 
 // negatedAt reports a negation inside run[first..last] that is not one of the
