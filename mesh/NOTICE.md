@@ -17,4 +17,4 @@ Every copied file starts with a provenance header naming the upstream commit and
 | --- | --- | --- |
 | Verbatim | All files copied unchanged except the package rename (`com.bitchat.android` to `com.team27.mama.mesh`) | Package rename only |
 | Adapted | `SecurityManager`, `MessageHandler` | Trimmed to what MAMÁ needs; changes listed in each file header |
-| Derived | `EncryptionService`, `BleMeshNode`, `MeshPacketFactory` | Rewritten from upstream logic; header names the upstream files they derive from |
+| Derived | `EncryptionService`, `MeshKeyStore`, `BleMeshNode`, `MeshPacketFactory` | Rewritten from upstream logic; header names the upstream files they derive from |
