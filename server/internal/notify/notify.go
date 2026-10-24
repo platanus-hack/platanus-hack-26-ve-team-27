@@ -24,6 +24,7 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/duress"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/ratelimit"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/trace"
 )
 
 // Sender delivers one text message to one E.164 number.
@@ -120,6 +121,7 @@ func (n *Notifier) send(ctx context.Context, incidentID, to, body string) error 
 	if n.deliveries != nil {
 		n.deliveries.Sent(context.WithoutCancel(ctx), incidentID, to, ChannelOf(n.sender), id, err)
 	}
+	trace.Log(incidentID, "notify", "to", Mask(to), "channel", ChannelOf(n.sender), "ok", err == nil, "message_id", id, "error", err)
 	return err
 }
 
@@ -168,11 +170,13 @@ func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 	}
 	if cancelsAlert(msg) {
 		log.Printf("notify: incident %s: the verdict cancels the alert; nothing sent", inc.ID)
+		trace.Log(inc.ID, "notify_skipped", "reason", "verdict_cancels_the_alert")
 		return
 	}
 	to := n.recipients(msg)
 	if len(to) == 0 {
 		log.Printf("notify: incident %s: no recipients (no family numbers); nothing sent", inc.ID)
+		trace.Log(inc.ID, "notify_skipped", "reason", "no_recipients")
 		return
 	}
 
@@ -183,6 +187,7 @@ func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 	}
 	if !won {
 		log.Printf("notify: incident %s: already notified; skipping", inc.ID)
+		trace.Log(inc.ID, "notify_skipped", "reason", "already_notified")
 		return
 	}
 
@@ -194,6 +199,7 @@ func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 	for _, num := range to {
 		if err := n.limit.Allow(num); err != nil {
 			log.Printf("notify: incident %s: message to %s %v; not sent", inc.ID, Mask(num), err)
+			trace.Log(inc.ID, "notify", "to", Mask(num), "ok", false, "error", err)
 			continue
 		}
 		if err := n.send(ctx, inc.ID, num, body); err != nil {

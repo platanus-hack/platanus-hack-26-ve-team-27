@@ -12,6 +12,7 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/duress"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/trace"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/verdict"
 )
 
@@ -33,9 +34,13 @@ func verdictHook(cfg config.Config, pool *sql.DB, notifier intake.Notifier) func
 	if pool == nil || notifier == nil {
 		return nil
 	}
-	decider := verdict.Decider{Detector: detector(cfg), Extractor: extractor(cfg), Store: verdict.DBStore{Pool: pool}}
+	det := detector(cfg)
+	ex := extractor(cfg)
+	name := detectorName(det)
+	store := verdict.DBStore{Pool: pool}
 	return func(ctx context.Context, f call.Finished) {
 		if f.Status != "done" || f.ConversationID == "" {
+			trace.Log(f.IncidentID, "verdict", "skipped", true, "reason", "call_not_done", "call_status", f.Status, "conversation_id", f.ConversationID)
 			return
 		}
 		runVerdict(func() {
@@ -44,11 +49,15 @@ func verdictHook(cfg config.Config, pool *sql.DB, notifier intake.Notifier) func
 			inc, phrases, err := loadVerdictIncident(ctx, pool, f.IncidentID)
 			if err != nil {
 				log.Printf("verdict: incident %s: load: %v", f.IncidentID, err)
+				trace.Log(f.IncidentID, "verdict", "level", "ERROR", "error", err, "conversation_id", f.ConversationID)
 				return
 			}
 			c := verdict.Call{ConversationID: f.ConversationID, Transcript: f.Transcript,
 				DuressPhrase: phrases.Duress, SafePhrase: phrases.Safe}
+			timed := &timedDetector{Detector: det}
+			decider := verdict.Decider{Detector: timed, Extractor: ex, Store: store}
 			r, err := decider.Decide(ctx, c, func(ctx context.Context, _ verdict.Call, r verdict.Decision) {
+				traceVerdict(f, name, r.Result, timed.took, phrases)
 				if r.Verdict == contract.VerdictNoDuress {
 					return
 				}
@@ -61,6 +70,47 @@ func verdictHook(cfg config.Config, pool *sql.DB, notifier intake.Notifier) func
 				f.IncidentID, f.ConversationID, r.Verdict, r.Reason, r.Ficha != nil)
 		})
 	}
+}
+
+// timedDetector measures how long the detector took, for the trace.
+type timedDetector struct {
+	duress.Detector
+	took time.Duration
+}
+
+func (d *timedDetector) Detect(ctx context.Context, transcript []contract.TranscriptTurn, phrases duress.Phrases) (duress.Result, error) {
+	start := time.Now()
+	r, err := d.Detector.Detect(ctx, transcript, phrases)
+	d.took = time.Since(start)
+	return r, err
+}
+
+// detectorName names the detector in the trace.
+func detectorName(d duress.Detector) string {
+	if _, ok := d.(duress.Chain); ok {
+		return "rules+llm"
+	}
+	return "rules"
+}
+
+// traceVerdict writes the verdict step: the detector, its verdict and
+// reason (with both phrases' words scrubbed), how long it took, and whether
+// a user turn holds the duress phrase, by the trace's display-only matcher
+// (phrase_match_diag), with that turn's time in the call. Never a phrase or
+// what was said.
+func traceVerdict(f call.Finished, detector string, r duress.Result, took time.Duration, phrases duress.Phrases) {
+	phrase := phrases.Duress
+	user, agent := trace.Turns(f.Transcript)
+	kv := []any{"conversation_id", f.ConversationID, "detector", detector, "verdict", string(r.Verdict),
+		"reason", trace.Scrub(trace.Scrub(r.Reason, phrase), phrases.Safe), "latency_ms", took, "phrase_set", phrase != "",
+		"user_turns", user, "agent_turns", agent}
+	turns := trace.PhraseTurns(f.Transcript, phrase)
+	kv = append(kv, "phrase_match_diag", len(turns) > 0)
+	if len(turns) > 0 {
+		t := f.Transcript[turns[0]]
+		kv = append(kv, "phrase_turn", turns[0]+1, "phrase_at_s", t.TimeInCallSecs, "phrase_turns", len(turns))
+	}
+	trace.Log(f.IncidentID, "verdict", kv...)
 }
 
 // detector is the production duress detector: rules, then the LLM on the

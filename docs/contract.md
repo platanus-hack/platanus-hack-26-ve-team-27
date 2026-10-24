@@ -645,6 +645,28 @@ default; then every route below answers `404`). Code:
   the default); `?seguir=1` on the list opens the next new case by itself.
   Opening a case creates its report link if it has none, for the recording
   and the PDF.
+- **Trace.** Every step of an incident logs one line,
+  `trace incident=<id> step=<step> k=v …` (`internal/trace`): `alert_received`,
+  `call_requested`, `call_placed`, `call_failed`, `call_retry`, `call_outcome`,
+  `twilio_status`, `webhook_received`, `webhook_rejected`, `verdict`, `notify`
+  (per recipient), `notify_skipped`, `kapso_status`, `recording_stored` and
+  `sealed`. A webhook refused by its HMAC, and one for a call the server does
+  not know, log `level=ERROR` with a hint. No trace line carries the duress or
+  safe phrase, what was said, or a phone number. The verdict line's
+  `phrase_match_diag`, `phrase_turn` and `phrase_at_s` come from a display-only
+  key-word matcher, not from the detector. `GET /central/r/{incident_id}/traza`
+  (behind `CENTRAL_KEY`, linked as "Ver traza" from the detail) shows the same
+  case read back from the database, live:
+  - a summary of each step;
+  - the incident on each clock, and every call attempt with its
+    `conversation_id`, `call_sid` and Twilio statuses;
+  - whether the post-call webhook arrived. If it did not, it says so in red
+    and names `<PUBLIC_URL>/webhooks/elevenlabs` and the secret;
+  - the device's phrases, every turn with the ones holding the phrase
+    highlighted, the rules re-run on the stored transcript and the stored
+    verdict;
+  - the family messages with their Kapso statuses, the recording, the seal
+    and the timeline.
 - **Clocks.** Each timeline row says which clock its time comes from: the
   phone (`triggered_at`, `gps_points.recorded_at`), the server
   (`incidents.created_at`, `calls.requested_at`, `verdict_at`, `notified_at`,
