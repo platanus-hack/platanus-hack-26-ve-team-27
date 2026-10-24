@@ -15,7 +15,9 @@
     },
     "conversation_initiation_client_data": {
       "dynamic_variables": {
-        "incident_id": "9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f"
+        "incident_id": "9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f",
+        "system__call_duration_secs": 42,
+        "system__called_number": "+584141234567"
       }
     }
   }

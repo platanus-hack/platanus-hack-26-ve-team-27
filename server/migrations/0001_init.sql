@@ -24,7 +24,7 @@ CREATE TABLE incidents (
     has_audio    BOOLEAN NOT NULL DEFAULT false,
     triggered_at TIMESTAMPTZ NOT NULL,            -- phone clock
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    notified_at  TIMESTAMPTZ                      -- set once the family message went out (one per incident)
+    notified_at  TIMESTAMPTZ                      -- claimed atomically BEFORE sending: one family message per incident
 );
 CREATE INDEX incidents_device_id_created_at_idx ON incidents (device_id, created_at DESC);
 

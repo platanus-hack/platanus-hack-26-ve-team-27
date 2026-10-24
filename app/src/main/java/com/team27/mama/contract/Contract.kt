@@ -11,6 +11,9 @@ package com.team27.mama.contract
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * The one Json instance the app uses for contract shapes. Nulls are omitted
@@ -170,8 +173,10 @@ data class CallWebhook(
     @SerialName("event_timestamp") val eventTimestamp: Long,
     val data: CallWebhookData,
 ) {
-    /** The incident the call belongs to, or "" when missing. */
-    fun incidentId(): String = data.clientData.dynamicVariables[DYNAMIC_VAR_INCIDENT_ID] ?: ""
+    /** The incident the call belongs to, or "" when missing or not a string. */
+    fun incidentId(): String =
+        (data.clientData.dynamicVariables[DYNAMIC_VAR_INCIDENT_ID] as? JsonPrimitive)
+            ?.takeIf { it.isString }?.contentOrNull ?: ""
 }
 
 /** The "data" object of the post-call webhook. */
@@ -209,10 +214,13 @@ data class CallMetadata(
     @SerialName("call_duration_secs") val callDurationSecs: Int,
 )
 
-/** The dynamic variables of the call. */
+/**
+ * The dynamic variables of the call. Values are any JSON: ElevenLabs adds
+ * system__* variables, some numeric.
+ */
 @Serializable
 data class ConversationInitiationClientData(
-    @SerialName("dynamic_variables") val dynamicVariables: Map<String, String> = emptyMap(),
+    @SerialName("dynamic_variables") val dynamicVariables: Map<String, JsonElement> = emptyMap(),
 )
 
 /**

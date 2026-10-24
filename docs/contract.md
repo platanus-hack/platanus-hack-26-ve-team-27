@@ -25,6 +25,8 @@ field fails) and check the re-emitted JSON is the same.
 - Speeds are **meters per second** (Android `Location.getSpeed()`), distances
   and accuracy are meters, coordinates are WGS84 degrees.
 - An optional field is left out when it has no value. Never send `null`.
+  In particular, when `Location.hasSpeed()` is false, leave `speed_mps` out:
+  never send `0`, which would read as "still" and skip the call.
 - IDs: `device_id` is a UUID the app makes at install (there is no auth).
   `incident_id` is a UUID the app makes per alert, so a retried alert is the
   same incident.
@@ -42,7 +44,8 @@ alert. Thresholds live in one place per side: `contract.StillBelowMPS` and
 | Moving fast (a car) | `silent_tracker` | `>= 7.0` | `>= 25.2` | Silent tracker mode: the phone keeps sending points, no call. |
 
 An unknown speed (the fix has no `speed_mps`, or it is negative) picks
-`call`, because the call asks the person. `ChooseBranch` (Go) and
+`call`, because the call asks the person (the phone must leave `speed_mps`
+out rather than send `0`, see Conventions). `ChooseBranch` (Go) and
 `chooseBranch` (Kotlin) implement this table; `TestChooseBranch` and its
 Kotlin mirror test both sides of every threshold.
 
@@ -79,7 +82,10 @@ upserts the `devices` row. `app_version` is optional. Sample:
 ### AlertEvent (phone → server, `POST /incidents`)
 
 The trigger. `points` has at least one fix, oldest first. `trigger` is one of
-`volume_pattern`, `widget`, `tile`, `in_app`. Sample: `alert_event.json`.
+`volume_pattern`, `widget`, `tile`, `in_app`. The device must be registered
+first (`incidents.device_id` references `devices`): for an unknown
+`device_id` the server answers `422`, and the phone re-sends its
+DeviceRegistration and then the alert. Sample: `alert_event.json`.
 
 ```json
 {
@@ -97,7 +103,8 @@ The trigger. `points` has at least one fix, oldest first. `trigger` is one of
 ### AlertResponse (server → phone, reply to `POST /incidents`)
 
 The branch decision. `speed_mps` is the speed it was picked from, left out
-when unknown. Sending the same `incident_id` again returns the same decision.
+when unknown. Sending the same `incident_id` again returns the stored
+decision, even if the retried points would pick another branch.
 Sample: `alert_response.json`.
 
 ```json
@@ -127,7 +134,15 @@ the fields below are modeled; the real payload has more and both sides
 ignore them. The call engine passes `incident_id` as a dynamic variable when
 it places the call, and the webhook carries it back. `conversation_id` is
 unique per call, so a repeated webhook updates the same `calls` row.
-`role` is `agent` ("Mamá") or `user`. Sample: `call_webhook.json`.
+`role` is `agent` ("Mamá") or `user`. `dynamic_variables` values are any
+JSON: ElevenLabs adds `system__*` variables, some numeric.
+
+How the webhook finds its call: the call engine inserts the `calls` row
+before placing the call and stores the `conversation_id` from the
+outbound-call response. The webhook handler updates the row with that
+`conversation_id`; if none matches yet (the webhook beat that write), it
+updates the newest row of the incident whose `conversation_id` is still
+NULL; only if there is none does it insert. Sample: `call_webhook.json`.
 
 ```json
 {
@@ -143,7 +158,11 @@ unique per call, so a repeated webhook updates the same `calls` row.
     ],
     "metadata": {"start_time_unix_secs": 1761297010, "call_duration_secs": 42},
     "conversation_initiation_client_data": {
-      "dynamic_variables": {"incident_id": "9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f"}
+      "dynamic_variables": {
+        "incident_id": "9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f",
+        "system__call_duration_secs": 42,
+        "system__called_number": "+584141234567"
+      }
     }
   }
 }
@@ -155,7 +174,11 @@ What the notifier sends to the family: the location and the verdict, and
 **no link**. `verdict` is `duress`, `no_duress` or `unclear`; `verdict` and
 `reason` are left out when no call happened (`immediate_alert`,
 `silent_tracker`). `incident_id` is the dedupe key: one message per incident.
-Sample: `notifier_message.json`.
+Before sending, the sender claims the incident with
+`UPDATE incidents SET notified_at = now() WHERE id = $1 AND notified_at IS NULL`
+and sends only if that changed a row (at most once). When an incident has
+several calls, the verdict is `duress` if any call says `duress`, otherwise
+the newest call's verdict. Sample: `notifier_message.json`.
 
 ```json
 {

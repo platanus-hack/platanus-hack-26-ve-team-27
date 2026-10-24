@@ -166,17 +166,20 @@ type CallMetadata struct {
 }
 
 // ConversationInitiationClientData holds the dynamic variables of the call.
+// Values are any JSON: ElevenLabs adds system__* variables, some numeric.
 type ConversationInitiationClientData struct {
-	DynamicVariables map[string]string `json:"dynamic_variables"`
+	DynamicVariables map[string]any `json:"dynamic_variables"`
 }
 
 // DynamicVarIncidentID is the dynamic variable that ties a call to its
 // incident. The call engine sets it; the webhook handler reads it back.
 const DynamicVarIncidentID = "incident_id"
 
-// IncidentID returns the incident the call belongs to, or "" when missing.
+// IncidentID returns the incident the call belongs to, or "" when missing or
+// not a string.
 func (w CallWebhook) IncidentID() string {
-	return w.Data.ClientData.DynamicVariables[DynamicVarIncidentID]
+	id, _ := w.Data.ClientData.DynamicVariables[DynamicVarIncidentID].(string)
+	return id
 }
 
 // NotifierMessage is server -> notifier: the one message the family gets for
