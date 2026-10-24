@@ -15,7 +15,9 @@ What lives where (all spike code is in `app/src/main/java/com/team27/mama/spike/
 | Keys with the screen on or the always-on display lit | `VolumePatternService.kt` (accessibility) |
 | Keys with the panel fully off | `VolumeSessionService.kt` (silent media session) |
 | Widget | `TriggerWidgetProvider.kt`, `res/layout/widget_trigger.xml` |
-| What a trigger starts: AlertEvent, LocationUpdate, mic and camera probes | `TriggerSpikeService.kt`, `CameraProbe.kt`, `SpikeEvents.kt` |
+| Network and GPS warm-up on the first press | `Warmup.kt`, `SpikeHttp.kt` (keep-alive reuse) |
+| Same alert on mobile data if the Wi-Fi is slow (tested) | `Cellular.kt`, `Hedge.kt` |
+| What a trigger starts: AlertEvent, LocationUpdate, mic and camera probes, video upload | `TriggerSpikeService.kt`, `CameraProbe.kt`, `SpikeEvents.kt` |
 | Evidence on the phone | `SpikeLog.kt` (`files/spike.log`) |
 | Test endpoint, no database | `spikes/trigger/receiver.go` |
 
@@ -44,7 +46,10 @@ adb -s <serial> shell settings put secure accessibility_enabled 1
 
 Each trigger sends `POST /incidents` (AlertEvent with the best fix it has at
 once), `POST /incidents/{id}/points` (a fresh fix) and `POST /spike/note` (a
-spike-only line with the mic and camera results and fix ages). The phone adds
+spike-only line with the mic and camera results and fix ages), then
+`POST /spike/video?incident_id=…` with the camera clip, which the receiver
+saves next to its log. The first press of a possible pattern also sends
+`GET /` to open the connection early. The phone adds
 `X-Spike-Since-Trigger-Ms`, the time from the detected pattern to the request,
 so latency does not depend on the phone and laptop clocks agreeing.
 

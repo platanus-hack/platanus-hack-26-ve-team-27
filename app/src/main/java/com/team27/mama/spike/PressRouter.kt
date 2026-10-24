@@ -19,6 +19,7 @@ object PressRouter {
             SpikeLog.log(context, "key $key from=$source duplicate")
             return
         }
+        Warmup.onPress(context)
         val interactive = context.getSystemService(PowerManager::class.java).isInteractive
         val locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
         val matched = pattern.onPress(key, now)

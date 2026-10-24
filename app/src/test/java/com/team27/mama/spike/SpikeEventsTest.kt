@@ -56,4 +56,28 @@ class SpikeEventsTest {
         assertEquals(3, SpikeEvents.peakAmplitude(shortArrayOf(3, -9), 1))
         assertEquals(9, SpikeEvents.peakAmplitude(shortArrayOf(3, -9), 50))
     }
+
+    @Test
+    fun onlyARecentPreciseFixIsSentAtOnce() {
+        assertTrue(SpikeEvents.isFreshEnough(ageMs = 2_000, accuracyM = 8f))
+        assertTrue(SpikeEvents.isFreshEnough(ageMs = 30_000, accuracyM = 50f))
+        // Seen on the Xiaomi: a 230 s old fix, and a 4062 m one.
+        assertFalse(SpikeEvents.isFreshEnough(ageMs = 230_000, accuracyM = 100f))
+        assertFalse(SpikeEvents.isFreshEnough(ageMs = 1_000, accuracyM = 4062f))
+        assertFalse(SpikeEvents.isFreshEnough(ageMs = 1_000, accuracyM = null))
+        assertFalse(SpikeEvents.isFreshEnough(ageMs = -1, accuracyM = 5f))
+    }
+
+    @Test
+    fun videoUrlCarriesTheIncident() {
+        assertEquals("http://h/spike/video?incident_id=abc", SpikeEvents.videoUrl("http://h/", "abc"))
+    }
+
+    @Test
+    fun onlyAGpsGradeFixIsPrecise() {
+        assertTrue(SpikeEvents.isPrecise(1.0f))
+        assertTrue(SpikeEvents.isPrecise(20f))
+        assertFalse(SpikeEvents.isPrecise(117f))
+        assertFalse(SpikeEvents.isPrecise(-1f))
+    }
 }
