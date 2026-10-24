@@ -1,6 +1,7 @@
 package call
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"html/template"
 	"log"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
 )
 
 // FallbackPath is the WebRTC fallback page (spikes/call/webrtc.html, #11).
@@ -29,9 +32,15 @@ var agentIDRE = regexp.MustCompile(`^agent_[A-Za-z0-9]+$`)
 // widget, so the public agent is only exposed while it is needed. The open
 // incidents live in memory: a restart clears them. Create it with
 // NewFallback.
+//
+// The browser call carries the duress and safe phrases, so with a token the
+// page answers 401 unless the request has ?token=<token>. Without a token
+// (FALLBACK_TOKEN unset) the page stays open, as it was, but sends the
+// phrases empty: a URL anyone can guess never shows them.
 type Fallback struct {
 	agentID string
-	url     string // the page URL for the log line
+	url     string // the page URL for the log line, without the token
+	token   string // FALLBACK_TOKEN; blank: open page, no phrases
 	now     func() time.Time
 
 	mu   sync.Mutex
@@ -39,11 +48,16 @@ type Fallback struct {
 }
 
 // NewFallback returns the fallback for the agent. publicURL is the server's
-// public base URL (blank logs the bare path).
-func NewFallback(agentID, publicURL string) *Fallback {
+// public base URL (blank logs the bare path). token is FALLBACK_TOKEN.
+func NewFallback(agentID, publicURL, token string) *Fallback {
+	url := strings.TrimSuffix(publicURL, "/") + FallbackPath
+	if token != "" {
+		url += "?token=<FALLBACK_TOKEN>" // never the value: logs are not secret
+	}
 	return &Fallback{
 		agentID: agentID,
-		url:     strings.TrimSuffix(publicURL, "/") + FallbackPath,
+		url:     url,
+		token:   token,
 		now:     time.Now,
 		open:    map[string]fallbackIncident{},
 	}
@@ -78,6 +92,18 @@ func (f *Fallback) pending() []fallbackIncident {
 	return out
 }
 
+// withoutPhrases returns a copy of vars with the duress and safe phrases
+// blanked; every variable is still there, so ElevenLabs takes the call.
+func withoutPhrases(vars map[string]string) map[string]string {
+	out := make(map[string]string, len(vars))
+	for k, v := range vars {
+		out[k] = v
+	}
+	out[contract.DynamicVarDuressPhrase] = ""
+	out[contract.DynamicVarSafePhrase] = ""
+	return out
+}
+
 type fallbackIncident struct {
 	ID   string
 	At   time.Time
@@ -98,8 +124,17 @@ type fallbackPage struct {
 
 // ServeHTTP renders the page. It reloads itself every 5 s while nothing is
 // pending, so the operator can keep it open on stage; once an incident is
-// open it stops reloading, which would cut the browser call.
-func (f *Fallback) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+// open it stops reloading, which would cut the browser call. With a token,
+// a request without it gets 401 and nothing else.
+func (f *Fallback) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// The token rides in the URL: keep it out of the Referer the widget
+	// script's CDN would get.
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Cache-Control", "no-store")
+	if f.token != "" && subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("token")), []byte(f.token)) != 1 {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	p := fallbackPage{Incidents: f.pending()}
 	if len(p.Incidents) > 0 {
 		if agentIDRE.MatchString(f.agentID) {
@@ -111,6 +146,9 @@ func (f *Fallback) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 					vars = p.Incidents[0].vars
 				}
 			}
+			if f.token == "" {
+				vars = withoutPhrases(vars)
+			}
 			raw, _ := json.Marshal(vars)
 			p.DynamicVars = string(raw)
 		} else {
@@ -118,7 +156,6 @@ func (f *Fallback) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
 	if err := fallbackTmpl.Execute(w, p); err != nil {
 		log.Printf("call fallback: render: %v", err)
 	}
@@ -129,6 +166,7 @@ var fallbackTmpl = template.Must(template.New("fallback").Parse(`<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
   {{- if not .Incidents}}
   <meta http-equiv="refresh" content="5">
   {{- end}}

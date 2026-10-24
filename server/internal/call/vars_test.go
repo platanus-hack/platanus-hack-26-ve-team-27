@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	samplePhrase = "dile a la tía Carmen que llego tarde"
-	safePhrase   = "ya llegué a la casa, todo tranquilo"
-	deviceVoice  = "voice_device_1"
-	globalVoice  = "voice_global_1"
+	testFallbackToken = "fallback-test-token"
+	samplePhrase      = "dile a la tía Carmen que llego tarde"
+	safePhrase        = "ya llegué a la casa, todo tranquilo"
+	deviceVoice       = "voice_device_1"
+	globalVoice       = "voice_global_1"
 )
 
 // fullCallee is a device with every setup field set.
@@ -112,7 +113,7 @@ func TestFallbackSendsTheSameVariables(t *testing.T) {
 		}
 	}
 	rec := httptest.NewRecorder()
-	e.Fallback.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, FallbackPath, nil))
+	e.Fallback.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, FallbackPath+"?token="+testFallbackToken, nil))
 	if got := widgetVars(t, rec.Body.String()); !reflect.DeepEqual(got, want) {
 		t.Errorf("fallback variables = %v, want %v", got, want)
 	}
@@ -129,7 +130,7 @@ func TestHopelessCallFallbackSendsTheDeviceVariables(t *testing.T) {
 	e.StartCall(context.Background(), sampleIncidentInput())
 
 	rec := httptest.NewRecorder()
-	e.Fallback.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, FallbackPath, nil))
+	e.Fallback.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, FallbackPath+"?token="+testFallbackToken, nil))
 	if got, want := widgetVars(t, rec.Body.String()), CallVariables(sampleIncident, fullCallee); !reflect.DeepEqual(got, want) {
 		t.Errorf("fallback variables = %v, want %v", got, want)
 	}
@@ -238,4 +239,62 @@ func TestBeginReadsTheDeviceSetup(t *testing.T) {
 	if _, got, err = store.Begin(ctx, sampleIncident); err != nil || got != fullCallee {
 		t.Errorf("set: Begin = %+v (err %v), want %+v", got, err, fullCallee)
 	}
+}
+
+// With FALLBACK_TOKEN set, the page answers 401 without the right token and
+// never shows a phrase or the agent; the log line names the token, not its
+// value.
+func TestFallbackPageNeedsTheToken(t *testing.T) {
+	out := captureLog(t)
+	f := NewFallback("agent_stage1", "https://mama.example", testFallbackToken)
+	f.Open(sampleIncident, CallVariables(sampleIncident, fullCallee), 2)
+
+	for name, target := range map[string]string{
+		"no token":    FallbackPath,
+		"wrong token": FallbackPath + "?token=nope",
+		"prefix":      FallbackPath + "?token=" + testFallbackToken[:5],
+		"longer":      FallbackPath + "?token=" + testFallbackToken + "x",
+	} {
+		rec := httptest.NewRecorder()
+		f.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		body := rec.Body.String()
+		if rec.Code != http.StatusUnauthorized || strings.Contains(body, "agent_stage1") || strings.Contains(body, sampleIncident) {
+			t.Errorf("%s: %d %s, want a bare 401", name, rec.Code, body)
+		}
+		assertNoPhrases(t, body)
+	}
+
+	rec := httptest.NewRecorder()
+	f.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, FallbackPath+"?token="+testFallbackToken, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("right token: %d %s", rec.Code, rec.Body)
+	}
+	if got, want := widgetVars(t, rec.Body.String()), CallVariables(sampleIncident, fullCallee); !reflect.DeepEqual(got, want) {
+		t.Errorf("right token: variables = %v, want %v", got, want)
+	}
+	if rec.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Errorf("Referrer-Policy = %q, want no-referrer", rec.Header().Get("Referrer-Policy"))
+	}
+	if log := out.String(); strings.Contains(log, testFallbackToken) || !strings.Contains(log, "/call/fallback?token=<FALLBACK_TOKEN>") {
+		t.Errorf("log leaks the token or does not say how to open the page:\n%s", log)
+	}
+}
+
+// Without FALLBACK_TOKEN the page stays open, but the browser call gets the
+// phrases empty: every variable is still there, so ElevenLabs takes it.
+func TestFallbackPageWithoutTokenSendsNoPhrases(t *testing.T) {
+	captureLog(t)
+	f := NewFallback("agent_stage1", "", "")
+	f.Open(sampleIncident, CallVariables(sampleIncident, fullCallee), 2)
+
+	rec := httptest.NewRecorder()
+	f.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, FallbackPath, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	want := CallVariables(sampleIncident, Callee{UserName: fullCallee.UserName})
+	if got := widgetVars(t, rec.Body.String()); !reflect.DeepEqual(got, want) {
+		t.Errorf("variables = %v, want %v", got, want)
+	}
+	assertNoPhrases(t, rec.Body.String())
 }

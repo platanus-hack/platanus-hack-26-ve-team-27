@@ -197,7 +197,7 @@ func timingLine(t *testing.T, out string) string {
 func testEngine(store Store, placer Placer, status StatusReader, clock *fakeClock) *Engine {
 	e := &Engine{
 		Store: store, Placer: placer, Status: status,
-		Fallback:       NewFallback("agent_test1", "https://mama.example"),
+		Fallback:       NewFallback("agent_test1", "https://mama.example", testFallbackToken),
 		OutcomeTimeout: 2 * time.Second,
 		PollEvery:      time.Millisecond,
 	}
@@ -521,7 +521,7 @@ func TestCallForceFailureEnvOpensTheFallback(t *testing.T) {
 func TestFallbackPageShowsTheAgentOnlyWhileAnIncidentIsOpen(t *testing.T) {
 	captureLog(t)
 	clock := &fakeClock{t: time.Date(2026, 10, 24, 9, 10, 0, 0, time.UTC)}
-	f := NewFallback("agent_stage1", "")
+	f := NewFallback("agent_stage1", "", "")
 	f.now = clock.now
 	get := func() string {
 		rec := httptest.NewRecorder()
@@ -554,7 +554,7 @@ func TestFallbackPageShowsTheAgentOnlyWhileAnIncidentIsOpen(t *testing.T) {
 
 func TestFallbackPageRefusesAMalformedAgentID(t *testing.T) {
 	captureLog(t)
-	f := NewFallback(`agent_x"><script>`, "")
+	f := NewFallback(`agent_x"><script>`, "", "")
 	f.Open(sampleIncident, CallVariables(sampleIncident, Callee{}), 2)
 	rec := httptest.NewRecorder()
 	f.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, FallbackPath, nil))

@@ -150,16 +150,20 @@ func TestCallSpikeVarsAreOptional(t *testing.T) {
 	c := LoadFrom(envFrom(map[string]string{
 		"ELEVENLABS_VOICE_ID": " voice123 ",
 		"CALL_SPIKE_TOKEN":    " tok ",
+		"FALLBACK_TOKEN":      " fbtok ",
 	}))
+	if c.ElevenLabs.FallbackToken != "fbtok" {
+		t.Errorf("FallbackToken = %q, want fbtok", c.ElevenLabs.FallbackToken)
+	}
 	if c.ElevenLabs.VoiceID != "voice123" || c.ElevenLabs.CallSpikeToken != "tok" {
 		t.Errorf("VoiceID, CallSpikeToken = %q, %q; want voice123, tok", c.ElevenLabs.VoiceID, c.ElevenLabs.CallSpikeToken)
 	}
 	for _, name := range LoadFrom(envFrom(nil)).Missing() {
-		if name == "ELEVENLABS_VOICE_ID" || name == "CALL_SPIKE_TOKEN" {
+		if name == "ELEVENLABS_VOICE_ID" || name == "CALL_SPIKE_TOKEN" || name == "FALLBACK_TOKEN" {
 			t.Errorf("Missing() lists the optional %s", name)
 		}
 	}
-	if s := c.String(); strings.Contains(s, "tok") || strings.Contains(s, "voice123") {
+	if s := c.String(); strings.Contains(s, "tok") || strings.Contains(s, "fbtok") || strings.Contains(s, "voice123") {
 		t.Errorf("String() leaks a value: %s", s)
 	}
 }

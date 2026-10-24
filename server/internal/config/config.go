@@ -61,6 +61,11 @@ type ElevenLabs struct {
 	// #11 spike route POST /spike/call. Blank leaves the route off, so a
 	// deploy never exposes an open "call any number" endpoint.
 	CallSpikeToken string
+	// FallbackToken is FALLBACK_TOKEN, optional: the secret the WebRTC
+	// fallback page wants as ?token= before it hands the browser call the
+	// duress and safe phrases (#104). Blank keeps the page open but sends the
+	// phrases empty.
+	FallbackToken string
 	// ForceCallFailure is CALL_FORCE_FAILURE, "true" or "1": every call
 	// fails without dialing, so the retry and the WebRTC fallback can be
 	// rehearsed (#23). Off by default.
@@ -144,6 +149,7 @@ func LoadFrom(getenv func(string) string) Config {
 			WebhookSecret:    get("ELEVENLABS_WEBHOOK_SECRET"),
 			VoiceID:          get("ELEVENLABS_VOICE_ID"),
 			CallSpikeToken:   get("CALL_SPIKE_TOKEN"),
+			FallbackToken:    get("FALLBACK_TOKEN"),
 			ForceCallFailure: isOn(get("CALL_FORCE_FAILURE")),
 		},
 		Twilio: Twilio{

@@ -235,8 +235,12 @@ Kotlin.
 | `frase_alerta` | `devices.duress_phrase` |
 | `frase_segura` | `devices.safe_phrase`, or `""` when unset |
 
-The fallback page (`GET /call/fallback`, no auth) shows these in its HTML
-while an incident is open there (up to 15 minutes), phrases included.
+The fallback page (`GET /call/fallback`) puts these in its HTML while an
+incident is open there (up to 15 minutes). With `FALLBACK_TOKEN` set it
+answers `401` unless the request has `?token=<FALLBACK_TOKEN>` (compared in
+constant time), and sends the phrases. Without it the page stays open but
+sends `frase_alerta` and `frase_segura` empty, so a guessed URL never shows
+them.
 
 The call speaks with `devices.voice_id` when set, otherwise with the global
 `ELEVENLABS_VOICE_ID`, otherwise with the agent's own voice.

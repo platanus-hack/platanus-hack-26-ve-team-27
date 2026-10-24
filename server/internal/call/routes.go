@@ -50,7 +50,7 @@ func NewRoutes(cfg config.Config, store Store) *Routes {
 			PhoneNumberID: el.PhoneNumberID,
 			VoiceID:       el.VoiceID,
 		},
-		fallback:   NewFallback(el.AgentID, cfg.PublicURL),
+		fallback:   NewFallback(el.AgentID, cfg.PublicURL, el.FallbackToken),
 		spikeToken: el.CallSpikeToken,
 		forceFail:  el.ForceCallFailure,
 	}
@@ -141,6 +141,9 @@ func (rt *Routes) Register(mux *http.ServeMux) {
 	}
 	if rt.engine != nil && (rt.client.APIKey == "" || rt.client.AgentID == "" || rt.client.PhoneNumberID == "") {
 		log.Print("call: WARNING: ElevenLabs credentials are not set; every call will fail")
+	}
+	if rt.fallback.token == "" {
+		log.Print("call: WARNING: FALLBACK_TOKEN is not set; the fallback page sends the browser call without the duress and safe phrases")
 	}
 	mux.Handle("POST /webhooks/elevenlabs", rt.webhook)
 	mux.Handle("GET "+FallbackPath, rt.fallback)
