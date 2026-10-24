@@ -19,6 +19,7 @@ class MainActivity : ComponentActivity() {
                     finishOnboarding = {
                         withContext(Dispatchers.IO) { (application as MamaApp).graph.onboardingGate.finish() }
                     },
+                    emergency = (application as MamaApp).graph.emergency,
                 )
             }
         }

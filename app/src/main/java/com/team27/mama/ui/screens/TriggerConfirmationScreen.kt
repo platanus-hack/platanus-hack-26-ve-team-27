@@ -37,6 +37,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.team27.mama.R
+import com.team27.mama.emergency.DeliveryBadge
+import com.team27.mama.emergency.EmergencyPhase
+import com.team27.mama.emergency.EmergencyState
+import com.team27.mama.emergency.EmergencyStatus
+import com.team27.mama.emergency.MeshIssue
+import com.team27.mama.emergency.toStatus
 import com.team27.mama.ui.theme.MamaSpacing
 import com.team27.mama.ui.theme.MamaTheme
 import com.team27.mama.ui.theme.MamaWordmark
@@ -64,7 +70,23 @@ private enum class StepState(val spoken: String) {
     Failed("no se pudo"),
 }
 
-private data class TriggerStep(val label: String, val state: StepState, val time: String)
+private data class TriggerStep(
+    val label: String,
+    val state: StepState,
+    val time: String?,
+    val detail: String? = null,
+)
+
+private fun EmergencyStatus.toStep() = TriggerStep(
+    label = text,
+    state = when (badge) {
+        DeliveryBadge.RUNNING -> StepState.Running
+        DeliveryBadge.DONE -> StepState.Done
+        DeliveryBadge.FAILED -> StepState.Failed
+    },
+    time = null,
+    detail = detail,
+)
 
 // Placeholder data until #24 / #38 feed the real incident timestamps.
 private val placeholderSteps = listOf(
@@ -75,7 +97,8 @@ private val placeholderSteps = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TriggerConfirmationScreen(onBack: () -> Unit) {
+fun TriggerConfirmationScreen(onBack: () -> Unit, status: EmergencyStatus? = null) {
+    val steps = if (status == null) placeholderSteps else listOf(status.toStep()) + placeholderSteps.drop(1)
     Scaffold(
         topBar = { CenterAlignedTopAppBar(title = { MamaWordmark(compact = true) }) },
     ) { padding ->
@@ -109,7 +132,7 @@ fun TriggerConfirmationScreen(onBack: () -> Unit) {
             ElapsedCard(elapsed = "00:04")
 
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                placeholderSteps.forEachIndexed { index, step ->
+                steps.forEachIndexed { index, step ->
                     if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     StepRow(step)
                 }
@@ -163,9 +186,15 @@ private fun StepRow(step: TriggerStep) {
         modifier = Modifier.semantics(mergeDescendants = true) { stateDescription = step.state.spoken },
         headlineContent = { Text(step.label) },
         leadingContent = { StepBadge(step.state) },
-        trailingContent = { Text(step.time, style = MaterialTheme.typography.labelLarge) },
+        supportingContent = step.detail?.let { detail ->
+            { Text(detail, style = MaterialTheme.typography.bodyMedium) }
+        },
+        trailingContent = step.time?.let { time ->
+            { Text(time, style = MaterialTheme.typography.labelLarge) }
+        },
         colors = ListItemDefaults.colors(
             containerColor = if (failed) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+            supportingColor = if (failed) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
             headlineColor = if (failed) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface,
             trailingIconColor = if (failed) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
         ),
@@ -221,4 +250,29 @@ private fun TriggerConfirmationScreenPreview() {
 @Composable
 private fun TriggerConfirmationScreenDarkPreview() {
     MamaTheme { TriggerConfirmationScreen(onBack = {}) }
+}
+
+@Preview(showBackground = true, heightDp = 900)
+@Composable
+private fun TriggerConfirmationSearchingPreview() {
+    MamaTheme {
+        TriggerConfirmationScreen(
+            onBack = {},
+            status = EmergencyState(
+                phase = EmergencyPhase.SEARCHING_NEARBY,
+                meshIssue = MeshIssue.UNAVAILABLE,
+            ).toStatus(),
+        )
+    }
+}
+
+@Preview(showBackground = true, heightDp = 900)
+@Composable
+private fun TriggerConfirmationNotifiedPreview() {
+    MamaTheme {
+        TriggerConfirmationScreen(
+            onBack = {},
+            status = EmergencyState(phase = EmergencyPhase.NOTIFIED).toStatus(),
+        )
+    }
 }
