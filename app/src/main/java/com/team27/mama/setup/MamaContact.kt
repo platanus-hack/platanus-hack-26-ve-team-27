@@ -46,7 +46,7 @@ fun planMamaContact(number: String, ours: RawContactInfo?, namedMama: List<RawCo
 }
 
 /**
- * Saves the Twilio number as the local (no account) contact "Mamá" so the
+ * Saves the Twilio number as the contact "Mamá", in the phone's default account for new contacts, so the
  * call shows her name. Needs READ_CONTACTS and WRITE_CONTACTS. Returns the
  * raw contact ID to remember for the next run. Runs blocking; call it off the
  * main thread.
@@ -109,10 +109,15 @@ class MamaContactWriter(private val resolver: ContentResolver) {
     }
 
     private fun insert(number: String): Long {
+        // No account columns: the provider files the contact under the phone's
+        // default account for new contacts. An explicit null account means
+        // "local", which Android 16 refuses when that default is a cloud
+        // account ("Cannot add contacts to local or SIM accounts when default
+        // account is set to cloud", seen on the demo Xiaomi).
         val ops = arrayListOf(
+            // The provider rejects an insert with no values at all.
             ContentProviderOperation.newInsert(RawContacts.CONTENT_URI)
-                .withValue(RawContacts.ACCOUNT_TYPE, null)
-                .withValue(RawContacts.ACCOUNT_NAME, null)
+                .withValue(RawContacts.AGGREGATION_MODE, RawContacts.AGGREGATION_MODE_DEFAULT)
                 .build(),
             nameRow().withValueBackReference(Data.RAW_CONTACT_ID, 0).build(),
             phoneRow(number).withValueBackReference(Data.RAW_CONTACT_ID, 0).build(),
