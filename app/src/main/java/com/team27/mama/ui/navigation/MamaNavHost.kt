@@ -25,7 +25,10 @@ enum class Route(val path: String) {
     TriggerConfirmation("trigger_confirmation"),
 }
 
-/** The navigation shell. MainActivity shows this inside MamaTheme. */
+/**
+ * The navigation shell. MainActivity shows this inside MamaTheme. [emergency] is null with the
+ * offline emergency flag off: the trigger screen then keeps its placeholder steps.
+ */
 @Composable
 fun MamaNavHost(
     navController: NavHostController = rememberNavController(),
@@ -44,11 +47,13 @@ fun MamaNavHost(
                 // HTTP and SMS need neither BLE nor location, so declare whatever the user answered.
                 emergency?.declare()
             }
-            LaunchedEffect(Unit) {
+            LaunchedEffect(emergency) {
+                // Flag off (no emergency): the placeholder steps, no permission prompt, no mesh.
+                if (emergency == null) return@LaunchedEffect
                 val missing = emergencyPermissions().filter {
                     ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
                 }
-                if (missing.isEmpty()) emergency?.declare() else launcher.launch(missing.toTypedArray())
+                if (missing.isEmpty()) emergency.declare() else launcher.launch(missing.toTypedArray())
             }
             TriggerConfirmationScreen(
                 // Guard: a double tap must not pop the start screen and leave a blank host.
@@ -62,7 +67,11 @@ fun MamaNavHost(
     }
 }
 
-/** Runtime permissions for the mesh and the location. Android 12+ ignores a FINE-only request. */
+/**
+ * Runtime permissions for the mesh and the location. Setup (#15) already asks for location, so
+ * usually only the Bluetooth ones are still missing; only missing ones are requested.
+ * Android 12+ ignores a FINE-only request.
+ */
 private fun emergencyPermissions(): List<String> {
     val location = listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

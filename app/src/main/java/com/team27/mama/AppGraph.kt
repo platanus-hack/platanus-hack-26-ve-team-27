@@ -89,8 +89,12 @@ class AppGraph(
         SmsChannel(AndroidSmsSender(app, scheduler), { remoteConfig.current().smsNumber }, scheduler, acks)
     }
 
-    /** #60 reads `graph.emergency.state`; #16 calls `declare()`. */
-    val emergency: EmergencyOrchestrator by lazy {
+    /**
+     * #60 reads `graph.emergency?.state`; #16 calls `declare()`. Null with the flag off: the
+     * orchestrator, the mesh gateway and the trigger screen's permission request never start.
+     */
+    val emergency: EmergencyOrchestrator? by lazy {
+        if (!offlineEmergency) return@lazy null
         val gateway = MeshGateway.getInstance(app)
         EmergencyOrchestrator(
             signer = deviceSigner,
