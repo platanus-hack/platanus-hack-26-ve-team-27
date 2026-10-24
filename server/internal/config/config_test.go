@@ -173,6 +173,18 @@ func TestEmergencyOfflineFlagIsOffUnlessTrueOr1(t *testing.T) {
 	}
 }
 
+func TestTwilioWebhookBaseURLIsOptional(t *testing.T) {
+	c := LoadFrom(envFrom(map[string]string{"TWILIO_WEBHOOK_BASE_URL": " https://mama.example.com "}))
+	if c.Twilio.WebhookBaseURL != "https://mama.example.com" {
+		t.Errorf("WebhookBaseURL = %q, want https://mama.example.com", c.Twilio.WebhookBaseURL)
+	}
+	for _, name := range LoadFrom(envFrom(nil)).Missing() {
+		if name == "TWILIO_WEBHOOK_BASE_URL" {
+			t.Error("Missing() lists the optional TWILIO_WEBHOOK_BASE_URL")
+		}
+	}
+}
+
 func TestPublicURLPrefersPublicURLOverRender(t *testing.T) {
 	if got := LoadFrom(envFrom(map[string]string{"RENDER_EXTERNAL_URL": "https://r.example"})).PublicURL; got != "https://r.example" {
 		t.Errorf("PublicURL = %q, want the Render URL", got)
