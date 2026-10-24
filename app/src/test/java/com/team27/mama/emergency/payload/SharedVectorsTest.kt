@@ -59,12 +59,61 @@ class SharedVectorsTest {
     }
 
     @Test
-    fun invalidSignedHex() {
-        val cases = v.invalid.filter { it.op == "signed_hex" }
-        assertTrue(cases.isNotEmpty())
-        for (c in cases) {
+    fun sealedMatchesGo() {
+        val xPriv = v.keys.serverX25519Private.unhex()
+        val xPub = v.keys.serverX25519Public.unhex()
+        assertArrayEquals(xPub, SealedBox.publicKeyOf(xPriv))
+        for (p in v.payloads) {
+            val signed = p.signed.unhex()
+            val sealed = SealedBox.sealWith(signed, xPub, p.ephemeralX25519Private.unhex())
+            assertEquals(p.name, p.sealed, sealed.hex())
+            assertArrayEquals(p.name, signed, SealedBox.open(p.sealed.unhex(), xPriv))
+        }
+    }
+
+    @Test
+    fun textsMatchGo() {
+        for (p in v.payloads) {
+            assertEquals(p.name, p.sms, MamaText.sms(p.signed.unhex()))
+            assertArrayEquals(p.name, p.signed.unhex(), MamaText.parseSms(p.sms))
+            assertEquals(p.name, p.mesh, MamaText.meshSealed(p.sealed.unhex()))
+            assertArrayEquals(p.name, p.sealed.unhex(), (MamaText.parseMesh(p.mesh) as MeshFrame.Sealed).box)
+        }
+        for (a in v.acks) {
+            assertEquals(a.name, a.sms, MamaText.sms(a.ack.unhex()))
+            assertArrayEquals(a.name, a.ack.unhex(), MamaText.parseSms(a.sms))
+            assertEquals(a.name, a.mesh, MamaText.meshAck(a.ack.unhex()))
+            assertArrayEquals(a.name, a.ack.unhex(), (MamaText.parseMesh(a.mesh) as MeshFrame.Ack).ack)
+        }
+    }
+
+    private fun formatError(msg: String): Nothing =
+        throw PayloadException(PayloadException.Reason.FORMAT, msg)
+
+    private fun runInvalid(c: VectorInvalid) {
+        val xPriv = v.keys.serverX25519Private.unhex()
+        when (c.op) {
+            "sms_payload" -> PayloadCodec.verify(MamaText.parseSms(c.input), devicePublic)
+            "sms_ack" -> AckCodec.verify(MamaText.parseSms(c.input), serverPublic)
+            "mesh_payload" -> {
+                val f = MamaText.parseMesh(c.input) as? MeshFrame.Sealed ?: formatError("not a SEAL text")
+                PayloadCodec.verify(SealedBox.open(f.box, xPriv), devicePublic)
+            }
+            "mesh_ack" -> {
+                val f = MamaText.parseMesh(c.input) as? MeshFrame.Ack ?: formatError("not an ACK text")
+                AckCodec.verify(f.ack, serverPublic)
+            }
+            "signed_hex" -> PayloadCodec.verify(c.input.unhex(), devicePublic)
+            else -> fail("unknown op ${c.op}")
+        }
+    }
+
+    @Test
+    fun invalidVectors() {
+        assertTrue(v.invalid.isNotEmpty())
+        for (c in v.invalid) {
             try {
-                PayloadCodec.verify(c.input.unhex(), devicePublic)
+                runInvalid(c)
                 fail("${c.name}: expected PayloadException")
             } catch (e: PayloadException) {
                 assertEquals(c.name, c.error.uppercase(), e.reason.name)

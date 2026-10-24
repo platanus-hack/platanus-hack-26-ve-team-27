@@ -11,6 +11,15 @@ class PayloadCodecTest {
     private fun ok() = EmergencyPayload(Kind.ALERT, 1L, 2L, 0, 1, 1, 5, 1000L)
 
     @Test
+    fun locAgeOfClamps() {
+        assertEquals(65535, PayloadCodec.locAgeOf(null))
+        assertEquals(0, PayloadCodec.locAgeOf(-5L))
+        assertEquals(12, PayloadCodec.locAgeOf(12L))
+        assertEquals(65534, PayloadCodec.locAgeOf(65534L))
+        assertEquals(65534, PayloadCodec.locAgeOf(Long.MAX_VALUE))
+    }
+
+    @Test
     fun bodyLayout() {
         val p = EmergencyPayload(
             Kind.ALERT, 0x0102030405060708L, 0x1112131415161718L, 0x2122,
