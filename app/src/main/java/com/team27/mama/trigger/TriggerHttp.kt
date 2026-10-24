@@ -2,7 +2,6 @@ package com.team27.mama.trigger
 
 import android.net.Network
 import android.os.SystemClock
-import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -51,7 +50,9 @@ object TriggerHttp {
             val stream = if (code >= 400) connection.errorStream else connection.inputStream
             val body = stream?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
             HttpResult(code, body, SystemClock.elapsedRealtime() - start)
-        } catch (e: IOException) {
+        } catch (e: Exception) {
+            // Not only IOException: a request pinned to a network can also throw
+            // SecurityException or IllegalArgumentException, and the log must say so.
             onError("$url failed ${e.javaClass.simpleName}: ${e.message}")
             HttpResult(-1, ms = SystemClock.elapsedRealtime() - start)
         }

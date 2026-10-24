@@ -1,5 +1,9 @@
 # Spike #10: locked-phone trigger on the demo Xiaomi
 
+> #16 promoted this code to `app/src/main/java/com/team27/mama/trigger/` and
+> deleted the `spike/` package (camera probe, mic probe and spike-only routes
+> included). The file names below describe the spike as merged in 969c82e.
+
 Goal: up-down-up on the volume keys with the phone locked, and a home-screen
 widget, each reach a test endpoint with GPS. Results are in
 [RESULTS.md](RESULTS.md) and in a comment on issue #10. #16 rebuilds this on
