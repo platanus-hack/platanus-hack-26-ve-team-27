@@ -15,7 +15,7 @@ import (
 
 func TestRootReturnsOK(t *testing.T) {
 	rec := httptest.NewRecorder()
-	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testKeys(t), "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testOffline(t)).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET / status = %d, want %d", rec.Code, http.StatusOK)
@@ -24,7 +24,7 @@ func TestRootReturnsOK(t *testing.T) {
 
 func TestIntakeRoutesAreMounted(t *testing.T) {
 	rec := httptest.NewRecorder()
-	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testKeys(t), "").ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/incidents", nil))
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testOffline(t)).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/incidents", nil))
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("POST /incidents with no database = %d, want %d", rec.Code, http.StatusServiceUnavailable)
@@ -52,9 +52,14 @@ func testKeys(t *testing.T) serverkeys.Keys {
 	return k
 }
 
+func testOffline(t *testing.T) *offlineEmergency {
+	t.Helper()
+	return &offlineEmergency{keys: testKeys(t)}
+}
+
 func TestConfigRouteIsMounted(t *testing.T) {
 	rec := httptest.NewRecorder()
-	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testKeys(t), "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/config", nil))
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testOffline(t)).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/config", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /config with no database = %d, want %d", rec.Code, http.StatusOK)
@@ -62,7 +67,7 @@ func TestConfigRouteIsMounted(t *testing.T) {
 }
 
 func TestEmergencyRoutesAreMounted(t *testing.T) {
-	mux := newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testKeys(t), "")
+	mux := newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testOffline(t))
 	for _, path := range []string{"/emergencies", "/emergencies/relay"} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader("MAMA1 x")))
@@ -75,10 +80,32 @@ func TestEmergencyRoutesAreMounted(t *testing.T) {
 func TestCallWebhookIsMounted(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/elevenlabs", strings.NewReader(`{"type":"post_call_audio"}`))
-	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testKeys(t), "").ServeHTTP(rec, req)
+	newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), testOffline(t)).ServeHTTP(rec, req)
 
 	// Mounted, and with no secret configured it fails closed.
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("POST /webhooks/elevenlabs = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestOfflineEmergencyRoutesAreNotMountedWhenOff(t *testing.T) {
+	mux := newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}), nil)
+	for _, c := range []struct{ method, path string }{
+		{http.MethodGet, "/config"},
+		{http.MethodPost, "/emergencies"},
+		{http.MethodPost, "/emergencies/relay"},
+	} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(c.method, c.path, strings.NewReader("MAMA1 x")))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s %s with the flag off = %d, want 404", c.method, c.path, rec.Code)
+		}
+	}
+
+	// The rest of the API is unaffected.
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/incidents", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("POST /incidents with the flag off = %d, want 503", rec.Code)
 	}
 }

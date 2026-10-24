@@ -17,6 +17,12 @@ services:
         fromDatabase:
           name: mama-db
           property: connectionString # private-network URL
+      # Offline emergency channel (#55, #57): off unless set to "true" in the
+      # dashboard (sync: false keeps Blueprint syncs from overwriting it). When on,
+      # the server also needs EMERGENCY_ED25519_SEED and
+      # EMERGENCY_X25519_PRIVATE_KEY set in the dashboard (README "Secrets").
+      - key: EMERGENCY_OFFLINE_ENABLED
+        sync: false
 
 databases:
   - name: mama-db

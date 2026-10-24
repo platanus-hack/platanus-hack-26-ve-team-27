@@ -32,17 +32,14 @@ func main() {
 		log.Printf("config: not set: %s", strings.Join(missing, ", "))
 	}
 
-	keys := loadServerKeys(cfg, os.Getenv("RENDER") != "")
-	if remoteconfig.CheckSMSNumber(cfg.Emergency.SMSNumber) != nil {
-		log.Fatalf("emergency: EMERGENCY_SMS_NUMBER must be E.164 (+ and 7-15 digits)")
-	}
+	offline := loadOfflineEmergency(cfg, os.Getenv("RENDER") != "")
 
 	pool := openAndMigrate(cfg.DatabaseURL)
 	notifier := newNotifier(cfg, pool)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newMux(pool, notifier, call.NewRoutes(cfg.ElevenLabs), keys, cfg.Emergency.SMSNumber),
+		Handler:           newMux(pool, notifier, call.NewRoutes(cfg.ElevenLabs), offline),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -50,6 +47,22 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+// loadOfflineEmergency returns the offline emergency channel, or nil when
+// EMERGENCY_OFFLINE_ENABLED is off: then no key is read or required and the
+// SMS number is not checked. Enabled, a bad SMS number exits and the keys load
+// through loadServerKeys.
+func loadOfflineEmergency(cfg config.Config, onRender bool) *offlineEmergency {
+	if !cfg.Emergency.Enabled {
+		log.Print("emergency: offline channel is off (EMERGENCY_OFFLINE_ENABLED is not true)")
+		return nil
+	}
+	keys := loadServerKeys(cfg, onRender)
+	if remoteconfig.CheckSMSNumber(cfg.Emergency.SMSNumber) != nil {
+		log.Fatalf("emergency: EMERGENCY_SMS_NUMBER must be E.164 (+ and 7-15 digits)")
+	}
+	return &offlineEmergency{keys: keys, smsNumber: cfg.Emergency.SMSNumber}
 }
 
 // loadServerKeys builds the offline-emergency key pair. A malformed key exits

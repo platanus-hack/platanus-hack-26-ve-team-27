@@ -163,3 +163,12 @@ func TestCallSpikeVarsAreOptional(t *testing.T) {
 		t.Errorf("String() leaks a value: %s", s)
 	}
 }
+
+func TestEmergencyOfflineFlagIsOffUnlessTrueOr1(t *testing.T) {
+	for v, want := range map[string]bool{"": false, "true": true, "TRUE": true, "1": true, " true ": true, "yes": false, "0": false, "false": false, "tru": false} {
+		got := LoadFrom(envFrom(map[string]string{"EMERGENCY_OFFLINE_ENABLED": v})).Emergency.Enabled
+		if got != want {
+			t.Errorf("EMERGENCY_OFFLINE_ENABLED=%q: Enabled = %v, want %v", v, got, want)
+		}
+	}
+}
