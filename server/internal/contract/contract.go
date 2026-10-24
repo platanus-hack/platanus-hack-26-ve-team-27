@@ -55,6 +55,9 @@ const (
 	TriggerWidget        Trigger = "widget"
 	TriggerTile          Trigger = "tile" // quick settings tile
 	TriggerInApp         Trigger = "in_app"
+	// TriggerOffline is server-only: the incident was opened from an offline
+	// emergency (HTTP, SMS or the BLE relay). A phone never sends it in an AlertEvent.
+	TriggerOffline Trigger = "offline"
 )
 
 // Verdict is the duress detector's result for a call.

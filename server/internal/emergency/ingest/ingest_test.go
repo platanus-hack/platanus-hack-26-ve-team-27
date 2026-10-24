@@ -116,7 +116,8 @@ func TestMergeHigherSeqUpdatesLocation(t *testing.T) {
 	r := receipt(payload.KindUpdate, 1, true, ChannelHTTP, 0, t0.Add(time.Second))
 	r.Payload.LatE5 = 1048900
 	e, notable := mustMerge(t, &a, r)
-	if notable || e.Seq != 1 || e.Location.LatE5 != 1048900 {
+	// Notable: the incident gets the new fix as a GPS point (intake.OfflinePublisher).
+	if !notable || e.Seq != 1 || e.Location.LatE5 != 1048900 {
 		t.Fatalf("got %+v notable=%v", e, notable)
 	}
 	if want := time.Unix(int64(r.Payload.Timestamp), 0).UTC(); !e.SentAt.Equal(want) {
@@ -129,9 +130,12 @@ func TestMergeHigherSeqUpdatesLocation(t *testing.T) {
 
 func TestMergeNoFixKeepsLocation(t *testing.T) {
 	a, _ := mustMerge(t, nil, receipt(payload.KindAlert, 0, true, ChannelHTTP, 0, t0))
-	e, _ := mustMerge(t, &a, receipt(payload.KindUpdate, 1, false, ChannelHTTP, 0, t0.Add(time.Second)))
+	e, notable := mustMerge(t, &a, receipt(payload.KindUpdate, 1, false, ChannelHTTP, 0, t0.Add(time.Second)))
 	if e.Seq != 1 || e.Location == nil || *e.Location != *a.Location {
 		t.Errorf("location lost: %+v", e)
+	}
+	if notable {
+		t.Errorf("an update without a fix is not published")
 	}
 	if !e.SentAt.After(a.SentAt) {
 		t.Errorf("SentAt not advanced")
