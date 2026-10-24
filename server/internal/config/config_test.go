@@ -172,3 +172,20 @@ func TestEmergencyOfflineFlagIsOffUnlessTrueOr1(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicURLPrefersPublicURLOverRender(t *testing.T) {
+	if got := LoadFrom(envFrom(map[string]string{"RENDER_EXTERNAL_URL": "https://r.example"})).PublicURL; got != "https://r.example" {
+		t.Errorf("PublicURL = %q, want the Render URL", got)
+	}
+	if got := LoadFrom(envFrom(map[string]string{"PUBLIC_URL": "https://p.example", "RENDER_EXTERNAL_URL": "https://r.example"})).PublicURL; got != "https://p.example" {
+		t.Errorf("PublicURL = %q, want PUBLIC_URL", got)
+	}
+}
+
+func TestCallForceFailureIsOffUnlessTrueOr1(t *testing.T) {
+	for v, want := range map[string]bool{"": false, "yes": false, "true": true, "TRUE": true, "1": true} {
+		if got := LoadFrom(envFrom(map[string]string{"CALL_FORCE_FAILURE": v})).ElevenLabs.ForceCallFailure; got != want {
+			t.Errorf("CALL_FORCE_FAILURE=%q: ForceCallFailure = %v, want %v", v, got, want)
+		}
+	}
+}

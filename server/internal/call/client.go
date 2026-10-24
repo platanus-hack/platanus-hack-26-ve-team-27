@@ -5,6 +5,11 @@
 // The call engine (#18, Engine) takes a BranchCall incident from intake,
 // inserts the calls row, places the call with Client and stores the
 // conversation_id; the webhook stores the transcript on that row (Store).
+// A call that fails or is not answered is retried once; then the WebRTC
+// fallback page GET /call/fallback shows the incident (#23, Fallback). Each
+// incident logs one "call timing:" line with its event-to-ring time, read
+// from Twilio's call status (TwilioStatus). CALL_FORCE_FAILURE fails every
+// call without dialing, to rehearse the fallback.
 // The token-gated POST /spike/call route is left from the #11 spike.
 package call
 

@@ -1,8 +1,10 @@
 package call
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"regexp"
@@ -24,29 +26,56 @@ type Routes struct {
 	webhook    *Webhook
 	client     *Client
 	engine     *Engine // nil without a database
+	fallback   *Fallback
 	spikeToken string
+	forceFail  bool
 }
 
-// NewRoutes builds the routes from the ElevenLabs config. store is nil when
-// the server has no database: the webhook then only logs, and Starter only
-// logs the handoff.
-func NewRoutes(cfg config.ElevenLabs, store Store) *Routes {
+// retryDelay is the pause before the one retry of a failed call.
+const retryDelay = time.Second
+
+// NewRoutes builds the routes from the config: ElevenLabs places the call,
+// Twilio (when its account is set) reports the call status, and PublicURL
+// goes into the fallback log line. store is nil when the server has no
+// database: the webhook then only logs, and Starter only logs the handoff.
+// With CALL_FORCE_FAILURE every call fails without dialing, to rehearse the
+// retry and the fallback.
+func NewRoutes(cfg config.Config, store Store) *Routes {
+	el := cfg.ElevenLabs
 	rt := &Routes{
-		webhook: &Webhook{Secret: cfg.WebhookSecret},
+		webhook: &Webhook{Secret: el.WebhookSecret},
 		client: &Client{
-			APIKey:        cfg.APIKey,
-			AgentID:       cfg.AgentID,
-			PhoneNumberID: cfg.PhoneNumberID,
-			VoiceID:       cfg.VoiceID,
+			APIKey:        el.APIKey,
+			AgentID:       el.AgentID,
+			PhoneNumberID: el.PhoneNumberID,
+			VoiceID:       el.VoiceID,
 		},
-		spikeToken: cfg.CallSpikeToken,
+		fallback:   NewFallback(el.AgentID, cfg.PublicURL),
+		spikeToken: el.CallSpikeToken,
+		forceFail:  el.ForceCallFailure,
 	}
 	if store != nil {
-		rt.engine = &Engine{Store: store, Placer: rt.client}
+		rt.engine = &Engine{Store: store, Placer: rt.client, Fallback: rt.fallback, RetryDelay: retryDelay}
+		if rt.forceFail {
+			rt.engine.Placer = forcedFailure{}
+		}
+		if cfg.Twilio.AccountSID != "" && cfg.Twilio.AuthToken != "" {
+			rt.engine.Status = &TwilioStatus{AccountSID: cfg.Twilio.AccountSID, AuthToken: cfg.Twilio.AuthToken}
+		}
 		rt.webhook.Received = rt.engine.Received
 		rt.webhook.InitiationFailed = rt.engine.InitiationFailed
 	}
 	return rt
+}
+
+// errForcedFailure is what every call returns under CALL_FORCE_FAILURE.
+var errForcedFailure = errors.New("call: forced failure (CALL_FORCE_FAILURE)")
+
+// forcedFailure is the Placer under CALL_FORCE_FAILURE: it never dials.
+type forcedFailure struct{}
+
+func (forcedFailure) Place(context.Context, string, string) (Placed, error) {
+	return Placed{}, errForcedFailure
 }
 
 // Starter is what intake hands BranchCall incidents to: the engine, or
@@ -58,16 +87,24 @@ func (rt *Routes) Starter() intake.CallStarter {
 	return rt.engine
 }
 
-// Register mounts POST /webhooks/elevenlabs always, and POST /spike/call only
-// when CALL_SPIKE_TOKEN is set: without it the route does not exist (404).
+// Register mounts POST /webhooks/elevenlabs and GET /call/fallback always,
+// and POST /spike/call only when CALL_SPIKE_TOKEN is set: without it the
+// route does not exist (404).
 func (rt *Routes) Register(mux *http.ServeMux) {
 	if rt.webhook.Secret == "" {
 		log.Print("call: WARNING: ELEVENLABS_WEBHOOK_SECRET is not set; /webhooks/elevenlabs answers 503")
+	}
+	if rt.engine != nil && rt.forceFail {
+		log.Print("call: WARNING: CALL_FORCE_FAILURE is on; every call fails and opens the fallback")
+	}
+	if rt.engine != nil && rt.engine.Status == nil {
+		log.Print("call: WARNING: TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN are not set; no ring time, and only the call_initiation_failure webhook triggers the retry")
 	}
 	if rt.engine != nil && (rt.client.APIKey == "" || rt.client.AgentID == "" || rt.client.PhoneNumberID == "") {
 		log.Print("call: WARNING: ElevenLabs credentials are not set; every call will fail")
 	}
 	mux.Handle("POST /webhooks/elevenlabs", rt.webhook)
+	mux.Handle("GET "+FallbackPath, rt.fallback)
 	if rt.spikeToken != "" {
 		mux.HandleFunc("POST /spike/call", rt.handleSpikeCall)
 	}
