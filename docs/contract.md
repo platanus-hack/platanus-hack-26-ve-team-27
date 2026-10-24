@@ -582,9 +582,12 @@ default; then every route below answers `404`). Code:
   (`activo`, `en llamada`, `alerta` for a `duress` verdict, `cancelado` for
   an explicit cancellation or a `no_duress` verdict that notified nobody,
   `cerrado`). `GET /central/r/{incident_id}` follows one case: the stage
-  track, the call with the transcript as it is stored (also during the call),
-  the route and points, the timeline, `calls.ficha` (#106) when the column
-  exists, and the notified people per channel. Both stream through the same
+  track (its only timeline), the call with the transcript as it is stored
+  (also during the call), the route with each point's time, the call's
+  one-line situation under the name (`calls.ficha` → `situacion`, #106, when
+  the column exists; nothing otherwise), and the notified people: a summary,
+  one row per person by role (relatives, then whoever asked for help) and
+  each channel's status in words. Both stream through the same
   live loop as `/i/{token}/live` (`/central/live`,
   `/central/r/{incident_id}/live`, and their `estado.json`). Access:
   `?key=<CENTRAL_KEY>` once, compared in constant time, sets an HttpOnly,

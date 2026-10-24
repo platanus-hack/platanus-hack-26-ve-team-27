@@ -3,6 +3,8 @@ package report
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -250,56 +252,30 @@ func caseCounts(rows []CaseRow) []CaseCount {
 	return out
 }
 
-// ContextView is the call's context card (#106's calls.ficha).
-type ContextView struct {
-	Situation  string
-	Fields     []ContextField
-	Confidence string // baja, media or alta; "" when not given
-}
-
-// ContextField is one line of the context card.
-type ContextField struct {
-	Key     string
-	Label   string
-	Value   string
-	Unknown bool // the call did not say ("no se sabe")
-}
-
-// contextFields are the ficha's fields in the card's order.
-var contextFields = []struct{ key, label string }{
-	{"lugar", "Lugar"},
-	{"personas", "Personas"},
-	{"vehiculo", "Vehículo"},
-	{"rumbo", "Rumbo"},
-}
-
-// contextView reads a calls.ficha value: a JSON object, or a string that
-// holds one. nil when it is empty or not one.
-func contextView(raw json.RawMessage) *ContextView {
+// situationOf is the call's one-line summary in a calls.ficha value (#106:
+// its "situacion"), a JSON object or a string holding one. "" when there is
+// none, or when it says the call did not tell ("no se sabe"). The other
+// ficha fields (lugar, personas, vehículo, rumbo) are not shown here.
+func situationOf(raw json.RawMessage) string {
 	if len(raw) == 0 {
-		return nil
+		return ""
 	}
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
 		raw = json.RawMessage(s)
 	}
 	var m map[string]any
-	if json.Unmarshal(raw, &m) != nil || len(m) == 0 {
-		return nil
+	if json.Unmarshal(raw, &m) != nil {
+		return ""
 	}
-	vals := map[string]string{}
 	for k, v := range m {
-		vals[plainKey(k)] = valueText(v)
+		if plainKey(k) == "situacion" {
+			if t := valueText(v); !unknownValue(t) {
+				return t
+			}
+		}
 	}
-	v := &ContextView{Situation: vals["situacion"], Confidence: strings.ToLower(vals["confianza"])}
-	if unknownValue(v.Situation) {
-		v.Situation = ""
-	}
-	for _, f := range contextFields {
-		val := vals[f.key]
-		v.Fields = append(v.Fields, ContextField{Key: f.key, Label: f.label, Value: val, Unknown: unknownValue(val)})
-	}
-	return v
+	return ""
 }
 
 // accents drops the Spanish accents from lowercase text.
@@ -340,4 +316,291 @@ func unknownValue(s string) bool {
 		return true
 	}
 	return false
+}
+
+// ---------------------------------------------------------------- the route's times
+
+// minLabelGap is how far apart, in drawing units, two labelled points must
+// be. A time label is about 52 units wide at the CSS size (11 units), and
+// neighbours sit on opposite sides of the path.
+const minLabelGap = 44.0
+
+// centralRoute is the route in the central's box, with the time of day
+// written next to the points: always the newest and the first, and the
+// others only when they are at least minLabelGap from every labelled one,
+// so a dense route stays readable. On a mostly horizontal stretch a label
+// sits centered above or below its point, on a mostly vertical one to its
+// right or left, alternating sides along the route, with more room around
+// the newest (pulsing) point; on a sloped stretch it leans away from where
+// the path climbs. A label that would leave the box or overlap another
+// tries the other side, then is pulled back inside, and a middle one is
+// left out if nothing fits.
+func centralRoute(points []Point) *Route {
+	r := routeIn(points, centralRouteW, centralRouteH, centralRoutePad)
+	if r == nil {
+		return nil
+	}
+	n := len(r.Dots)
+	var picked []int
+	far := func(i int) bool {
+		for _, j := range picked {
+			if math.Hypot(r.Dots[i].x-r.Dots[j].x, r.Dots[i].y-r.Dots[j].y) < minLabelGap {
+				return false
+			}
+		}
+		return true
+	}
+	picked = append(picked, n-1) // the newest first, so it always keeps its label
+	if n > 1 && far(0) {
+		picked = append(picked, 0)
+	}
+	for i := 1; i < n-1; i++ {
+		if far(i) {
+			picked = append(picked, i)
+		}
+	}
+	// Sides alternate in route order; placing goes newest, first, the rest.
+	order := append([]int(nil), picked...)
+	sort.Ints(order)
+	flip := map[int]bool{}
+	for k, i := range order {
+		flip[i] = k%2 == 1
+	}
+	type box struct{ x0, x1, y0, y1 float64 }
+	var placed []box
+	free := func(b box) bool {
+		if b.x0 < 1 || b.x1 > centralRouteW-1 || b.y0 < 0 || b.y1 > centralRouteH {
+			return false
+		}
+		for _, p := range placed {
+			if b.x0 < p.x1 && p.x0 < b.x1 && b.y0 < p.y1 && p.y0 < b.y1 {
+				return false
+			}
+		}
+		return true
+	}
+	f := func(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
+	byIndex := map[int]RouteLabel{}
+	for _, i := range picked {
+		d := r.Dots[i]
+		a, b := r.Dots[max(i-1, 0)], r.Dots[min(i+1, n-1)]
+		gap := 9.0
+		if i == n-1 {
+			gap = 15 // clear of the pulse
+		}
+		ux, uy := b.x-a.x, b.y-a.y
+		if l := math.Hypot(ux, uy); l > 0 {
+			ux, uy = ux/l, uy/l
+		}
+		horizontal := math.Abs(ux) >= math.Abs(uy)
+		// On a sloped stretch the path climbs to one side of the point
+		// (rise: +1 right, -1 left, 0 flat); a label above goes to the other
+		// side, one below to that side, so it does not sit on the line.
+		rise := 0.0
+		if math.Abs(uy) > 0.15 {
+			rise = math.Copysign(1, -ux*uy)
+		}
+		// place gives the label on one side (other: the opposite one), its
+		// anchor turned near the box's edges.
+		place := func(other, clamp bool) (x, y float64, anchor string, bx box) {
+			const w, size = labelW, labelSize
+			if horizontal {
+				below := flip[i] != other
+				x, y, anchor = d.x, d.y-gap, "middle"
+				if below {
+					y = d.y + gap + size
+				}
+				switch {
+				case rise > 0 && !below, rise < 0 && below:
+					x, anchor = d.x+3, "end"
+				case rise < 0 && !below, rise > 0 && below:
+					x, anchor = d.x-3, "start"
+				}
+				switch {
+				case !clamp:
+				case anchor == "middle" && x-w/2 < 1, anchor == "end" && x-w < 1:
+					x, anchor = math.Max(d.x-w/4, 1), "start"
+				case anchor == "middle" && x+w/2 > centralRouteW-1, anchor == "start" && x+w > centralRouteW-1:
+					x, anchor = math.Min(d.x+w/4, centralRouteW-1), "end"
+				}
+			} else {
+				y, x, anchor = d.y+size*0.35, d.x+gap+2, "start"
+				if flip[i] != other {
+					x, anchor = d.x-gap-2, "end"
+				}
+			}
+			switch anchor {
+			case "start":
+				bx = box{x, x + w, y - size, y + 2}
+			case "end":
+				bx = box{x - w, x, y - size, y + 2}
+			default:
+				bx = box{x - w/2, x + w/2, y - size, y + 2}
+			}
+			return x, y, anchor, bx
+		}
+		// Its own side, then the other one, and only then pulled back
+		// inside at an edge (where it may cross the path).
+		x, y, anchor, bx := place(false, false)
+		found := free(bx)
+		for _, c := range [][2]bool{{true, false}, {false, true}, {true, true}} {
+			if found {
+				break
+			}
+			if x2, y2, a2, b2 := place(c[0], c[1]); free(b2) {
+				x, y, anchor, bx, found = x2, y2, a2, b2, true
+			}
+		}
+		if !found {
+			if i != n-1 && i != 0 {
+				continue // a middle point gives way
+			}
+			x, y, anchor, bx = place(false, true)
+		}
+		placed = append(placed, bx)
+		byIndex[i] = RouteLabel{
+			Key: "lbl-" + strconv.Itoa(i+1) + "-" + f(x) + "-" + f(y) + "-" + anchor, X: f(x), Y: f(y),
+			Anchor: anchor, Text: d.at, Newest: i == n-1,
+		}
+	}
+	for _, i := range order {
+		if l, ok := byIndex[i]; ok {
+			r.Labels = append(r.Labels, l)
+		}
+	}
+	return r
+}
+
+// A time label's size in drawing units (the CSS sets 11px on the SVG).
+const labelW, labelSize = 54.0, 11.0
+
+// ---------------------------------------------------------------- notified people
+
+// NotifiedView is the "Personas notificadas" panel: a one-line summary,
+// then the relatives, then the person who asked for help (#102 writes to
+// them too), apart.
+type NotifiedView struct {
+	Summary string // "3 personas avisadas · 2 ya lo leyeron"
+	Family  []NotifiedPerson
+	Self    *NotifiedPerson
+}
+
+// NotifiedPerson is one number the notifier wrote to, with each channel's
+// message.
+type NotifiedPerson struct {
+	Key       string
+	Role      string // "Familiar 1", or "Quien pidió ayuda"
+	Recipient string // masked
+	Sends     []NotifiedSend
+	best      string // the furthest status of its messages
+}
+
+// NotifiedSend is one message: its channel and how far it got, in words.
+type NotifiedSend struct {
+	Key     string
+	Channel string // WhatsApp or SMS
+	Status  string // sent, delivered, read or failed
+	Label   string // "Enviado", "Entregado", "Leído", "No se pudo enviar"
+	Ticks   string // "✓", "✓✓" or "!"
+	Time    string // when it got there (server clock)
+}
+
+// sendRank orders the statuses: a person's best message decides how far the
+// alert got to them.
+var sendRank = map[string]int{"failed": 0, "sent": 1, "delivered": 2, "read": 3}
+
+// notifiedView groups the family chips by number, relatives in first-sent
+// order and the reporter's own number (self) last.
+func notifiedView(chips []FamilyChip, self string) NotifiedView {
+	var v NotifiedView
+	at := map[string]*NotifiedPerson{}
+	var order []string
+	for _, c := range chips {
+		p, ok := at[c.Recipient]
+		if !ok {
+			p = &NotifiedPerson{Key: "person-" + c.Recipient, Recipient: c.Recipient, best: "failed"}
+			at[c.Recipient] = p
+			order = append(order, c.Recipient)
+		}
+		s := NotifiedSend{Channel: c.Channel, Status: c.Status, Ticks: c.Ticks, Time: c.Time}
+		switch c.Status {
+		case "read":
+			s.Label = "Leído"
+		case "delivered":
+			s.Label = "Entregado"
+		case "failed":
+			s.Label = "No se pudo enviar"
+		default:
+			s.Status, s.Label = "sent", "Enviado"
+		}
+		s.Key = "send-" + c.Channel + "-" + s.Status + "-" + c.Time
+		p.Sends = append(p.Sends, s)
+		if sendRank[s.Status] > sendRank[p.best] {
+			p.best = s.Status
+		}
+	}
+	family := 0
+	for _, r := range order {
+		p := at[r]
+		if r == self {
+			p.Role = "Quien pidió ayuda"
+			v.Self = p
+			continue
+		}
+		family++
+		p.Role = "Familiar " + strconv.Itoa(family)
+		v.Family = append(v.Family, *p)
+	}
+	v.Summary = notifiedSummary(append(append([]NotifiedPerson(nil), v.Family...), selfList(v.Self)...))
+	return v
+}
+
+func selfList(p *NotifiedPerson) []NotifiedPerson {
+	if p == nil {
+		return nil
+	}
+	return []NotifiedPerson{*p}
+}
+
+// notifiedSummary is "3 personas avisadas · 2 ya lo leyeron", or how far it
+// got: received, waiting, or who could not be reached.
+func notifiedSummary(people []NotifiedPerson) string {
+	var reached, read, delivered, failed int
+	for _, p := range people {
+		switch p.best {
+		case "failed":
+			failed++
+			continue
+		case "read":
+			read++
+		case "delivered":
+			delivered++
+		}
+		reached++
+	}
+	plural := func(n int, one, many string) string {
+		if n == 1 {
+			return one
+		}
+		return many
+	}
+	var parts []string
+	if reached > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s", reached, plural(reached, "persona avisada", "personas avisadas")))
+		switch {
+		case read > 0:
+			parts = append(parts, fmt.Sprintf("%d %s", read, plural(read, "ya lo leyó", "ya lo leyeron")))
+		case delivered > 0:
+			parts = append(parts, fmt.Sprintf("%d %s", delivered, plural(delivered, "ya lo recibió", "ya lo recibieron")))
+		default:
+			parts = append(parts, "esperando que llegue")
+		}
+	}
+	switch {
+	case failed > 0 && reached == 0:
+		parts = append(parts, "No se pudo avisar a nadie")
+	case failed > 0:
+		parts = append(parts, fmt.Sprintf("a %d no se %s", failed, plural(failed, "le pudo avisar", "les pudo avisar")))
+	}
+	return strings.Join(parts, " · ")
 }

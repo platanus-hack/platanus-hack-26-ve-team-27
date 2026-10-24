@@ -171,6 +171,9 @@
   {{- end}}
   <circle data-key="{{.Key}}" class="dot{{if .First}} first{{end}}{{if .Newest}} newest{{end}}" cx="{{.X}}" cy="{{.Y}}" r="{{if .Newest}}7{{else}}4{{end}}"><title>{{.Title}}</title></circle>
   {{- end}}
+  {{- range .Labels}}
+  <text data-key="{{.Key}}" class="rt{{if .Newest}} newest{{end}}" x="{{.X}}" y="{{.Y}}" text-anchor="{{.Anchor}}">{{.Text}}</text>
+  {{- end}}
 </svg>
 <p data-key="sum-{{.DistanceKM}}-{{$.Live}}-{{$.RouteLastClock}}" class="route-sum">Última ubicación {{if $.Live}}<span class="ticker" data-since="{{$.RouteLast}}" data-format="ago">—</span>{{else}}a las {{$.RouteLastClock}}{{end}} · {{.DistanceKM}} recorridos</p>
 <a data-key="maps-{{$.RouteMaps}}" class="maps-btn" href="{{$.RouteMaps}}" target="_blank" rel="noopener noreferrer">Abrir en Maps</a>

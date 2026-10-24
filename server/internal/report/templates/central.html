@@ -5,10 +5,10 @@
 
   Same live mechanism as the family page: each "sec-*" template is a live
   section, streamed again whenever it changes and reconciled by ficha.js by
-  data-key. The detail mounts the family page's track, call and route, the
-  timeline and points blocks, and its own header, context and notified
-  people. Dark by default (the projector), light with ?tema=claro or the
-  toggle.
+  data-key. The detail mounts the family page's track, call and route (with
+  each point's time), and its own header (with the call's one-line summary)
+  and notified people. Dark by default (the projector), light with
+  ?tema=claro or the toggle.
 */}}
 
 {{define "central-meta"}}
@@ -126,22 +126,11 @@
   <section class="panel panel-route c-place" aria-labelledby="h-place">
     <h2 id="h-place">Ubicación en el tiempo</h2>
     <div class="panel-body" data-live="route">{{template "sec-route" .}}</div>
-    <div class="c-points" data-autoscroll><table class="points"><thead><tr><th>Hora</th><th>Precisión</th><th>Movimiento</th><th></th></tr></thead><tbody data-live="points">{{template "sec-points" .}}</tbody></table></div>
   </section>
-  <section class="panel c-context" aria-labelledby="h-context">
-    <h2 id="h-context">Contexto de la llamada</h2>
-    <div class="panel-body" data-live="c-context">{{template "sec-c-context" .}}</div>
+  <section class="panel panel-family c-notified" aria-labelledby="h-family">
+    <h2 id="h-family">Personas notificadas</h2>
+    <div class="panel-body" data-live="c-family">{{template "sec-c-family" .}}</div>
   </section>
-  <div class="c-stack">
-    <section class="panel panel-family" aria-labelledby="h-family">
-      <h2 id="h-family">Personas notificadas</h2>
-      <div class="panel-body" data-live="c-family">{{template "sec-c-family" .}}</div>
-    </section>
-    <section class="panel c-timeline" aria-labelledby="h-time">
-      <h2 id="h-time">Línea de tiempo</h2>
-      <div class="panel-body" data-autoscroll><div class="timeline"><div class="rail" aria-hidden="true"></div><ol data-live="timeline">{{template "sec-timeline" .}}</ol></div></div>
-    </section>
-  </div>
 </main>
 </div>
 </body>
@@ -152,6 +141,9 @@
 <div data-key="c-head-text" data-live-children class="c-hero-text">
   <p data-key="eyebrow-{{.Case.State}}-{{.TriggeredShort}}" class="c-eyebrow"><span data-reveal class="c-state c-state-{{.Case.State}}"><span class="c-state-dot" aria-hidden="true"></span>{{.Case.StateLabel}}</span><span class="c-when">Pidió ayuda · {{.TriggeredShort}}</span></p>
   <h1 data-key="name-{{.Case.Name}}-{{.Case.Number}}" class="c-name-big">{{if .Case.Name}}{{.Case.Name}}{{else}}{{.Case.Number}}{{end}}</h1>
+  {{- with .Situation}}
+  <p data-key="situation-{{.}}" class="c-situation-line">{{.}}</p>
+  {{- end}}
   <p data-key="sub-{{.Case.Name}}-{{.Case.Line}}-{{.Case.LineSince}}" class="c-sub"><span class="c-num">{{if .Case.Name}}{{.Case.Number}}{{else}}Sin nombre registrado{{end}}</span><span class="c-line">{{.Case.Line}}{{if .Case.LineSince}} <span class="ticker" data-since="{{.Case.LineSince}}" data-format="clock">—</span>{{end}}</span></p>
 </div>
 <div data-key="clock-{{.Live}}-{{.Elapsed}}" class="head-clock">
@@ -160,41 +152,30 @@
 </div>
 {{- end}}
 
-{{define "sec-c-context" -}}
-{{with .Context -}}
-{{if .Situation}}<p data-key="sit-{{.Situation}}" data-reveal class="c-situation">{{.Situation}}</p>{{end}}
-<dl data-key="fields" data-live-children class="c-fields">
-{{- range .Fields}}
-  <div data-key="f-{{.Key}}-{{.Value}}" data-reveal class="c-field{{if .Unknown}} unknown{{end}}"><dt>{{.Label}}</dt><dd>{{if .Unknown}}No se sabe{{else}}{{.Value}}{{end}}</dd></div>
-{{- end}}
-</dl>
-{{if .Confidence}}<p data-key="conf-{{.Confidence}}" class="c-confidence c-conf-{{.Confidence}}">Confianza {{.Confidence}}</p>{{end}}
-{{- else -}}
-{{if .ContextWait -}}
-<dl data-key="fields-wait" class="c-fields waiting">
-  <div class="c-field"><dt>Lugar</dt><dd><span class="c-skel"></span></dd></div>
-  <div class="c-field"><dt>Personas</dt><dd><span class="c-skel"></span></dd></div>
-  <div class="c-field"><dt>Vehículo</dt><dd><span class="c-skel"></span></dd></div>
-  <div class="c-field"><dt>Rumbo</dt><dd><span class="c-skel"></span></dd></div>
-</dl>
-{{end -}}
-<p data-key="ctx-note-{{.ContextNote}}" class="panel-note c-ctx-note">{{.ContextNote}}</p>
-{{- end}}
-{{- end}}
-
 {{define "sec-c-family" -}}
-{{if .People -}}
+{{with .Notified -}}
+{{if .Summary -}}
+<p data-key="summary-{{.Summary}}" data-reveal class="c-notified-summary">{{.Summary}}</p>
 <ul data-key="people" data-live-children class="c-people">
-{{- range .People}}
-  <li data-key="{{.Key}}" data-live-children class="c-person{{if .Self}} self{{end}}">
-    <p data-key="who-{{.Self}}" class="c-person-num">{{.Recipient}}{{if .Self}}<span class="c-self">quien reporta</span>{{end}}</p>
-    <p data-key="sends" data-live-children class="c-sends">
-    {{- range .Sends}}<span data-key="{{.Key}}" data-reveal class="c-send fam-{{.Status}}"><span class="c-channel">{{.Channel}}</span><span class="ticks" aria-hidden="true">{{.Ticks}}</span> {{.Label}}<span class="c-send-time">{{.Time}}</span></span>{{end -}}
-    </p>
-  </li>
+{{- range .Family}}
+  {{template "c-person" .}}
+{{- end}}
+{{- with .Self}}
+  {{template "c-person" .}}
 {{- end}}
 </ul>
-{{- else -}}
+{{- end}}
+{{- end}}
+{{- if .NotifiedNote}}
 <p data-key="fam-note-{{.NotifiedNote}}" class="panel-note">{{.NotifiedNote}}</p>
 {{- end}}
 {{- end}}
+
+{{define "c-person"}}<li data-key="{{.Key}}" data-live-children class="c-person{{if eq .Role "Quien pidió ayuda"}} self{{end}}">
+    <p data-key="who" class="c-person-who"><span class="c-role">{{.Role}}</span><span class="c-person-num">{{.Recipient}}</span></p>
+    <ul data-key="sends" data-live-children class="c-sends">
+    {{- range .Sends}}
+      <li data-key="{{.Key}}" data-reveal class="c-send c-send-{{.Status}}"><span class="c-tick" aria-hidden="true">{{.Ticks}}</span><span class="c-send-text"><span class="c-channel-name">{{.Channel}}</span> · <span class="c-send-label">{{.Label}}</span> <span class="c-send-time">{{.Time}}</span></span></li>
+    {{- end}}
+    </ul>
+  </li>{{end}}

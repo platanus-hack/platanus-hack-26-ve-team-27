@@ -112,7 +112,7 @@ func TestExtrasReadsTheFichaOnceTheColumnExistsOnPostgres(t *testing.T) {
 	}
 	exec(t, s.pool, `UPDATE calls SET ficha = $2 WHERE incident_id = $1`, testIncidentID, testFicha)
 	x, err = s.Extras(ctx, testIncidentID)
-	if err != nil || contextView(x.Ficha) == nil || contextView(x.Ficha).Fields[1].Value != "Dos hombres" {
+	if err != nil || situationOf(x.Ficha) != "Parece que se la llevan en un carro." {
 		t.Fatalf("with a ficha: %s %v", x.Ficha, err)
 	}
 	var m map[string]any
