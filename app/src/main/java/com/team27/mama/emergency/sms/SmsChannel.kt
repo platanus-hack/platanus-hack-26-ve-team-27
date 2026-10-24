@@ -4,6 +4,9 @@ import com.team27.mama.emergency.config.RemoteConfigRepository
 import com.team27.mama.emergency.payload.MamaText
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** Sends one text message. The Android implementation is [SmsManagerSender]. */
@@ -25,7 +28,7 @@ sealed interface SmsSendResult {
     /** Every attempt (the first try plus the retries in [SmsChannel.backoffMillis]) failed. */
     data class Failed(val attempts: Int) : SmsSendResult
 
-    /** [SmsChannel.stop] was called before an attempt succeeded. */
+    /** [SmsChannel.stop] was called before an attempt succeeded (an attempt in flight was cut). */
     data class Stopped(val attempts: Int) : SmsSendResult
 
     /** The remote config has no usable central number. Nothing was sent. */
@@ -48,14 +51,16 @@ sealed interface SmsSendResult {
  * every attempt fails, or it is stopped.
  *
  * How the ack listener (slice 3) stops it: call [stop] when the server's ack SMS arrives.
- * Cancelling the coroutine that runs [send] works too. Either way no further attempt starts;
- * an SMS already handed to the radio cannot be recalled.
+ * Cancelling the coroutine that runs [send] works too. Either way no further attempt starts and
+ * an attempt in flight is cut; an SMS already handed to the radio cannot be recalled.
  *
  * One [send] at a time per channel: [stop] targets the send in progress.
  */
 class SmsChannel(
     private val remoteConfig: RemoteConfigRepository,
     private val sender: SmsSender,
+    /** An attempt whose sent status has not arrived after this long counts as failed. Injected for tests. */
+    private val attemptTimeoutMillis: Long = ATTEMPT_TIMEOUT_MILLIS,
     /** Waits [millis] between attempts, returning early when [stop] completes. Injected for tests. */
     private val sleeper: suspend (millis: Long, stop: Deferred<Unit>) -> Unit = ::sleepUnlessStopped,
 ) {
@@ -78,14 +83,34 @@ class SmsChannel(
         while (true) {
             if (stop.isCompleted) return SmsSendResult.Stopped(attempts)
             attempts++
-            if (sender.sendText(to, text)) return SmsSendResult.Sent(attempts)
+            when (attempt(to, text, stop)) {
+                true -> return SmsSendResult.Sent(attempts)
+                null -> return SmsSendResult.Stopped(attempts)
+                false -> Unit
+            }
             val retry = attempts - 1
             if (retry >= backoffMillis.size) return SmsSendResult.Failed(attempts)
             sleeper(backoffMillis[retry], stop)
         }
     }
 
-    /** Stops the send in progress (no-op when none): no new attempt starts and the backoff ends now. */
+    /**
+     * One attempt, raced against [stop] and [attemptTimeoutMillis]: true when the radio accepted
+     * it, false when it failed or timed out, null when [stop] won (the attempt is cancelled).
+     */
+    private suspend fun attempt(to: String, text: String, stop: Deferred<Unit>): Boolean? = coroutineScope {
+        val sending = async { withTimeoutOrNull(attemptTimeoutMillis) { sender.sendText(to, text) } ?: false }
+        try {
+            select<Boolean?> {
+                sending.onAwait { it }
+                stop.onAwait { null }
+            }
+        } finally {
+            sending.cancel()
+        }
+    }
+
+    /** Stops the send in progress (no-op when none): the attempt in flight is cut, no new one starts, the backoff ends now. */
     fun stop() {
         stopSignal.complete(Unit)
     }
@@ -96,6 +121,12 @@ class SmsChannel(
 
         /** Waits before retry 1, 2 and 3 after a failed attempt: three retries after the first try. */
         val backoffMillis: List<Long> = listOf(2_000L, 5_000L, 10_000L)
+
+        /**
+         * Longest wait for one sent status. The radio normally answers within seconds, so 30 s means
+         * the broadcast was lost; the attempt then counts as failed and goes through the retries.
+         */
+        const val ATTEMPT_TIMEOUT_MILLIS = 30_000L
 
         private suspend fun sleepUnlessStopped(millis: Long, stop: Deferred<Unit>) {
             withTimeoutOrNull(millis) { stop.await() }
