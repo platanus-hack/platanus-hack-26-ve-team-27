@@ -75,10 +75,11 @@ fun CaptionsPanel(captions: List<Caption>, modifier: Modifier = Modifier) {
             LazyColumn(
                 state = listState,
                 reverseLayout = true,
-                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
+                verticalArrangement = Arrangement.spacedBy(MamaSpacing.m, Alignment.Top),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                itemsIndexed(captions.asReversed()) { index, caption ->
+                // Key by position in the call, so a line keeps its slot as newer ones arrive.
+                itemsIndexed(captions.asReversed(), key = { index, _ -> captions.size - 1 - index }) { index, caption ->
                     CaptionLine(caption, current = index == 0)
                 }
             }

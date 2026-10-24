@@ -83,6 +83,19 @@ class FakeCallSessionTest {
     }
 
     @Test
+    fun viewModelKeepsOneCallAndForgetsItOnEnd() {
+        val calls = CallViewModel()
+        val first = calls.start { FakeCallSession(it, script) }
+        assertEquals(first, calls.current())
+        val second = calls.start { FakeCallSession(it, script) }
+        assertEquals(CallPhase.Ended, first.state.value.phase)
+        assertEquals(second, calls.current())
+        calls.end()
+        assertEquals(null, calls.current())
+        assertEquals(CallPhase.Ended, second.state.value.phase)
+    }
+
+    @Test
     fun elapsedReadsLikeAPhoneTimer() {
         assertEquals("00:00", formatElapsed(0.seconds))
         assertEquals("00:42", formatElapsed(42.seconds))

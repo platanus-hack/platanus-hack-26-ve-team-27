@@ -27,8 +27,6 @@ data class CallState(
     val elapsed: Duration = Duration.ZERO,
     val speaking: Speaker = Speaker.None,
     val captions: List<Caption> = emptyList(),
-    /** Voice loudness, 0 (silence) to 1. Drives the audio wave; 0 while nobody talks. */
-    val level: Float = 0f,
 )
 
 interface CallSession {

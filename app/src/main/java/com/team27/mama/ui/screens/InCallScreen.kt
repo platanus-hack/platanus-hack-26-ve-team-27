@@ -120,7 +120,7 @@ private fun InCallContent(state: CallState, onHangUp: () -> Unit) {
             ) {
                 MamaCharacter(pose = MamaPose.Listening, size = 148.dp, modifier = Modifier.clip(CircleShape))
             }
-            AudioWave(speaking = state.speaking, level = state.level)
+            AudioWave(speaking = state.speaking)
             CaptionsPanel(
                 captions = state.captions,
                 modifier = Modifier
@@ -188,7 +188,6 @@ private val previewSession = object : CallSession {
             phase = CallPhase.Connected,
             elapsed = 42.seconds,
             speaking = Speaker.Mama,
-            level = 0.8f,
             captions = listOf(
                 Caption(Speaker.Mama, "¡Hola, mi amor! ¿Cómo vas? ¿Ya saliste del trabajo?", partial = false),
                 Caption(Speaker.You, "Sí, mami, ya voy saliendo.", partial = false),

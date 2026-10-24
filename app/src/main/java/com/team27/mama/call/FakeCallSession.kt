@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.random.Random
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
@@ -62,8 +61,8 @@ fun scriptFrames(script: List<ScriptLine>): List<ScriptFrame> {
 }
 
 /**
- * Plays [script] on [scope] once answered: captions word by word, the clock
- * every second and a made-up voice level while someone talks. The call stays
+ * Plays [script] on [scope] once answered: captions word by word and the
+ * clock every second. The call stays
  * connected after the last line until hangUp().
  */
 class FakeCallSession(
@@ -93,18 +92,12 @@ class FakeCallSession(
                 _state.update { it.copy(speaking = frame.speaking, captions = frame.captions) }
             }
         }
-        jobs += scope.launch {
-            while (isActive) {
-                delay(90)
-                _state.update { it.copy(level = if (it.speaking == Speaker.None) 0f else Random.nextFloat() * 0.6f + 0.4f) }
-            }
-        }
     }
 
     override fun hangUp() {
         if (_state.value.phase == CallPhase.Ended) return
         jobs.forEach { it.cancel() }
         jobs.clear()
-        _state.update { it.copy(phase = CallPhase.Ended, speaking = Speaker.None, level = 0f) }
+        _state.update { it.copy(phase = CallPhase.Ended, speaking = Speaker.None) }
     }
 }

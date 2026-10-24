@@ -1,14 +1,16 @@
 package com.team27.mama.ui.navigation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.team27.mama.call.CallPhase
 import com.team27.mama.call.CallSession
+import com.team27.mama.call.CallViewModel
 import com.team27.mama.call.FakeCallSession
 import com.team27.mama.ui.screens.InCallScreen
 import com.team27.mama.ui.screens.IncomingCallScreen
@@ -28,7 +30,7 @@ enum class Route(val path: String) {
  * The navigation shell. MainActivity shows this inside MamaTheme.
  * [newCallSession] builds the engine behind the in-app call (#94): the demo
  * script for now, the real agent with #97. [onCancelIncident] runs when the
- * call is rejected or hung up.
+ * call is rejected or hung up; #96/#97 wire it to the incident.
  */
 @Composable
 fun MamaNavHost(
@@ -37,16 +39,28 @@ fun MamaNavHost(
     newCallSession: (CoroutineScope) -> CallSession = { FakeCallSession(it) },
     onCancelIncident: () -> Unit = {},
 ) {
-    // One session per ringing call, shared by the incoming and in-call screens.
-    val callScope = rememberCoroutineScope()
-    val call = remember { mutableStateOf<CallSession?>(null) }
+    // Activity-scoped, so a rotation does not restart the call.
+    val calls: CallViewModel = viewModel()
+    // Both run only while a call screen is on top, so a double tap, or a hang-up
+    // that also ends the session, cannot cancel twice or pop the screen underneath.
+    val onCallScreen = {
+        navController.currentDestination?.route.let { it == Route.IncomingCall.path || it == Route.InCall.path }
+    }
     // Back to where the call came from; started on the call itself, back to the start screen.
     val leaveCall: () -> Unit = {
-        call.value = null
-        if (navController.previousBackStackEntry != null) {
-            navController.popBackStack()
-        } else {
-            navController.navigate(Route.Setup.path) { popUpTo(0) }
+        calls.end()
+        if (onCallScreen()) {
+            if (navController.previousBackStackEntry != null) {
+                navController.popBackStack()
+            } else {
+                navController.navigate(Route.Setup.path) { popUpTo(navController.graph.id) }
+            }
+        }
+    }
+    val cancelCall: () -> Unit = {
+        if (onCallScreen()) {
+            onCancelIncident()
+            leaveCall()
         }
     }
 
@@ -64,7 +78,11 @@ fun MamaNavHost(
             )
         }
         composable(Route.IncomingCall.path) { entry ->
-            val session = remember(entry) { newCallSession(callScope).also { call.value = it } }
+            val session = remember(entry) {
+                calls.current()?.takeIf { it.state.value.phase == CallPhase.Ringing } ?: calls.start(newCallSession)
+            }
+            // System back ends the call but never cancels the incident: only Rechazar does.
+            BackHandler(onBack = leaveCall)
             IncomingCallScreen(
                 session = session,
                 onAnswer = {
@@ -74,28 +92,14 @@ fun MamaNavHost(
                         launchSingleTop = true
                     }
                 },
-                onCancel = {
-                    onCancelIncident()
-                    leaveCall()
-                },
+                onCancel = cancelCall,
             )
         }
         composable(Route.InCall.path) { entry ->
             // Opened straight on the call (no ringing first): start one already answered.
-            val session = remember(entry) {
-                call.value ?: newCallSession(callScope).also {
-                    it.answer()
-                    call.value = it
-                }
-            }
-            InCallScreen(
-                session = session,
-                onCancel = {
-                    onCancelIncident()
-                    leaveCall()
-                },
-                onEnded = leaveCall,
-            )
+            val session = remember(entry) { calls.current() ?: calls.start(newCallSession).also { it.answer() } }
+            BackHandler(onBack = leaveCall)
+            InCallScreen(session = session, onCancel = cancelCall, onEnded = leaveCall)
         }
     }
 }
