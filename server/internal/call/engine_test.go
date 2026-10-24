@@ -325,7 +325,7 @@ func TestAlertToOutboundCall(t *testing.T) {
 	rt, mux := engineRoutes(t, pool, srv.URL)
 	intake.New(pool, rt.Starter(), intake.LogHandoff{}).Register(mux)
 
-	alert := `{"incident_id":"0b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f","device_id":"dev-1","trigger":"widget",` +
+	alert := `{"incident_id":"0b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f","device_id":"dev-1","trigger":"volume_pattern",` +
 		`"triggered_at":"2026-10-24T09:10:00Z","points":[{"lat":10.4961,"lng":-66.8531,"speed_mps":2,"recorded_at":"2026-10-24T09:10:00Z"}],"has_audio":false}`
 	start := time.Now()
 	rec := httptest.NewRecorder()
