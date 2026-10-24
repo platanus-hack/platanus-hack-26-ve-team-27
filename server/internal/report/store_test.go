@@ -295,19 +295,18 @@ func TestDBNow(t *testing.T) {
 	}
 }
 
-// devices.user_name arrives with #104; until then Load reads "" and after
-// it the name, with no code change.
-func TestLoadReadsUserNameWhenTheColumnExists(t *testing.T) {
+// devices.user_name comes with #104 (0005_device_setup): Load reads "" while
+// it is NULL and the name once set.
+func TestLoadReadsUserName(t *testing.T) {
 	pool := newDB(t)
 	s := NewDBStore(pool)
 	if rec, err := s.Load(context.Background(), testIncidentID); err != nil || rec.Device.UserName != "" {
-		t.Fatalf("without the column: %q %v", rec.Device.UserName, err)
+		t.Fatalf("unset: %q %v", rec.Device.UserName, err)
 	}
-	exec(t, pool, `ALTER TABLE devices ADD COLUMN user_name TEXT`)
 	exec(t, pool, `UPDATE devices SET user_name = 'Ana'`)
 	rec, err := s.Load(context.Background(), testIncidentID)
 	if err != nil || rec.Device.UserName != "Ana" {
-		t.Fatalf("with the column: %q %v", rec.Device.UserName, err)
+		t.Fatalf("set: %q %v", rec.Device.UserName, err)
 	}
 	if p := Build(rec, Options{}); p.UserName != "Ana" {
 		t.Errorf("Build UserName = %q", p.UserName)

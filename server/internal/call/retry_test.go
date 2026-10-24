@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -22,19 +23,22 @@ import (
 type memStore struct {
 	mu       sync.Mutex
 	phone    string
+	callee   Callee   // the rest of the device's setup; Phone comes from phone
 	statuses []string // calls.status by call id - 1
 	convs    []string
 }
 
-func (s *memStore) Begin(_ context.Context, incidentID string) (int64, string, error) {
+func (s *memStore) Begin(_ context.Context, incidentID string) (int64, Callee, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if incidentID != sampleIncident {
-		return 0, "", ErrUnknownIncident
+		return 0, Callee{}, ErrUnknownIncident
 	}
 	s.statuses = append(s.statuses, StatusRequested)
 	s.convs = append(s.convs, "")
-	return int64(len(s.statuses)), s.phone, nil
+	to := s.callee
+	to.Phone = s.phone
+	return int64(len(s.statuses)), to, nil
 }
 
 func (s *memStore) Placed(_ context.Context, id int64, p Placed) error {
@@ -81,12 +85,14 @@ type scriptPlacer struct {
 	mu      sync.Mutex
 	errs    []error
 	calls   int
+	sent    []Call
 	onPlace func(n int, p Placed)
 }
 
-func (p *scriptPlacer) Place(context.Context, string, string) (Placed, error) {
+func (p *scriptPlacer) Place(_ context.Context, call Call) (Placed, error) {
 	p.mu.Lock()
 	p.calls++
+	p.sent = append(p.sent, call)
 	n := p.calls
 	var err error
 	if n <= len(p.errs) {
@@ -191,7 +197,7 @@ func timingLine(t *testing.T, out string) string {
 func testEngine(store Store, placer Placer, status StatusReader, clock *fakeClock) *Engine {
 	e := &Engine{
 		Store: store, Placer: placer, Status: status,
-		Fallback:       NewFallback("agent_test1", "https://mama.example"),
+		Fallback:       NewFallback("agent_test1", "https://mama.example", testFallbackToken),
 		OutcomeTimeout: 2 * time.Second,
 		PollEvery:      time.Millisecond,
 	}
@@ -515,7 +521,7 @@ func TestCallForceFailureEnvOpensTheFallback(t *testing.T) {
 func TestFallbackPageShowsTheAgentOnlyWhileAnIncidentIsOpen(t *testing.T) {
 	captureLog(t)
 	clock := &fakeClock{t: time.Date(2026, 10, 24, 9, 10, 0, 0, time.UTC)}
-	f := NewFallback("agent_stage1", "")
+	f := NewFallback("agent_stage1", "", "")
 	f.now = clock.now
 	get := func() string {
 		rec := httptest.NewRecorder()
@@ -526,18 +532,19 @@ func TestFallbackPageShowsTheAgentOnlyWhileAnIncidentIsOpen(t *testing.T) {
 	if body := get(); strings.Contains(body, "agent_stage1") || strings.Contains(body, "convai") || !strings.Contains(body, `http-equiv="refresh"`) {
 		t.Errorf("idle page exposes the agent or does not reload:\n%s", body)
 	}
-	f.Open(sampleIncident, 2)
+	f.Open(sampleIncident, CallVariables(sampleIncident, Callee{}), 2)
 	body := get()
 	if !strings.Contains(body, `agent-id="agent_stage1"`) || !strings.Contains(body, sampleIncident) || strings.Contains(body, `http-equiv="refresh"`) {
 		t.Errorf("open page:\n%s", body)
 	}
 	// One open incident: the browser call carries its incident_id.
-	if want := `dynamic-variables="{&#34;incident_id&#34;:&#34;` + sampleIncident + `&#34;}"`; !strings.Contains(body, want) {
-		t.Errorf("open page lacks %s:\n%s", want, body)
+	if got := widgetVars(t, body); got[contract.DynamicVarIncidentID] != sampleIncident {
+		t.Errorf("open page variables = %v, want incident_id %s", got, sampleIncident)
 	}
-	f.Open("1b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f", 2)
-	if body := get(); strings.Contains(body, "dynamic-variables") {
-		t.Errorf("two open incidents: the widget must not pick one:\n%s", body)
+	f.Open("1b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f", CallVariables("1b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f", Callee{}), 2)
+	// Two: the widget must not pick one, but still sends every variable.
+	if got, want := widgetVars(t, get()), CallVariables("", Callee{}); !reflect.DeepEqual(got, want) {
+		t.Errorf("two open incidents: variables = %v, want the defaults %v", got, want)
 	}
 	clock.advance(fallbackWindow + time.Second)
 	if body := get(); strings.Contains(body, "agent_stage1") {
@@ -547,8 +554,8 @@ func TestFallbackPageShowsTheAgentOnlyWhileAnIncidentIsOpen(t *testing.T) {
 
 func TestFallbackPageRefusesAMalformedAgentID(t *testing.T) {
 	captureLog(t)
-	f := NewFallback(`agent_x"><script>`, "")
-	f.Open(sampleIncident, 2)
+	f := NewFallback(`agent_x"><script>`, "", "")
+	f.Open(sampleIncident, CallVariables(sampleIncident, Callee{}), 2)
 	rec := httptest.NewRecorder()
 	f.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, FallbackPath, nil))
 	if body := rec.Body.String(); strings.Contains(body, "<script>alert") || strings.Contains(body, "convai") || !strings.Contains(body, "ELEVENLABS_AGENT_ID") {

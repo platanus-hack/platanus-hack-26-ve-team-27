@@ -32,3 +32,6 @@ keystore.properties
 # Go server
 /server/server
 /server/bin/
+
+# pushagent backups of the ElevenLabs agent configuration
+/server/cmd/pushagent/backup/

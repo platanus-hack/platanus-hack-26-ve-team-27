@@ -29,6 +29,9 @@ class RegistrationClientTest {
             familyNumbers = form.familyNumbers,
             duressPhrase = form.duressPhrase,
             appVersion = "0.1.0",
+            // The setup form gains these in #108; the sample carries them.
+            userName = "Mariana",
+            safePhrase = "ya llegué a la casa, todo tranquilo",
             // Registration from the setup form is keyless until #59 wires the signer; the sample carries the proof.
             ed25519PublicKey = "Qjj0xMgcOctYzPP1+kmbgiXDnjbvMvg+Cm1vpph2NXo=",
             ed25519Signature = "JMio38RGA+n2az7/Xiiz4y7724rZcyDt7N90vGav0Vq8SwTXFvJSmH21VJeL323EPmedwMiyrm79YVgIjvXlAQ==",

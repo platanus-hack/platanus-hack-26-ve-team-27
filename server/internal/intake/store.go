@@ -25,6 +25,7 @@ type execer interface {
 }
 
 // upsertDevice inserts the device or overwrites its setup, bumping updated_at.
+// An empty user_name or safe_phrase (an older app) keeps the stored one.
 // Once a device has a key bound, only a registration carrying that same key
 // (its proof is checked before this) may update it; anything else returns
 // errKeyRequired and changes nothing.
@@ -40,8 +41,8 @@ func upsertDevice(ctx context.Context, pool *sql.DB, reg contract.DeviceRegistra
 		keyID = devicekeys.KeyID(ed25519.PublicKey(reg.Ed25519PublicKey))
 	}
 	res, err := pool.ExecContext(ctx, `
-		INSERT INTO devices (id, phone_number, family_numbers, duress_phrase, app_version, ed25519_public_key, key_id)
-		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7)
+		INSERT INTO devices (id, phone_number, family_numbers, duress_phrase, app_version, ed25519_public_key, key_id, user_name, safe_phrase)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7, NULLIF($8, ''), NULLIF($9, ''))
 		ON CONFLICT (id) DO UPDATE SET
 			phone_number       = EXCLUDED.phone_number,
 			family_numbers     = EXCLUDED.family_numbers,
@@ -49,10 +50,12 @@ func upsertDevice(ctx context.Context, pool *sql.DB, reg contract.DeviceRegistra
 			app_version        = EXCLUDED.app_version,
 			ed25519_public_key = EXCLUDED.ed25519_public_key,
 			key_id             = EXCLUDED.key_id,
+			user_name          = COALESCE(EXCLUDED.user_name, devices.user_name),
+			safe_phrase        = COALESCE(EXCLUDED.safe_phrase, devices.safe_phrase),
 			updated_at         = now()
 		WHERE devices.ed25519_public_key IS NULL
 		   OR devices.ed25519_public_key = EXCLUDED.ed25519_public_key`,
-		reg.DeviceID, reg.PhoneNumber, family, reg.DuressPhrase, reg.AppVersion, key, keyID)
+		reg.DeviceID, reg.PhoneNumber, family, reg.DuressPhrase, reg.AppVersion, key, keyID, reg.UserName, reg.SafePhrase)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return errKeyTaken

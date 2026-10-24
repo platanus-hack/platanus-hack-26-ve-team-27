@@ -35,6 +35,8 @@ import com.team27.mama.relay.SharedPreferencesRelayStore
 import com.team27.mama.server.HttpServerApi
 import com.team27.mama.server.ServerApi
 import com.team27.mama.server.UrlConnectionTransport
+import com.team27.mama.trigger.PhoneCallOnlyLauncher
+import com.team27.mama.trigger.IncomingCallLauncher
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import kotlinx.coroutines.CoroutineScope
@@ -161,6 +163,13 @@ class AppGraph(
     }
 
     fun deviceRegistrar(signer: PayloadSigner): DeviceRegistrar = DeviceRegistrar(serverApi, signer)
+
+    /**
+     * What the trigger (#16) runs when the server answers an alert with branch
+     * `call`. The demo answers "Mamá" as a normal phone call (Twilio, #18), so
+     * the app opens nothing. The in-app call (#94, #96) is out of the demo.
+     */
+    val incomingCall: IncomingCallLauncher = PhoneCallOnlyLauncher(app)
 
     private companion object {
         /** `adb logcat -s MamaEmergency` shows why an emergency fell back (tags and status codes only). */

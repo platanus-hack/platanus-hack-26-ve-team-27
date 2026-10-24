@@ -150,16 +150,20 @@ func TestCallSpikeVarsAreOptional(t *testing.T) {
 	c := LoadFrom(envFrom(map[string]string{
 		"ELEVENLABS_VOICE_ID": " voice123 ",
 		"CALL_SPIKE_TOKEN":    " tok ",
+		"FALLBACK_TOKEN":      " fbtok ",
 	}))
+	if c.ElevenLabs.FallbackToken != "fbtok" {
+		t.Errorf("FallbackToken = %q, want fbtok", c.ElevenLabs.FallbackToken)
+	}
 	if c.ElevenLabs.VoiceID != "voice123" || c.ElevenLabs.CallSpikeToken != "tok" {
 		t.Errorf("VoiceID, CallSpikeToken = %q, %q; want voice123, tok", c.ElevenLabs.VoiceID, c.ElevenLabs.CallSpikeToken)
 	}
 	for _, name := range LoadFrom(envFrom(nil)).Missing() {
-		if name == "ELEVENLABS_VOICE_ID" || name == "CALL_SPIKE_TOKEN" {
+		if name == "ELEVENLABS_VOICE_ID" || name == "CALL_SPIKE_TOKEN" || name == "FALLBACK_TOKEN" {
 			t.Errorf("Missing() lists the optional %s", name)
 		}
 	}
-	if s := c.String(); strings.Contains(s, "tok") || strings.Contains(s, "voice123") {
+	if s := c.String(); strings.Contains(s, "tok") || strings.Contains(s, "fbtok") || strings.Contains(s, "voice123") {
 		t.Errorf("String() leaks a value: %s", s)
 	}
 }
@@ -240,5 +244,31 @@ func TestDemoKeyIsReadAndNeverPrinted(t *testing.T) {
 	}
 	if strings.Contains(c.String(), "s3cret") || strings.Contains(fmt.Sprintf("%v %#v", c, c), "s3cret") {
 		t.Error("the demo key leaks through String")
+	}
+}
+
+func TestLimitsDefaultWhenUnsetOrInvalid(t *testing.T) {
+	want := Limits{CallsPerNumber: 6, CallsTotal: 40, MessagesPerNumber: 10, MessagesTotal: 60}
+	if got := LoadFrom(envFrom(nil)).Limits; got != want {
+		t.Errorf("unset: Limits = %+v, want %+v", got, want)
+	}
+	bad := map[string]string{"CALL_LIMIT_PER_NUMBER": "0", "CALL_LIMIT_TOTAL": "-1", "NOTIFY_LIMIT_PER_NUMBER": "ten", "NOTIFY_LIMIT_TOTAL": " "}
+	if got := LoadFrom(envFrom(bad)).Limits; got != want {
+		t.Errorf("invalid: Limits = %+v, want the defaults %+v", got, want)
+	}
+	for _, name := range LoadFrom(envFrom(nil)).Missing() {
+		if strings.Contains(name, "_LIMIT_") {
+			t.Errorf("Missing() lists the optional %s", name)
+		}
+	}
+}
+
+func TestLimitsReadEachVar(t *testing.T) {
+	c := LoadFrom(envFrom(map[string]string{
+		"CALL_LIMIT_PER_NUMBER": "12", "CALL_LIMIT_TOTAL": " 80 ",
+		"NOTIFY_LIMIT_PER_NUMBER": "20", "NOTIFY_LIMIT_TOTAL": "100",
+	}))
+	if want := (Limits{CallsPerNumber: 12, CallsTotal: 80, MessagesPerNumber: 20, MessagesTotal: 100}); c.Limits != want {
+		t.Errorf("Limits = %+v, want %+v", c.Limits, want)
 	}
 }
