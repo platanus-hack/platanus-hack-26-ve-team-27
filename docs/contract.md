@@ -313,6 +313,20 @@ hops; `403` bad signature; `409` the `emergency_id` belongs to another device;
 `413` body over 1 KiB; `422` device not registered; `503` no database; `500`
 anything else. 4xx is permanent: retry only 5xx.
 
+### Demo panel (`GET /demo/emergencies`, #61)
+
+A server-rendered HTML page for the demo (`server/internal/emergency/panel/`),
+not part of the app contract. It lists the 50 most recently updated rows of
+`emergencies` (any status) with the time (first receipt, last update, Caracas
+time UTC-4), channels, minimum hops, status and last location (OpenStreetMap
+link, fix age), and refreshes itself every 3 s. It shows a short device id
+prefix and the emergency id, never a phone number.
+
+It is mounted only with `EMERGENCY_OFFLINE_ENABLED=true` and `DEMO_PANEL_TOKEN`
+set (`404` otherwise). Auth is HTTP Basic: any user name, the token as the
+password. `401` with `WWW-Authenticate: Basic realm="MAMA demo"` when missing
+or wrong, `503` without a database, `Cache-Control: no-store`.
+
 ### Inbound SMS (`POST /sms/inbound/{provider}`, #58)
 
 Not called by the app: the SMS provider calls it when a phone texts the

@@ -82,6 +82,11 @@ type Emergency struct {
 	SMSNumber        string // EMERGENCY_SMS_NUMBER, E.164; blank = not served in GET /config
 	Ed25519Seed      string // EMERGENCY_ED25519_SEED, signs offline acks
 	X25519PrivateKey string // EMERGENCY_X25519_PRIVATE_KEY, opens mesh sealed boxes
+	// DemoPanelToken is DEMO_PANEL_TOKEN, optional: the Basic-auth password of
+	// the live emergencies panel (#61). Blank leaves GET /demo/emergencies off,
+	// since the panel shows live locations. Like CALL_SPIKE_TOKEN it is not in
+	// Missing; String shows only whether it is set.
+	DemoPanelToken string
 }
 
 // Load reads the config from the process environment.
@@ -124,6 +129,7 @@ func LoadFrom(getenv func(string) string) Config {
 			SMSNumber:        get("EMERGENCY_SMS_NUMBER"),
 			Ed25519Seed:      get("EMERGENCY_ED25519_SEED"),
 			X25519PrivateKey: get("EMERGENCY_X25519_PRIVATE_KEY"),
+			DemoPanelToken:   get("DEMO_PANEL_TOKEN"),
 		},
 	}
 	if c.Port == "" {
@@ -167,6 +173,11 @@ func (e Emergency) vars() []struct{ name, value string } {
 	}
 }
 
+// optionalVars are the emergency vars that are never reported as missing.
+func (e Emergency) optionalVars() []struct{ name, value string } {
+	return []struct{ name, value string }{{"DEMO_PANEL_TOKEN", e.DemoPanelToken}}
+}
+
 // Missing returns the names of the env vars that are unset or blank. It never
 // returns values, so it is safe to log.
 func (c Config) Missing() []string {
@@ -184,6 +195,7 @@ func (c Config) Missing() []string {
 func (c Config) String() string {
 	// NOTIFIER is a channel name, not a secret, so its value is shown.
 	parts := append([]string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier, fmt.Sprintf("EMERGENCY_OFFLINE_ENABLED=%t", c.Emergency.Enabled)}, setOrUnset(c.vars())...)
+	parts = append(parts, setOrUnset(c.Emergency.optionalVars())...)
 	return fmt.Sprintf("config{%s}", strings.Join(parts, " "))
 }
 
@@ -193,7 +205,7 @@ func (c Config) GoString() string { return c.String() }
 // String reports which emergency vars are set, never their values: the
 // Ed25519 seed and the X25519 private key are the server's secret keys.
 func (e Emergency) String() string {
-	return fmt.Sprintf("emergency{%s}", strings.Join(setOrUnset(e.vars()), " "))
+	return fmt.Sprintf("emergency{%s}", strings.Join(setOrUnset(append(e.vars(), e.optionalVars()...)), " "))
 }
 
 // GoString keeps %#v as safe as %v.

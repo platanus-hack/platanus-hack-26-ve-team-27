@@ -29,6 +29,11 @@ services:
       # "Secrets") also verifies that webhook.
       - key: PUBLIC_BASE_URL
         sync: false
+      # Password of the live emergencies panel GET /demo/emergencies (#61), which
+      # shows live locations. Unset leaves the route off (404). Set it in the
+      # dashboard together with the offline flag.
+      - key: DEMO_PANEL_TOKEN
+        sync: false
 
 databases:
   - name: mama-db

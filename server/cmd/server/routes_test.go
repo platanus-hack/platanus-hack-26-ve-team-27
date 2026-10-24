@@ -124,3 +124,33 @@ func TestOfflineEmergencyRoutesAreNotMountedWhenOff(t *testing.T) {
 		t.Errorf("POST /incidents with the flag off = %d, want 503", rec.Code)
 	}
 }
+
+func TestDemoPanelRoute(t *testing.T) {
+	get := func(off *offlineEmergency, user, pass string, auth bool) int {
+		req := httptest.NewRequest(http.MethodGet, "/demo/emergencies", nil)
+		if auth {
+			req.SetBasicAuth(user, pass)
+		}
+		rec := httptest.NewRecorder()
+		newMux(nil, intake.LogHandoff{}, call.NewRoutes(config.ElevenLabs{}, nil), off).ServeHTTP(rec, req)
+		return rec.Code
+	}
+	withToken := testOffline(t)
+	withToken.demoPanelToken = "s3cret"
+
+	if got := get(testOffline(t), "", "s3cret", true); got != http.StatusNotFound {
+		t.Errorf("flag on, token unset = %d, want 404", got)
+	}
+	if got := get(nil, "", "s3cret", true); got != http.StatusNotFound {
+		t.Errorf("flag off = %d, want 404", got)
+	}
+	if got := get(withToken, "", "", false); got != http.StatusUnauthorized {
+		t.Errorf("mounted, no credentials = %d, want 401", got)
+	}
+	if got := get(withToken, "jury", "wrong", true); got != http.StatusUnauthorized {
+		t.Errorf("mounted, wrong token = %d, want 401", got)
+	}
+	if got := get(withToken, "jury", "s3cret", true); got != http.StatusServiceUnavailable {
+		t.Errorf("mounted, right token, no database = %d, want 503", got)
+	}
+}

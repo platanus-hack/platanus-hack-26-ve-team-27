@@ -191,3 +191,29 @@ func TestEmergencyOfflineFlagIsOffUnlessTrueOr1(t *testing.T) {
 		}
 	}
 }
+
+func TestDemoPanelTokenIsOptionalAndNeverPrinted(t *testing.T) {
+	const secret = "planted-panel-token-789" // secret-scan:allow (test fixture)
+	c := LoadFrom(envFrom(map[string]string{"DEMO_PANEL_TOKEN": " " + secret + " "}))
+	if c.Emergency.DemoPanelToken != secret {
+		t.Errorf("DemoPanelToken = %q, want it trimmed", c.Emergency.DemoPanelToken)
+	}
+	for _, name := range c.Missing() {
+		if name == "DEMO_PANEL_TOKEN" {
+			t.Error("DEMO_PANEL_TOKEN reported as missing; it is optional")
+		}
+	}
+	for _, verb := range []string{"%v", "%+v", "%#v", "%s"} {
+		for _, out := range []string{fmt.Sprintf(verb, c), fmt.Sprintf(verb, c.Emergency)} {
+			if strings.Contains(out, secret) {
+				t.Errorf("Sprintf(%q) leaks the token: %s", verb, out)
+			}
+			if !strings.Contains(out, "DEMO_PANEL_TOKEN=set") {
+				t.Errorf("Sprintf(%q) = %s, want DEMO_PANEL_TOKEN=set", verb, out)
+			}
+		}
+	}
+	if out := LoadFrom(envFrom(nil)).String(); !strings.Contains(out, "DEMO_PANEL_TOKEN=unset") {
+		t.Errorf("unset token: %s", out)
+	}
+}
