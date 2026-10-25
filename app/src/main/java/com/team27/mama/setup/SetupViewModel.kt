@@ -3,8 +3,6 @@ package com.team27.mama.setup
 import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
-import android.os.PowerManager
-import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
@@ -13,6 +11,7 @@ import com.team27.mama.BuildConfig
 import com.team27.mama.MamaApp
 import com.team27.mama.onboarding.OnboardingResult
 import com.team27.mama.onboarding.userMessage
+import com.team27.mama.permissions.AndroidPermissions
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,6 +73,7 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
     private val client = RegistrationClient(BuildConfig.SERVER_URL)
     private val graph get() = (app as MamaApp).graph
     private val isXiaomi = SystemScreens.isXiaomi()
+    private val systemPermissions = AndroidPermissions(application)
 
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<SetupUiState> = _state.asStateFlow()
@@ -122,11 +122,15 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
         updatePermissions { it.skip(step) }
     }
 
-    /** Applies [change] and saves the statuses the system cannot give back after a restart. */
+    /**
+     * Applies [change] and saves the statuses the system cannot give back after a restart.
+     * It also notes the time of each permission change for the report (#125).
+     */
     private fun updatePermissions(change: (PermissionFlow) -> PermissionFlow) {
         _state.update { it.copy(permissions = change(it.permissions)) }
         val settled = _state.value.permissions.settled
         if (settled != store.settledSteps) store.settledSteps = settled
+        graph.permissionSync.sync()
     }
 
     fun continueToForm() {
@@ -216,6 +220,8 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
                 if (state.contact.status == TaskStatus.DONE && state.registration.status == TaskStatus.DONE) {
                     store.setupCompleted = true
                     _state.update { it.copy(phase = SetupPhase.DONE) }
+                    // The device is registered: send when each permission was granted (#125).
+                    graph.permissionSync.sync()
                 }
             } finally {
                 running = false
@@ -279,13 +285,8 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
 
     /** What the system says about [step]; null when it cannot be read back (MIUI screens). */
     private fun isGranted(step: SetupStep): Boolean? = when (step) {
-        SetupStep.BATTERY ->
-            app.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(app.packageName)
-        SetupStep.ACCESSIBILITY ->
-            Settings.Secure.getString(app.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-                ?.split(':')
-                ?.any { it.startsWith(app.packageName + "/") }
-                ?: false
+        SetupStep.BATTERY -> systemPermissions.ignoringBatteryOptimizations()
+        SetupStep.ACCESSIBILITY -> systemPermissions.accessibilityServiceOn()
         SetupStep.AUTOSTART, SetupStep.POPUPS -> null
         else -> step.isGrantedBy(::hasPermission)
     }

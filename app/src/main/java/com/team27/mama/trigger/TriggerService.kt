@@ -16,8 +16,11 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.team27.mama.BuildConfig
 import com.team27.mama.MamaApp
+import com.team27.mama.contract.DeviceState
 import com.team27.mama.contract.Trigger
 import com.team27.mama.emergency.OfflineFallback
+import com.team27.mama.permissions.AndroidPermissions
+import com.team27.mama.permissions.PermissionSnapshot
 import com.team27.mama.setup.RegistrationClient
 import com.team27.mama.setup.RegistrationResult
 import com.team27.mama.setup.SetupStore
@@ -45,6 +48,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * 4. follows with fresh fixes as LocationUpdates for [FOLLOW_UP_MS];
  * 5. when the alert did not reach the server, declares the offline emergency
  *    ([offlineFallback], only with OFFLINE_EMERGENCY_ENABLED).
+ *
+ * The alert carries the phone's permissions at the gesture ([deviceState],
+ * #125), and after it the permission changes are synced in the background.
  *
  * It only runs once setup is done, one incident at a time. It never opens
  * the camera or records audio (has_audio is false).
@@ -145,6 +151,8 @@ class TriggerService : Service() {
         }
         val fixes = LocationFixes(this)
         fixes.start()
+        // Read while the first fix is on its way: a few local queries.
+        val state = deviceState()
         // The AlertEvent's HTTP status for the offline fallback: null when nothing was sent.
         val alertStatus: Int? = try {
             val fix = firstFix(fixes)
@@ -153,7 +161,7 @@ class TriggerService : Service() {
                 null
             } else {
                 val (first, choice) = fix
-                val event = AlertEvents.alertEvent(incidentId, deviceId, trigger, triggeredAtMs, listOf(first.toPoint()))
+                val event = AlertEvents.alertEvent(incidentId, deviceId, trigger, triggeredAtMs, listOf(first.toPoint()), state)
                 TriggerLog.log(
                     this,
                     "alert $incidentId trigger=$trigger sinceTriggerAtSendMs=${SystemClock.elapsedRealtime() - detectedAt} " +
@@ -174,6 +182,7 @@ class TriggerService : Service() {
                     TriggerScreens.openConfirmation(this, it)
                 }
                 TriggerLog.log(this, "alert $incidentId outcome=$outcome handoff=$handoff")
+                graph.permissionSync.sync()
                 if (outcome is AlertOutcome.Accepted) followUp(base, incidentId, deviceId, first, fixes)
                 when (outcome) {
                     is AlertOutcome.Accepted -> 200
@@ -197,6 +206,20 @@ class TriggerService : Service() {
         TriggerLog.log(this, "offline emergency declared=${offline.declare()} phase=${offline.state.value.phase}")
         OfflineFallback.awaitDelivered(offline)
         TriggerLog.log(this, "offline emergency released phase=${offline.state.value.phase}")
+    }
+
+    /**
+     * The permission snapshot for the AlertEvent (#125): a few local queries
+     * (readMs in the log). Null when reading it fails, which never stops the alert.
+     */
+    private fun deviceState(): DeviceState? = try {
+        val started = SystemClock.elapsedRealtime()
+        PermissionSnapshot.deviceState(AndroidPermissions(this).read(), System.currentTimeMillis()).also {
+            TriggerLog.log(this, "device_state ${PermissionSnapshot.summary(it.permissions)} readMs=${SystemClock.elapsedRealtime() - started}")
+        }
+    } catch (e: Exception) {
+        TriggerLog.log(this, "device_state failed ${e.javaClass.simpleName}: ${e.message}")
+        null
     }
 
     /** The first point and how it was picked (for the log), or null with no fix at all after [FIX_TIMEOUT_MS]. */
