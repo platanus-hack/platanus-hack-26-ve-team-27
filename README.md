@@ -11,32 +11,6 @@ Platanus Hack 26: Caracas · Track 🚨 Emergencies · team-27
 
 ## Qué es
 
-## How it works
-
-<p align="center">
-  <img src="./docs/presentacion/visuales/flujo.png" alt="Volume up, down, up even when locked; Mamá calls in under 15 s; your family gets your location and the verdict" width="100%" />
-</p>
-
-<table>
-  <tr>
-    <td width="35%" align="center">
-      <img src="./docs/presentacion/visuales/llamada-entrante.png" alt="Incoming call from Mamá on the phone screen" width="240" />
-    </td>
-    <td width="65%">
-      <p>A real call from "Mamá" rings in. To anyone watching, it is just a call from home.</p>
-      <img src="./docs/presentacion/visuales/frase-clave.png" alt="Mamá says '¡Hola mi amor! ¿Cómo vas?' and the user answers with the alert phrase 'Dile a la tía Carmen que llego tarde.'" width="100%" />
-      <p>You talk to her normally. Saying your alert phrase is the signal.</p>
-    </td>
-  </tr>
-</table>
-
-<p align="center">
-  <img src="./docs/presentacion/visuales/tres-veredictos.png" alt="Alert phrase: your family is notified at once. All-clear phrase: no one is notified. Neither phrase or silence: your family is notified anyway" width="100%" />
-</p>
-
-Three outcomes: the alert phrase notifies your family at once, the all-clear phrase notifies no one, and anything else (or silence) notifies them anyway.
-
-## Build and run
 En un secuestro o un robo, sacar el teléfono para pedir ayuda puede empeorar las cosas. MAMÁ convierte una llamada normal con tu mamá en una alarma silenciosa:
 
 1. **Configuración.** Tu nombre, los números de tu familia, una frase de alerta y una frase de "todo bien". La app guarda a "Mamá" en tus contactos.
@@ -49,6 +23,31 @@ En un secuestro o un robo, sacar el teléfono para pedir ayuda puede empeorar la
 El widget de la pantalla de inicio no llama: avisa a la familia de inmediato.
 
 **Para la demo usa el patrón de volumen**, no el widget.
+
+## Cómo funciona
+
+<p align="center">
+  <img src="./docs/presentacion/visuales/flujo.png" alt="Volumen arriba, abajo, arriba aunque esté bloqueado; Mamá llama en menos de 15 s; tu familia recibe tu ubicación y el veredicto" width="100%" />
+</p>
+
+<table>
+  <tr>
+    <td width="35%" align="center">
+      <img src="./docs/presentacion/visuales/llamada-entrante.png" alt="Llamada entrante de Mamá en la pantalla del teléfono" width="240" />
+    </td>
+    <td width="65%">
+      <p>Entra una llamada real de "Mamá". Para quien esté mirando, es solo una llamada de casa.</p>
+      <img src="./docs/presentacion/visuales/frase-clave.png" alt="Mamá dice '¡Hola mi amor! ¿Cómo vas?' y el usuario responde con la frase de alerta 'Dile a la tía Carmen que llego tarde.'" width="100%" />
+      <p>Hablas con ella con normalidad. Decir tu frase de alerta es la señal.</p>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="./docs/presentacion/visuales/tres-veredictos.png" alt="Frase de alerta: se avisa a tu familia al instante. Frase de todo bien: no se avisa a nadie. Ninguna de las dos o silencio: se avisa a tu familia igual" width="100%" />
+</p>
+
+Tres resultados: la frase de alerta avisa a tu familia al instante, la frase de "todo bien" no avisa a nadie, y cualquier otra cosa (o el silencio) les avisa igual.
 
 ## Arquitectura
 
