@@ -14,6 +14,31 @@ team-27
 - Daniel Castellanos ([@dancas03](https://github.com/dancas03))
 - Daniel Alejandro Ross Requena ([@danirssx](https://github.com/danirssx))
 
+## How it works
+
+<p align="center">
+  <img src="./docs/presentacion/visuales/flujo.png" alt="Volume up, down, up even when locked; Mamá calls in under 15 s; your family gets your location and the verdict" width="100%" />
+</p>
+
+<table>
+  <tr>
+    <td width="35%" align="center">
+      <img src="./docs/presentacion/visuales/llamada-entrante.png" alt="Incoming call from Mamá on the phone screen" width="240" />
+    </td>
+    <td width="65%">
+      <p>A real call from "Mamá" rings in. To anyone watching, it is just a call from home.</p>
+      <img src="./docs/presentacion/visuales/frase-clave.png" alt="Mamá says '¡Hola mi amor! ¿Cómo vas?' and the user answers with the alert phrase 'Dile a la tía Carmen que llego tarde.'" width="100%" />
+      <p>You talk to her normally. Saying your alert phrase is the signal.</p>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="./docs/presentacion/visuales/tres-veredictos.png" alt="Alert phrase: your family is notified at once. All-clear phrase: no one is notified. Neither phrase or silence: your family is notified anyway" width="100%" />
+</p>
+
+Three outcomes: the alert phrase notifies your family at once, the all-clear phrase notifies no one, and anything else (or silence) notifies them anyway.
+
 ## Build and run
 
 One command builds and tests both the Go server and the Android app. Run it, and walk the demo path locally, before merging. There is no CI.
