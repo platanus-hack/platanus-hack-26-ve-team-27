@@ -24,9 +24,15 @@ func appPoints(n int) string {
 	return "[" + strings.Join(points, ",") + "]"
 }
 
+// appDeviceState is the permission snapshot the app adds to every alert
+// (#125): all ten permissions, the most it sends.
+const appDeviceState = `{"captured_at":"2026-10-24T09:10:00.251Z","permissions":{"location_fine":true,"location_background":true,` +
+	`"microphone":true,"contacts":true,"sms":true,"notifications":true,"accessibility_service":true,` +
+	`"battery_unrestricted":false,"full_screen_intent":true,"hibernation_exempt":true}}`
+
 // appAlert is the AlertEvent the app sends, with n fixes (it sends 1).
 func appAlert(id string, n int) []byte {
-	return []byte(`{"incident_id":"` + id + `","device_id":"` + deviceID + `","trigger":"volume_pattern","triggered_at":"2026-10-24T09:10:00.253Z","points":` + appPoints(n) + `,"has_audio":false}`)
+	return []byte(`{"incident_id":"` + id + `","device_id":"` + deviceID + `","trigger":"volume_pattern","triggered_at":"2026-10-24T09:10:00.253Z","points":` + appPoints(n) + `,"has_audio":false,"device_state":` + appDeviceState + `}`)
 }
 
 // appUpdate is a LocationUpdate with n fixes (the app sends 1), recorded
@@ -43,8 +49,8 @@ func appUpdate(id string, from, n int) []byte {
 func TestRequestsTheAppSendsFitTheCaps(t *testing.T) {
 	e := newEnv(t)
 	alert := appAlert(incidentID, 1)
-	if len(alert) >= 400 {
-		t.Errorf("the app's alert is %d bytes; the maxBodyBytes comment says under 400", len(alert))
+	if len(alert) >= 1<<10 {
+		t.Errorf("the app's alert is %d bytes; the maxBodyBytes comment says under 1 KiB", len(alert))
 	}
 	if rec := e.post("/incidents", alert); rec.Code != http.StatusCreated {
 		t.Fatalf("app alert = %d %s", rec.Code, rec.Body)

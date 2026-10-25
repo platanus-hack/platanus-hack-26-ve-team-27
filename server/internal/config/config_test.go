@@ -286,6 +286,17 @@ func TestCentralKeyIsReadAndNeverPrinted(t *testing.T) {
 	}
 }
 
+// CARTO_BASEMAPS_KEY is optional (not in Missing): without it the route is
+// drawn with no map.
+func TestMapKeyIsRead(t *testing.T) {
+	if got := LoadFrom(envFrom(map[string]string{"CARTO_BASEMAPS_KEY": " m4p-key "})).Report.MapKey; got != "m4p-key" {
+		t.Errorf("MapKey = %q", got)
+	}
+	if LoadFrom(envFrom(nil)).Report.MapKey != "" {
+		t.Error("CARTO_BASEMAPS_KEY unset should leave the map off")
+	}
+}
+
 func TestNotifySelfIsOffUnlessTrueOr1(t *testing.T) {
 	for v, want := range map[string]bool{"": false, "yes": false, "0": false, "true": true, "TRUE": true, "1": true} {
 		if got := LoadFrom(envFrom(map[string]string{"NOTIFY_SELF": v})).NotifySelf; got != want {

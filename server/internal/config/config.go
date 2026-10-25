@@ -151,6 +151,11 @@ type Report struct {
 	// dashboard GET /central/ (#99), which sees every incident. Given once
 	// as ?key=, it becomes a cookie. Blank leaves the dashboard off (404).
 	CentralKey string
+	// MapKey is CARTO_BASEMAPS_KEY, optional: the free key of CARTO's
+	// basemaps (carto.com/basemaps/apikey), which the route map's tiles
+	// need. Blank leaves the route as the drawing, with no map. It is not a
+	// secret: the reader's browser sends it with every tile.
+	MapKey string
 	// LiveTranscription is LIVE_TRANSCRIPTION_ENABLED, "true" or "1": Twilio
 	// transcribes each answered call while it lasts, so the report shows the
 	// conversation as it happens (#143). It also needs the Twilio account and
@@ -224,6 +229,7 @@ func LoadFrom(getenv func(string) string) Config {
 			DemoKey:           get("DEMO_KEY"),
 			LiveTranscription: isOn(get("LIVE_TRANSCRIPTION_ENABLED")),
 			CentralKey:        get("CENTRAL_KEY"),
+			MapKey:            get("CARTO_BASEMAPS_KEY"),
 		},
 		Limits: Limits{
 			CallsPerNumber:    positiveInt(get("CALL_LIMIT_PER_NUMBER"), DefaultCallsPerNumber),

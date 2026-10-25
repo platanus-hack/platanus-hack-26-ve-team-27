@@ -19,6 +19,10 @@ type Stage struct {
 	State string // done, current (next expected, pulsing while live), pending, skipped (passed without a time)
 	Error bool   // a failure: the call never connected
 	Mark  string // a small marker: "2 intentos", "respaldo web"
+	Warn  bool   // done, but with a warning: the phone missed an important permission
+	// Ready is the "Teléfono listo" node's permission list (#125), which a
+	// tap opens; nil on every other node.
+	Ready *PhoneReady
 }
 
 // StageState values.
@@ -32,21 +36,27 @@ const (
 // Stages are the track's nodes for the record: for a call incident,
 // Pidió ayuda → Llegó al servidor → Mamá llamó → Sonó → Contestó → Colgó →
 // Veredicto → Familia avisada → Sellado; without a call, Pidió ayuda →
-// Llegó al servidor → Familia avisada (those are never sealed). A step with
-// a time is done; one passed without a time (no Twilio data, so no "Sonó")
-// is skipped; while live, the first step after the last done one is
-// current.
+// Llegó al servidor → Familia avisada (those are never sealed). When the
+// alert carried the phone's permissions (#125), "Teléfono listo" comes
+// first. A step with a time is done; one passed without a time (no Twilio
+// data, so no "Sonó") is skipped; while live, the first step after the last
+// done one is current.
 func Stages(rec Record, channel string, live bool) []Stage {
 	inc := rec.Incident
 	type step struct {
 		Stage
-		at *time.Time
+		at     *time.Time
+		passed bool // reached with no time of its own: no family message was needed
 	}
 	at := func(t time.Time) *time.Time { return &t }
 	var steps []step
 	add := func(key, label, sub string, t *time.Time) *step {
 		steps = append(steps, step{Stage: Stage{Key: "stage-" + key, Label: label, Sub: sub}, at: t})
 		return &steps[len(steps)-1]
+	}
+	if r := phoneReady(rec); r != nil {
+		s := add("ready", "Teléfono listo", r.Summary, at(rec.Incident.TriggeredAt))
+		s.Warn, s.Ready = r.Warn, r
 	}
 	add("trigger", "Pidió ayuda", triggerShort(inc.Trigger), at(inc.TriggeredAt))
 	add("server", "Llegó al servidor", "", at(inc.CreatedAt))
@@ -99,7 +109,10 @@ func Stages(rec Record, channel string, live bool) []Stage {
 		add("verdict", "Veredicto", sub, verdictAt)
 	}
 
-	add("family", "Familia avisada", familySummary(rec, channel), inc.NotifiedAt)
+	s := add("family", "Familia avisada", familySummary(rec, channel), inc.NotifiedAt)
+	if familyNotNeeded(rec) {
+		s.Label, s.Sub, s.passed = "Familia sin aviso", "no hizo falta", true
+	}
 	if inc.Branch == contract.BranchCall {
 		var sealed *time.Time
 		if rec.Seal != nil {
@@ -110,7 +123,7 @@ func Stages(rec Record, channel string, live bool) []Stage {
 
 	last := -1
 	for i, s := range steps {
-		if s.at != nil {
+		if s.at != nil || s.passed {
 			last = i
 		}
 	}
@@ -118,9 +131,11 @@ func Stages(rec Record, channel string, live bool) []Stage {
 	for i, s := range steps {
 		st := s.Stage
 		switch {
+		case s.Ready != nil:
+			st.State, st.Time = StageDone, s.Ready.Time
 		case s.at != nil:
 			st.State, st.Time = StageDone, clock(*s.at)
-		case i < last:
+		case s.passed, i < last:
 			st.State = StageSkipped
 		case i == last+1 && live:
 			st.State = StageCurrent
@@ -202,15 +217,26 @@ func familyNote(rec Record, channel string, live bool) string {
 	if channel == "" {
 		channel = "WhatsApp"
 	}
+	_, kind := headline(rec)
 	switch {
 	case rec.Incident.NotifiedAt != nil:
 		return notifiedLabel(channel, rec.Device.FamilyNumbers) + "."
-	case live && rec.Incident.Branch == contract.BranchCall:
+	case familyNotNeeded(rec):
+		return "No hizo falta avisar a la familia: no hubo coacción."
+	case live && rec.Incident.Branch == contract.BranchCall && kind == "none":
 		return "Se avisa a la familia apenas haya veredicto."
 	case live:
 		return "Avisando a la familia…"
 	}
 	return "No se registró el aviso a la familia."
+}
+
+// familyNotNeeded reports whether the verdict leaves the family without a
+// message: the calls say no duress and nothing was sent (the notifier's
+// rule, docs/contract.md).
+func familyNotNeeded(rec Record) bool {
+	_, kind := headline(rec)
+	return rec.Incident.NotifiedAt == nil && kind == string(contract.VerdictNoDuress)
 }
 
 // title is the header's state title.

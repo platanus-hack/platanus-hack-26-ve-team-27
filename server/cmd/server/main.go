@@ -305,7 +305,10 @@ func newReports(cfg config.Config, pool *sql.DB, signing ed25519.PrivateKey) (*r
 		log.Print("report: WARNING: no server signing key; reports stay unsealed (\"Sin sellar\")")
 	}
 	log.Printf("report: incident report page is on; links live %d days", cfg.Report.TTLDays)
-	h := report.NewHandler(store, report.Options{Channel: channelName(cfg), CanSeal: signing != nil, BaseURL: cfg.PublicURL}).RecoverWith(closer)
+	if cfg.Report.MapKey == "" {
+		log.Print("report: CARTO_BASEMAPS_KEY is not set; the route is drawn without a map")
+	}
+	h := report.NewHandler(store, report.Options{Channel: channelName(cfg), CanSeal: signing != nil, BaseURL: cfg.PublicURL, MapKey: cfg.Report.MapKey}).RecoverWith(closer)
 	if cfg.Kapso.WebhookSecret != "" {
 		log.Print("report: Kapso message statuses arrive at POST /webhooks/kapso")
 		h.WithKapso(&report.KapsoWebhook{Secret: cfg.Kapso.WebhookSecret, Store: store})

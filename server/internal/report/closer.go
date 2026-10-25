@@ -117,9 +117,8 @@ func (c *Closer) Close(ctx context.Context, incidentID, conversationID string) {
 }
 
 // awaitVerdict polls until the call has its verdict and the incident its
-// family message, or VerdictWait passes, so the seal covers them when they
-// come in time. Today nothing stores a verdict for a call until #21 wires
-// the detector, so the seal waits the whole VerdictWait.
+// family message (or a no-duress verdict that needs none), or VerdictWait
+// passes, so the seal covers them when they come in time.
 func (c *Closer) awaitVerdict(ctx context.Context, incidentID, conversationID string) {
 	wait, every := c.VerdictWait, c.PollEvery
 	if wait <= 0 {
@@ -149,12 +148,9 @@ func (c *Closer) awaitVerdict(ctx context.Context, incidentID, conversationID st
 }
 
 func verdictAndNotice(rec Record, conversationID string) bool {
-	if rec.Incident.NotifiedAt == nil {
-		return false
-	}
 	for _, cl := range rec.Calls {
 		if cl.ConversationID == conversationID {
-			return cl.Verdict != ""
+			return cl.Verdict != "" && (rec.Incident.NotifiedAt != nil || familyNotNeeded(rec))
 		}
 	}
 	return false

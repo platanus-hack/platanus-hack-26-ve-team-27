@@ -3,7 +3,7 @@
   the page renders them inside [data-live] containers, and GET /i/{token}/live
   sends them again whenever the case changes. Every child of a section has a
   stable data-key, so the page keeps what did not change (the audio player,
-  the drawn route) and animates only what is new. A child with
+  the drawn route, the map) and animates only what is new. A child with
   data-live-children is updated child by child; data-reveal swaps with the
   reveal animation instead of the plain entrance.
 
@@ -22,8 +22,11 @@
 <meta property="og:title" content="Ficha del incidente · MAMÁ">
 <title>Ficha del incidente · MAMÁ</title>
 <link rel="icon" href="{{static "mama_mark.webp"}}" type="image/webp">
+<link rel="stylesheet" href="{{static "leaflet.css"}}">
 <link rel="stylesheet" href="{{static "ficha.css"}}">
 <script src="{{static "ficha.js"}}" defer></script>
+<script src="{{static "leaflet.js"}}" defer></script>
+<script src="{{static "route-map.js"}}" defer></script>
 </head>
 {{end}}
 
@@ -53,7 +56,7 @@
 </html>{{end}}
 
 {{define "page"}}{{template "head"}}
-<body data-state="{{.State}}" data-live-url="/i/{{.Token}}/live" data-json-url="/i/{{.Token}}/estado.json"{{if .Live}} data-open{{end}}>
+<body data-state="{{.State}}" data-live-url="/i/{{.Token}}/live" data-json-url="/i/{{.Token}}/estado.json"{{if .Live}} data-open{{end}}{{with .MapKey}} data-map-key="{{.}}"{{end}}>
 <div class="app">
 <header class="top">
   {{template "wordmark"}}
@@ -114,14 +117,40 @@
 
 {{define "sec-track" -}}
 {{range .Stages -}}
-<li data-key="{{.Key}}-{{.State}}-{{.Time}}-{{.Sub}}-{{.Mark}}-{{.Error}}" data-reveal class="node node-{{.State}}{{if .Error}} node-error{{end}}" data-stage="{{.Key}}">
-  <span class="node-dot" aria-hidden="true">{{if eq .State "done"}}{{if .Error}}!{{else}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9.5 16.6 5.4 12.5 4 13.9l5.5 5.5L20 8.9l-1.4-1.4z"/></svg>{{end}}{{end}}</span>
+<li data-key="{{.Key}}-{{.State}}-{{.Time}}-{{.Sub}}-{{.Mark}}-{{.Error}}-{{.Warn}}" data-reveal class="node node-{{.State}}{{if .Error}} node-error{{end}}{{if .Warn}} node-warn{{end}}" data-stage="{{.Key}}">
+  {{- if .Ready}}
+  <button type="button" class="node-btn" popovertarget="phone-ready" title="Ver los permisos">
+  {{- end}}
+  <span class="node-dot" aria-hidden="true">{{if eq .State "done"}}{{if or .Error .Warn}}!{{else}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9.5 16.6 5.4 12.5 4 13.9l5.5 5.5L20 8.9l-1.4-1.4z"/></svg>{{end}}{{end}}</span>
   <span class="node-time">{{if .Time}}{{.Time}}{{else if eq .State "skipped"}}—{{else if eq .State "current"}}ahora{{else}}·{{end}}</span>
   <span class="node-label">{{.Label}}</span>
   {{- if .Sub}}<span class="node-sub">{{.Sub}}</span>{{end}}
   {{- if .Mark}}<span class="node-mark">{{.Mark}}</span>{{end}}
+  {{- with .Ready}}
+  </button>
+  {{template "phone-ready" .}}
+  {{- end}}
 </li>
 {{end -}}
+{{- end}}
+
+{{/* The phone's permissions at the gesture (#125), opened by a tap on the
+  "Teléfono listo" node. A popover sits in the top layer, so the track's
+  sideways scroll does not clip it, and needs no script. */}}
+{{define "phone-ready" -}}
+<div id="phone-ready" popover class="ready-pop{{if .Warn}} warn{{end}}">
+  <p class="ready-title">Cómo estaba el teléfono</p>
+  <p class="ready-when">Al pedir ayuda · {{.Time}} (reloj del teléfono)</p>
+  {{- if .Warn}}
+  <p class="ready-warn">Falta: {{.Missing}}</p>
+  {{- end}}
+  <ul class="ready-chips">
+  {{- range .Chips}}
+    <li class="perm{{if .OK}} perm-ok{{else if .Important}} perm-missing{{else}} perm-off{{end}}"><span class="perm-mark" aria-hidden="true">{{if .OK}}✓{{else}}✗{{end}}</span>{{.Label}}</li>
+  {{- end}}
+  </ul>
+  <button type="button" class="ready-close" popovertarget="phone-ready" popovertargetaction="hide">Cerrar</button>
+</div>
 {{- end}}
 
 {{define "sec-call" -}}
@@ -161,6 +190,10 @@
 
 {{define "sec-route" -}}
 {{with .Route -}}
+{{- /* The map div never changes, so the reconcile keeps it and the map
+  route-map.js mounts in it; the points reach it in data-points. */ -}}
+<div data-key="route-box" data-live-children class="route-box" data-points="{{.MapJSON}}">
+<div data-key="route-map" class="route-map" data-route-map aria-hidden="true"></div>
 <svg data-key="route" data-live-children class="route" viewBox="0 0 {{.Width}} {{.Height}}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Recorrido de {{.DistanceKM}}, sin mapa de fondo">
   {{- range .Segments}}
   <line data-key="{{.Key}}" class="seg" pathLength="1" x1="{{.X1}}" y1="{{.Y1}}" x2="{{.X2}}" y2="{{.Y2}}"/>
@@ -175,6 +208,7 @@
   <text data-key="{{.Key}}" class="rt{{if .Newest}} newest{{end}}" x="{{.X}}" y="{{.Y}}" text-anchor="{{.Anchor}}">{{.Text}}</text>
   {{- end}}
 </svg>
+</div>
 <p data-key="sum-{{.DistanceKM}}-{{$.Live}}-{{$.RouteLastClock}}" class="route-sum">Última ubicación {{if $.Live}}<span class="ticker" data-since="{{$.RouteLast}}" data-format="ago">—</span>{{else}}a las {{$.RouteLastClock}}{{end}} · {{.DistanceKM}} recorridos</p>
 <a data-key="maps-{{$.RouteMaps}}" class="maps-btn" href="{{$.RouteMaps}}" target="_blank" rel="noopener noreferrer">Abrir en Maps</a>
 {{- else -}}

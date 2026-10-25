@@ -30,6 +30,22 @@ type Record struct {
 	// time span overlaps the incident's: linked by device and time only,
 	// since the schema has no link. Shown, never sealed.
 	Emergencies []Emergency
+	// DeviceState is the phone's permissions at the gesture (#125,
+	// incidents.device_state); nil when the alert carried none. Not shown
+	// yet, never sealed.
+	DeviceState *contract.DeviceState
+	// PermissionEvents is how the device's permissions were granted and
+	// lost (#125, device_permission_events), oldest first: the newest
+	// maxPermissionEvents. Not shown yet, never sealed.
+	PermissionEvents []PermissionEvent
+}
+
+// PermissionEvent is one device_permission_events row (#125).
+type PermissionEvent struct {
+	Permission string // a contract.Permission* name
+	Granted    bool
+	At         time.Time // phone clock
+	ReceivedAt time.Time // server clock
 }
 
 // Incident is the incidents row.
