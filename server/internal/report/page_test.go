@@ -251,3 +251,19 @@ func TestEveryPoseIsEmbedded(t *testing.T) {
 		}
 	}
 }
+
+// The ficha and the central of one case often sit in two tabs: ficha.js
+// plays one recording at a time, pausing the others on the page and, over a
+// BroadcastChannel, in the reader's other tabs of this server. A headless
+// check of two tabs is in the PR; this keeps the guard from being dropped.
+func TestFichaJSPlaysOneRecordingAtATime(t *testing.T) {
+	b, err := fs.ReadFile(staticFS, "static/ficha.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`new BroadcastChannel("mama-audio")`, `document.addEventListener("play", function (ev) {`, "pauseOthers(ev.target)", "pauseOthers(null)"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("ficha.js lacks %q", want)
+		}
+	}
+}
