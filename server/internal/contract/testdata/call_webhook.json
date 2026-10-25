@@ -1,0 +1,24 @@
+{
+  "type": "post_call_transcription",
+  "event_timestamp": 1761297060,
+  "data": {
+    "agent_id": "agent_01jxample0000000000000000",
+    "conversation_id": "conv_01jxample0000000000000000",
+    "status": "done",
+    "transcript": [
+      {"role": "agent", "message": "¿Aló? Mi amor, ¿dónde estás?", "time_in_call_secs": 0},
+      {"role": "user", "message": "Sí, mami. Oye, dile a la tía Carmen que llego tarde.", "time_in_call_secs": 4}
+    ],
+    "metadata": {
+      "start_time_unix_secs": 1761297010,
+      "call_duration_secs": 42
+    },
+    "conversation_initiation_client_data": {
+      "dynamic_variables": {
+        "incident_id": "9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f",
+        "system__call_duration_secs": 42,
+        "system__called_number": "+584141234567"
+      }
+    }
+  }
+}

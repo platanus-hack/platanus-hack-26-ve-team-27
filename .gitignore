@@ -12,6 +12,7 @@
 .kotlin/
 /build/
 /app/build/
+/mesh/build/
 /captures/
 .externalNativeBuild/
 .cxx/
@@ -31,3 +32,9 @@ keystore.properties
 # Go server
 /server/server
 /server/bin/
+
+# pushagent backups of the ElevenLabs agent configuration
+/server/cmd/pushagent/backup/
+
+# voicelab grid output (generated audio, #107)
+voicelab-out/

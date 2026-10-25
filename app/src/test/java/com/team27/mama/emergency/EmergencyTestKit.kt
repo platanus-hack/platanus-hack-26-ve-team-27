@@ -1,0 +1,147 @@
+package com.team27.mama.emergency
+
+import com.team27.mama.emergency.config.EmergencyConfig
+import com.team27.mama.emergency.payload.AckCodec
+import com.team27.mama.emergency.payload.AckInfo
+import com.team27.mama.emergency.payload.Ed25519SeedSigner
+import com.team27.mama.emergency.payload.EmergencyPayload
+import com.team27.mama.emergency.payload.MamaText
+import com.team27.mama.emergency.payload.MeshFrame
+import com.team27.mama.emergency.payload.PayloadCodec
+import com.team27.mama.emergency.payload.PayloadSigner
+import com.team27.mama.emergency.payload.SealedBox
+import java.io.IOException
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.test.TestScope
+
+class FakeHttp : HttpEmergencyChannel {
+    val posted = mutableListOf<String>()
+    var behaviour: suspend (String) -> String = { throw IOException("offline") }
+
+    override suspend fun post(smsText: String): String {
+        posted += smsText
+        return behaviour(smsText)
+    }
+}
+
+class FakeSms : SmsEmergencyChannel {
+    var canSend = true
+    val sent = mutableListOf<Pair<String, String>>()
+    var behaviour: suspend (String, String) -> Boolean = { _, _ -> true }
+    override val incoming = MutableSharedFlow<String>()
+
+    override fun canSend(): Boolean = canSend
+
+    override suspend fun send(number: String, text: String): Boolean {
+        sent += number to text
+        return behaviour(number, text)
+    }
+}
+
+class FakeMesh : MeshEmergencyChannel {
+    var startResult = true
+    var broadcastResult = true
+    var startCalls = 0
+    val broadcasts = mutableListOf<String>()
+    override val incoming = MutableSharedFlow<String>()
+
+    override fun start(): Boolean {
+        startCalls++
+        return startResult
+    }
+
+    override fun broadcast(text: String): Boolean {
+        broadcasts += text
+        return broadcastResult
+    }
+}
+
+class FakeLocation : LocationSource {
+    var lastKnown: LocationFix? = null
+    val fresh = CompletableDeferred<LocationFix?>()
+    var freshCalls = 0
+    var freshCancelled = false
+
+    override fun lastKnown(): LocationFix? = lastKnown
+
+    override suspend fun awaitFreshFix(): LocationFix? {
+        freshCalls++
+        try {
+            return fresh.await()
+        } catch (e: CancellationException) {
+            freshCancelled = true
+            throw e
+        }
+    }
+}
+
+/** The device key until [broken] is cleared; reading it throws like an unusable mesh keystore. */
+class FlakySigner(var broken: Boolean = true) : PayloadSigner {
+    override val publicKey: ByteArray
+        get() = if (broken) throw MeshUnavailableException(IllegalStateException("keystore")) else EmergencyTestKit.DEVICE.publicKey
+
+    override fun sign(message: ByteArray) = EmergencyTestKit.DEVICE.sign(message)
+}
+
+/** Fakes for every port, plus helpers to read what the orchestrator sent. One kit per run. */
+class EmergencyTestKit {
+    val http = FakeHttp()
+    val sms = FakeSms()
+    val mesh = FakeMesh()
+    val location = FakeLocation()
+    var online = false
+    var config = EmergencyConfig(SMS_NUMBER, SERVER.publicKey, SERVER_X)
+
+    /** Everything the orchestrator passed to `onError`. */
+    val errors = mutableListOf<Pair<String, Throwable?>>()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun TestScope.orchestrator(
+        override: ChannelOverride = ChannelOverride.AUTO,
+        signer: PayloadSigner = DEVICE,
+        sms: SmsEmergencyChannel = this@EmergencyTestKit.sms,
+        newEmergencyId: () -> Long = { 42L },
+    ) = EmergencyOrchestrator(
+        signer = signer,
+        config = { config },
+        http = http,
+        sms = sms,
+        mesh = mesh,
+        location = location,
+        network = { online },
+        channelOverride = { override },
+        scope = backgroundScope,
+        nowMs = { NOW + testScheduler.currentTime },
+        newEmergencyId = newEmergencyId,
+        onError = { message, error -> errors += message to error },
+    )
+
+    companion object {
+        const val SMS_NUMBER = "+15555550100"
+        const val NOW = 1_790_000_000_000L
+        val DEVICE = Ed25519SeedSigner(ByteArray(32) { 1 })
+        val SERVER = Ed25519SeedSigner(ByteArray(32) { 7 })
+        val SERVER_X_PRIVATE = ByteArray(32) { 9 }
+        val SERVER_X: ByteArray = SealedBox.publicKeyOf(SERVER_X_PRIVATE)
+
+        fun decodeSms(text: String): EmergencyPayload =
+            PayloadCodec.verify(MamaText.parseSms(text), DEVICE.publicKey)
+
+        fun decodeMesh(text: String): EmergencyPayload {
+            val box = (MamaText.parseMesh(text) as MeshFrame.Sealed).box
+            return PayloadCodec.verify(SealedBox.open(box, SERVER_X_PRIVATE), DEVICE.publicKey)
+        }
+
+        private fun ack(id: Long, seq: Int) = AckCodec.sign(AckInfo(id, seq), SERVER)
+
+        fun meshAck(id: Long, seq: Int): String = MamaText.meshAck(ack(id, seq))
+
+        fun smsAck(id: Long, seq: Int): String = MamaText.sms(ack(id, seq))
+
+        /** The server answers POST /emergencies with the mesh ack text. */
+        fun httpAck(id: Long, seq: Int): String = meshAck(id, seq)
+    }
+}
