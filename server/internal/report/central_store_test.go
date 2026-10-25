@@ -100,6 +100,9 @@ func TestCasesNewestFirstWithTheirStatesOnPostgres(t *testing.T) {
 func TestLoadReadsTheCallContextOnceTheColumnExistsOnPostgres(t *testing.T) {
 	s := centralDB(t)
 	ctx := context.Background()
+	// Migration 0010 adds incidents.cancelled_at; the report still has to work
+	// on a database that does not have the column yet.
+	exec(t, s.pool, `ALTER TABLE incidents DROP COLUMN cancelled_at`)
 	rec, err := s.Load(ctx, testIncidentID)
 	if err != nil || rec.Calls[0].Context != nil {
 		t.Fatalf("before the column: %+v %v", rec.Calls[0].Context, err)

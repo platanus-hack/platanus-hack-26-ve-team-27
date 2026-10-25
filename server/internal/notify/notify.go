@@ -186,8 +186,8 @@ func (n *Notifier) Notify(ctx context.Context, inc intake.Incident) {
 		return
 	}
 	if !won {
-		log.Printf("notify: incident %s: already notified; skipping", inc.ID)
-		trace.Log(inc.ID, "notify_skipped", "reason", "already_notified")
+		log.Printf("notify: incident %s: already notified or cancelled; skipping", inc.ID)
+		trace.Log(inc.ID, "notify_skipped", "reason", "already_notified_or_cancelled")
 		return
 	}
 

@@ -92,6 +92,18 @@ enum class StepStatus(val blocksProgress: Boolean) {
     VISITED(false),
 }
 
+/** What tapping a step does. */
+enum class StepAction {
+    /** The runtime permission dialog. */
+    REQUEST,
+
+    /** The app's own settings page: the system will not show the dialog any more. */
+    APP_SETTINGS,
+
+    /** The step's system settings screen (accessibility, battery, MIUI screens). */
+    SYSTEM_SCREEN,
+}
+
 /**
  * The permission part of setup as plain state, so the order and the
  * transitions are unit-tested. The current step is the first one still
@@ -105,17 +117,29 @@ data class PermissionFlow(val steps: List<SetupStep>, val statuses: Map<SetupSte
 
     fun statusOf(step: SetupStep): StepStatus = statuses[step] ?: StepStatus.PENDING
 
+    /** Any step that is not granted can be opened again, whether it was shown, skipped or denied. */
+    fun canReopen(step: SetupStep): Boolean = statusOf(step) != StepStatus.GRANTED
+
+    /** What opening [step] does now: a system screen always reopens its screen; a blocked permission goes to app settings. */
+    fun actionFor(step: SetupStep): StepAction = when {
+        step.isSystemScreen -> StepAction.SYSTEM_SCREEN
+        statusOf(step) == StepStatus.BLOCKED -> StepAction.APP_SETTINGS
+        else -> StepAction.REQUEST
+    }
+
     /**
      * The answer to a runtime permission request for [step]. A first "no" is
      * never BLOCKED: a dialog dismissed with back or a tap outside (Android 11+),
      * and MIUI after one denial, also report that the app cannot ask again.
-     * Only a second "no" in a row proves the system stopped showing the dialog.
+     * Only a second "no" in a row proves the system stopped showing the dialog. A skipped step
+     * counts as a first "no" already (the person only skips after a denial), so asking again
+     * from there needs just one more.
      */
     fun afterRequest(step: SetupStep, granted: Boolean, canAskAgain: Boolean): PermissionFlow = withStatus(
         step,
         when {
             granted -> StepStatus.GRANTED
-            canAskAgain || statusOf(step) != StepStatus.DENIED -> StepStatus.DENIED
+            canAskAgain || statusOf(step) !in PRIOR_DENIAL -> StepStatus.DENIED
             else -> StepStatus.BLOCKED
         },
     )
@@ -157,6 +181,8 @@ data class PermissionFlow(val steps: List<SetupStep>, val statuses: Map<SetupSte
     private fun withStatus(step: SetupStep, status: StepStatus) = copy(statuses = statuses + (step to status))
 
     companion object {
+        private val PRIOR_DENIAL = setOf(StepStatus.DENIED, StepStatus.SKIPPED)
+
         fun start(steps: List<SetupStep>): PermissionFlow =
             PermissionFlow(steps, steps.associateWith { StepStatus.PENDING })
     }

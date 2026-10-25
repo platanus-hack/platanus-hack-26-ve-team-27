@@ -29,7 +29,8 @@ var ErrUnknownIncident = errors.New("call: unknown incident")
 // Store keeps the calls rows. DBStore is the real one.
 type Store interface {
 	// Begin inserts a requested call for the incident and returns its id and
-	// the device it goes to, before the call is placed.
+	// the device it goes to, before the call is placed. A cancelled incident
+	// is ErrUnknownIncident, like one that is not stored: no call is made.
 	Begin(ctx context.Context, incidentID string) (callID int64, to Callee, err error)
 	// Placed stores the ids ElevenLabs answered with and moves a requested
 	// call to in_progress.
@@ -45,6 +46,9 @@ type Store interface {
 	// SaveTranscript stores a post-call webhook (docs/contract.md
 	// "CallWebhook"). A repeated webhook updates the same row.
 	SaveTranscript(ctx context.Context, hook contract.CallWebhook) error
+	// ActiveCallSIDs returns the Twilio CallSIDs of the incident's calls that
+	// were placed and not finished (requested or in_progress), for a hang-up.
+	ActiveCallSIDs(ctx context.Context, incidentID string) ([]string, error)
 }
 
 // DBStore is the Postgres Store.
@@ -62,7 +66,7 @@ func (s DBStore) Begin(ctx context.Context, incidentID string) (int64, Callee, e
 	var to Callee
 	err := s.pool.QueryRowContext(ctx, `
 		WITH c AS (
-			INSERT INTO calls (incident_id) SELECT id FROM incidents WHERE id = $1 RETURNING id, incident_id
+			INSERT INTO calls (incident_id) SELECT id FROM incidents WHERE id = $1 AND cancelled_at IS NULL RETURNING id, incident_id
 		)
 		SELECT c.id, d.phone_number, COALESCE(d.user_name, ''), d.duress_phrase,
 			COALESCE(d.safe_phrase, ''), COALESCE(d.voice_id, '')
@@ -72,6 +76,27 @@ func (s DBStore) Begin(ctx context.Context, incidentID string) (int64, Callee, e
 		return 0, Callee{}, ErrUnknownIncident
 	}
 	return id, to, err
+}
+
+// ActiveCallSIDs lists the calls of the incident a hang-up can still reach.
+func (s DBStore) ActiveCallSIDs(ctx context.Context, incidentID string) ([]string, error) {
+	rows, err := s.pool.QueryContext(ctx, `
+		SELECT call_sid FROM calls
+		WHERE incident_id = $1 AND call_sid IS NOT NULL AND status IN ('requested', 'in_progress')
+		ORDER BY id`, incidentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var sids []string
+	for rows.Next() {
+		var sid string
+		if err := rows.Scan(&sid); err != nil {
+			return nil, err
+		}
+		sids = append(sids, sid)
+	}
+	return sids, rows.Err()
 }
 
 func (s DBStore) Placed(ctx context.Context, callID int64, p Placed) error {

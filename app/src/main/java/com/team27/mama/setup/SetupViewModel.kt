@@ -69,7 +69,7 @@ private const val TAG = "MamaSetup"
 class SetupViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application
     private val store = SetupStore(SharedPreferencesStore.forSetup(application))
-    private val contacts = MamaContactWriter(application.contentResolver)
+    private val contacts = MamaContactWriter(application.contentResolver) { loadMamaPhoto(application) }
     private val client = RegistrationClient(BuildConfig.SERVER_URL)
     private val graph get() = (app as MamaApp).graph
     private val isXiaomi = SystemScreens.isXiaomi()

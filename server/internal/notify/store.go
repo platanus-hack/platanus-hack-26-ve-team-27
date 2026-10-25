@@ -106,9 +106,11 @@ func (s DBStore) Message(ctx context.Context, inc intake.Incident) (contract.Not
 }
 
 // Claim runs the contract's claim: it sends only if this UPDATE changed a row.
+// A cancelled incident (POST /incidents/{id}/cancel) is never claimed, so a
+// message not sent yet is not sent; one already sent stays sent.
 func (s DBStore) Claim(ctx context.Context, incidentID string) (bool, error) {
 	res, err := s.pool.ExecContext(ctx,
-		`UPDATE incidents SET notified_at = now() WHERE id = $1 AND notified_at IS NULL`, incidentID)
+		`UPDATE incidents SET notified_at = now() WHERE id = $1 AND notified_at IS NULL AND cancelled_at IS NULL`, incidentID)
 	if err != nil {
 		return false, err
 	}

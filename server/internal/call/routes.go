@@ -63,7 +63,8 @@ func NewRoutes(cfg config.Config, store Store) *Routes {
 			rt.engine.Placer = forcedFailure{}
 		}
 		if cfg.Twilio.AccountSID != "" && cfg.Twilio.AuthToken != "" {
-			rt.engine.Status = &TwilioStatus{AccountSID: cfg.Twilio.AccountSID, AuthToken: cfg.Twilio.AuthToken}
+			tw := &TwilioStatus{AccountSID: cfg.Twilio.AccountSID, AuthToken: cfg.Twilio.AuthToken}
+			rt.engine.Status, rt.engine.Hangup = tw, tw
 		}
 		rt.webhook.Received = rt.engine.Received
 		rt.webhook.InitiationFailed = rt.engine.InitiationFailed
@@ -138,6 +139,15 @@ func Hooks(hooks ...func(ctx context.Context, f Finished)) func(ctx context.Cont
 func (rt *Routes) Starter() intake.CallStarter {
 	if rt.engine == nil {
 		return intake.LogHandoff{}
+	}
+	return rt.engine
+}
+
+// Canceller is what intake hands a cancelled incident to: the engine, or nil
+// without a database (nothing was placed, so there is no call to stop).
+func (rt *Routes) Canceller() intake.CallCanceller {
+	if rt.engine == nil {
+		return nil
 	}
 	return rt.engine
 }

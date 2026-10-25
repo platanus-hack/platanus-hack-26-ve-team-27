@@ -21,6 +21,7 @@ import com.team27.mama.emergency.toStatus
 import com.team27.mama.relay.MeshPermissions
 import com.team27.mama.relay.RelayControls
 import com.team27.mama.relay.relayPermissionMissing
+import com.team27.mama.trigger.TriggerService
 import com.team27.mama.ui.screens.ProfileScreen
 import com.team27.mama.ui.screens.SettingsScreen
 import com.team27.mama.ui.screens.SetupScreen
@@ -99,11 +100,21 @@ fun MamaNavHost(
             // Only shows the offline emergency. The trigger service declares it when its alert
             // fails (emergency.OfflineFallback), and setup asks for the Bluetooth permissions.
             val state = emergency?.state?.collectAsState()?.value
+            val context = LocalContext.current
             TriggerConfirmationScreen(
-                // Guard: a double tap must not pop the start screen and leave a blank host.
                 onBack = {
+                    // "Fue sin querer": stop the location service and its uploads, then leave this screen.
                     emergency?.cancel()
-                    if (navController.previousBackStackEntry != null) navController.popBackStack()
+                    TriggerService.cancel(context)
+                    if (navController.previousBackStackEntry != null) {
+                        navController.popBackStack()
+                    } else {
+                        // Opened by the trigger as the start screen: nothing below it to pop, so go to setup's home.
+                        navController.navigate(Route.Setup.path) {
+                            popUpTo(Route.TriggerConfirmation.path) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
                 },
                 status = state?.toStatus(),
                 onOpenProfile = { navController.navigate(Route.Profile.path) { launchSingleTop = true } },

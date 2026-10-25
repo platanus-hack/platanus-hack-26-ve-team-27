@@ -90,6 +90,9 @@ type Engine struct {
 	// and to see a busy or unanswered phone. Without it there is no ring
 	// time, and only the call_initiation_failure webhook reports a failure.
 	Status StatusReader
+	// Hangup, when set, ends the placed call of a cancelled incident
+	// (CancelCall); nil only stops the retries and the fallback.
+	Hangup Hanger
 	// Fallback, when set, opens the WebRTC fallback after the last failed
 	// attempt; nil only logs it.
 	Fallback *Fallback
@@ -124,14 +127,21 @@ type Engine struct {
 
 	mu      sync.Mutex
 	waiting map[string]chan webhookOutcome // incident id -> the attempt waiting for a webhook
+	// cancelled holds the incidents the person called off (CancelCall). The
+	// database says it too (Begin), this makes the stop immediate.
+	cancelled map[string]bool
 }
 
-var _ intake.CallStarter = (*Engine)(nil)
+var (
+	_ intake.CallStarter   = (*Engine)(nil)
+	_ intake.CallCanceller = (*Engine)(nil)
+)
 
 // webhookOutcome is what a webhook says about one conversation.
 type webhookOutcome struct {
 	conversationID string
 	failed         bool // call_initiation_failure: never connected
+	cancelled      bool // the person called the incident off: stop waiting, no retry
 }
 
 // attemptResult is how one attempt ended.
@@ -143,6 +153,7 @@ const (
 	attemptHopeless                       // not worth a retry (not a +58 number)
 	attemptNoCall                         // the incident is not stored: nothing to do
 	attemptLimited                        // over Limit: not placed, and no fallback either
+	attemptCanceled                       // the person called the incident off: no retry, no fallback
 )
 
 // timing is what the "call timing:" line reports for one incident. Times
@@ -172,6 +183,10 @@ func (e *Engine) StartCall(ctx context.Context, inc intake.Incident) {
 		res, read := e.attempt(ctx, inc, &t)
 		if read != nil {
 			vars = read
+		}
+		if res == attemptCanceled || e.isCancelled(inc.ID) {
+			outcome = "canceled"
+			break
 		}
 		if res == attemptConnected {
 			if t.unconfirmed {
@@ -214,6 +229,10 @@ func (e *Engine) StartCall(ctx context.Context, inc intake.Incident) {
 // also returns the call's variables, nil when the device was not read.
 func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) (attemptResult, map[string]string) {
 	start := e.now()
+	if e.isCancelled(inc.ID) {
+		log.Printf("call: incident %s: cancelled; not calling", inc.ID)
+		return attemptCanceled, nil
+	}
 	callID, callee, err := e.Store.Begin(ctx, inc.ID)
 	if errors.Is(err, ErrUnknownIncident) {
 		log.Printf("call: incident %s: not stored; not calling", inc.ID)
@@ -265,6 +284,12 @@ func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) (a
 	if err := e.Store.Placed(ctx, callID, placed); err != nil {
 		log.Printf("call: incident %s call %d: store conversation %s: %v", inc.ID, callID, placed.ConversationID, err)
 	}
+	// Checked after Placed is stored: a cancel that came while the call was
+	// being placed found no CallSID to hang up, so this hangs it up.
+	if e.isCancelled(inc.ID) {
+		e.hangUp(ctx, inc.ID, placed.CallSID)
+		return attemptCanceled, vars
+	}
 
 	if e.await(ctx, inc.ID, callID, placed, outcomes, t) {
 		return attemptConnected, vars
@@ -312,6 +337,9 @@ func (e *Engine) await(ctx context.Context, incidentID string, callID int64, pla
 			if o.conversationID != "" && placed.ConversationID != "" && o.conversationID != placed.ConversationID {
 				continue // a late webhook of an earlier attempt
 			}
+			if o.cancelled {
+				return true
+			}
 			if o.failed {
 				log.Printf("call: incident %s call %d: ElevenLabs reports the call never connected", incidentID, callID)
 				trace.Log(incidentID, "twilio_status", "call", callID, "status", "elevenlabs_initiation_failure")
@@ -328,6 +356,9 @@ func (e *Engine) await(ctx context.Context, incidentID string, callID int64, pla
 			}
 			return true
 		case <-poll:
+			if e.isCancelled(incidentID) {
+				return true // our own hang-up reads "canceled": not a failure to retry
+			}
 			status, err := e.Status.Status(ctx, placed.CallSID)
 			if err != nil {
 				if !pollErrLogged {
@@ -427,6 +458,52 @@ func (e *Engine) notify(incidentID string, o webhookOutcome) {
 	case ch <- o:
 	default:
 	}
+}
+
+// CancelCall stops the call of an incident the person called off: it marks
+// the incident so no attempt starts or retries and no fallback opens, wakes
+// the attempt waiting on the call, and hangs up the calls already placed. It
+// is safe to repeat. A hang-up that fails (or has no Twilio account) is
+// logged: the retries are stopped either way.
+func (e *Engine) CancelCall(ctx context.Context, incidentID string) {
+	e.mu.Lock()
+	if e.cancelled == nil {
+		e.cancelled = map[string]bool{}
+	}
+	e.cancelled[incidentID] = true
+	e.mu.Unlock()
+	e.notify(incidentID, webhookOutcome{cancelled: true})
+
+	sids, err := e.Store.ActiveCallSIDs(ctx, incidentID)
+	if err != nil {
+		log.Printf("call: incident %s: cancel: list calls: %v", incidentID, err)
+		return
+	}
+	for _, sid := range sids {
+		e.hangUp(ctx, incidentID, sid)
+	}
+}
+
+// hangUp ends the Twilio call callSID of a cancelled incident, if it can.
+func (e *Engine) hangUp(ctx context.Context, incidentID, callSID string) {
+	if callSID == "" {
+		return
+	}
+	if e.Hangup == nil {
+		log.Printf("call: incident %s: cancelled, but no Twilio account is set to hang up call %s; retries stopped", incidentID, callSID)
+		return
+	}
+	if err := e.Hangup.Hangup(ctx, callSID); err != nil {
+		log.Printf("call: incident %s: hang up call %s: %v", incidentID, callSID, err)
+		return
+	}
+	log.Printf("call: incident %s: cancelled; hung up call %s", incidentID, callSID)
+}
+
+func (e *Engine) isCancelled(incidentID string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.cancelled[incidentID]
 }
 
 // logTiming writes the incident's "call timing:" line: key=value fields,

@@ -278,6 +278,16 @@ data class LocationUpdate(
 )
 
 /**
+ * Phone -> server: the person called off an open incident ("Fue sin querer"),
+ * sent to POST /incidents/{incident_id}/cancel.
+ */
+@Serializable
+data class IncidentCancel(
+    @SerialName("incident_id") val incidentId: String,
+    @SerialName("device_id") val deviceId: String,
+)
+
+/**
  * ElevenLabs -> server: the post-call webhook (type "post_call_transcription").
  * Only the fields the server reads are modeled; the real payload has more and
  * [ContractJson] ignores them.

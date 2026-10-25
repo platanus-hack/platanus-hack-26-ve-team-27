@@ -143,6 +143,8 @@ class TriggerService : Service() {
     private suspend fun runIncident(trigger: Trigger, detectedAt: Long, store: SetupStore) {
         val incidentId = UUID.randomUUID().toString()
         val deviceId = store.deviceId
+        // Remembered from here on so "Fue sin querer" can cancel it on the server, even after this service ends.
+        lastIncident = IncidentRef(incidentId, deviceId)
         val triggeredAtMs = System.currentTimeMillis() - (SystemClock.elapsedRealtime() - detectedAt)
         val base = BuildConfig.SERVER_URL
         val graph = (application as MamaApp).graph
@@ -307,6 +309,8 @@ class TriggerService : Service() {
         private const val CELLULAR_WAIT_MS = 3_000L
         private const val FOLLOW_UP_MS = 120_000L
         private const val FOLLOW_UP_EVERY_MS = 10_000L
+        private const val CANCEL_ATTEMPTS = 3
+        private const val CANCEL_RETRY_MS = 2_000L
         private const val EXTRA_TRIGGER = "trigger"
         private const val EXTRA_DETECTED_AT = "detected_at_elapsed"
 
@@ -314,6 +318,41 @@ class TriggerService : Service() {
             Intent(context, TriggerService::class.java)
                 .putExtra(EXTRA_TRIGGER, trigger.name)
                 .apply { if (detectedAtElapsed != null) putExtra(EXTRA_DETECTED_AT, detectedAtElapsed) }
+
+        /** The newest incident this process started: what "Fue sin querer" cancels on the server. */
+        @Volatile
+        private var lastIncident: IncidentRef? = null
+
+        /** Outlives the service, which is destroyed by [cancel] before its request is done. */
+        private val cancelScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        /**
+         * Stops the running incident ("false alarm" on the confirmation screen): the service dies, which
+         * cancels the coroutine scope, so the follow-up location posts stop and the foreground
+         * notification goes away. A no-op when no service runs. It also asks the server to cancel the
+         * incident (its call, retries and unsent family message), best effort: a failure is only logged.
+         */
+        fun cancel(context: Context) {
+            val app = context.applicationContext
+            val incident = lastIncident
+            lastIncident = null
+            val stopped = context.stopService(Intent(context, TriggerService::class.java))
+            TriggerLog.log(context, "incident cancelled by the person; service stopped=$stopped")
+            if (incident == null) return
+            cancelScope.launch { cancelOnServer(app, BuildConfig.SERVER_URL, incident) }
+        }
+
+        /** POSTs the cancel, retrying a network error or a 5xx up to [CANCEL_ATTEMPTS] times. */
+        private suspend fun cancelOnServer(context: Context, base: String, incident: IncidentRef) {
+            val url = AlertEvents.cancelUrl(base, incident.incidentId)
+            val body = AlertEvents.cancelBody(incident.incidentId, incident.deviceId)
+            repeat(CANCEL_ATTEMPTS) { attempt ->
+                val result = TriggerHttp.postJson(url, body) { TriggerLog.log(context, it) }
+                TriggerLog.log(context, "cancel ${incident.incidentId} attempt=${attempt + 1} status=${result.status}")
+                if (result.status in 200..499) return
+                delay(CANCEL_RETRY_MS)
+            }
+        }
 
         /**
          * Starts an alert. [detectedAtElapsed] is when the trigger was
@@ -329,3 +368,6 @@ class TriggerService : Service() {
         }
     }
 }
+
+/** The incident and device ids a cancel request needs. */
+private data class IncidentRef(val incidentId: String, val deviceId: String)

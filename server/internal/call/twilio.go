@@ -10,6 +10,13 @@ import (
 	"strings"
 )
 
+// Hanger ends a placed call. *TwilioStatus is the real one.
+type Hanger interface {
+	// Hangup cancels a call that is queued or ringing and ends one in
+	// progress. A call that already ended is no error.
+	Hangup(ctx context.Context, callSID string) error
+}
+
 // TwilioBaseURL is the Twilio REST API.
 const TwilioBaseURL = "https://api.twilio.com"
 
@@ -70,6 +77,28 @@ func (t *TwilioStatus) Status(ctx context.Context, callSID string) (string, erro
 		return "", fmt.Errorf("twilio: decode call: %w", err)
 	}
 	return out.Status, nil
+}
+
+// Hangup stops the call: it reads the status, then POSTs Status=canceled to a
+// call that is queued, initiated or ringing and Status=completed to one in
+// progress (https://www.twilio.com/docs/voice/api/call-resource#update-a-call-resource).
+// Any other status means the call already ended, and nothing is sent.
+func (t *TwilioStatus) Hangup(ctx context.Context, callSID string) error {
+	status, err := t.Status(ctx, callSID)
+	if err != nil {
+		return err
+	}
+	var target string
+	switch status {
+	case TwilioQueued, TwilioInitiated, TwilioRinging:
+		target = TwilioCanceled
+	case TwilioInProgress:
+		target = TwilioCompleted
+	default:
+		return nil
+	}
+	_, err = t.do(ctx, http.MethodPost, "/Calls/"+url.PathEscape(callSID)+".json", url.Values{"Status": {target}})
+	return err
 }
 
 // TranscriptionLanguage is the language Twilio transcribes a call in. Its
