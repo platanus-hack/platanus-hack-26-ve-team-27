@@ -145,7 +145,7 @@
   <p data-key="noaudio-{{.NoAudio}}" class="panel-note">{{.NoAudio}}</p>
   {{- end}}
   {{- if .Turns}}
-  <ol data-key="turns" data-live-children class="turns" aria-label="Transcripción">
+  <ol data-key="turns" data-live-children class="turns"{{if .Provisional}} data-provisional{{end}} aria-label="Transcripción{{if .Provisional}} en vivo{{end}}">
   {{- range $i, $t := .Turns}}
     <li data-key="turn-{{$i}}" class="{{if .Agent}}agent{{else}}user{{end}}{{if .Keep}} keep{{end}}"><button type="button" class="turn{{if .Phrase}} phrase{{end}}" data-call="{{$.Call.N}}" data-seek="{{.Seek}}"{{if not $.Call.Audio}} disabled{{end}}><span class="who"><span>{{.Speaker}}</span><span>{{.Offset}}</span></span><span class="msg">{{.Message}}</span>{{if .Phrase}}<span class="phrase-tag">La frase acordada</span>{{end}}</button></li>
   {{- end}}

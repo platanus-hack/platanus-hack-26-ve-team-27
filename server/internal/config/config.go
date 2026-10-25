@@ -151,6 +151,12 @@ type Report struct {
 	// dashboard GET /central/ (#99), which sees every incident. Given once
 	// as ?key=, it becomes a cookie. Blank leaves the dashboard off (404).
 	CentralKey string
+	// LiveTranscription is LIVE_TRANSCRIPTION_ENABLED, "true" or "1": Twilio
+	// transcribes each answered call while it lasts, so the report shows the
+	// conversation as it happens (#143). It also needs the Twilio account and
+	// a public URL. Off by default: it is billed per minute, and it is not yet
+	// proven next to the ElevenLabs stream of the same call.
+	LiveTranscription bool
 }
 
 // Limits caps the calls the server places and the family messages it sends,
@@ -176,11 +182,11 @@ func Load() Config { return LoadFrom(os.Getenv) }
 func LoadFrom(getenv func(string) string) Config {
 	get := func(name string) string { return strings.TrimSpace(getenv(name)) }
 	c := Config{
-		Port:          get("PORT"),
-		DatabaseURL:   get("DATABASE_URL"),
-		Notifier:      strings.ToLower(get("NOTIFIER")),
-		PublicURL:     get("PUBLIC_URL"),
-		NotifySelf:    isOn(get("NOTIFY_SELF")),
+		Port:        get("PORT"),
+		DatabaseURL: get("DATABASE_URL"),
+		Notifier:    strings.ToLower(get("NOTIFIER")),
+		PublicURL:   get("PUBLIC_URL"),
+		NotifySelf:  isOn(get("NOTIFY_SELF")),
 		ElevenLabs: ElevenLabs{
 			APIKey:           get("ELEVENLABS_API_KEY"),
 			AgentID:          get("ELEVENLABS_AGENT_ID"),
@@ -213,10 +219,11 @@ func LoadFrom(getenv func(string) string) Config {
 			X25519PrivateKey: get("EMERGENCY_X25519_PRIVATE_KEY"),
 		},
 		Report: Report{
-			Enabled:    isOn(get("INCIDENT_REPORT_ENABLED")),
-			TTLDays:    positiveInt(get("INCIDENT_REPORT_TTL_DAYS"), DefaultReportTTLDays),
-			DemoKey:    get("DEMO_KEY"),
-			CentralKey: get("CENTRAL_KEY"),
+			Enabled:           isOn(get("INCIDENT_REPORT_ENABLED")),
+			TTLDays:           positiveInt(get("INCIDENT_REPORT_TTL_DAYS"), DefaultReportTTLDays),
+			DemoKey:           get("DEMO_KEY"),
+			LiveTranscription: isOn(get("LIVE_TRANSCRIPTION_ENABLED")),
+			CentralKey:        get("CENTRAL_KEY"),
 		},
 		Limits: Limits{
 			CallsPerNumber:    positiveInt(get("CALL_LIMIT_PER_NUMBER"), DefaultCallsPerNumber),
@@ -297,7 +304,8 @@ func (c Config) String() string {
 	parts := append([]string{"PORT=" + c.Port, "NOTIFIER=" + c.Notifier,
 		fmt.Sprintf("EMERGENCY_OFFLINE_ENABLED=%t", c.Emergency.Enabled),
 		fmt.Sprintf("NOTIFY_SELF=%t", c.NotifySelf),
-		fmt.Sprintf("INCIDENT_REPORT_ENABLED=%t", c.Report.Enabled)}, setOrUnset(c.vars())...)
+		fmt.Sprintf("INCIDENT_REPORT_ENABLED=%t", c.Report.Enabled),
+		fmt.Sprintf("LIVE_TRANSCRIPTION_ENABLED=%t", c.Report.LiveTranscription)}, setOrUnset(c.vars())...)
 	return fmt.Sprintf("config{%s}", strings.Join(parts, " "))
 }
 

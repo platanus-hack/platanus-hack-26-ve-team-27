@@ -83,6 +83,7 @@ type Handler struct {
 	closer  *Closer
 	demo    *Demo
 	kapso   *KapsoWebhook
+	twilio  *TranscriptionWebhook
 	central *Central
 
 	// Live stream timing; the defaults when zero (tests shorten them).
@@ -101,6 +102,13 @@ func NewHandler(src Source, opts Options) *Handler {
 // WithKapso mounts POST /webhooks/kapso (KapsoWebhook).
 func (h *Handler) WithKapso(k *KapsoWebhook) *Handler {
 	h.kapso = k
+	return h
+}
+
+// WithTranscription mounts POST /webhooks/twilio/transcription
+// (TranscriptionWebhook, #143).
+func (h *Handler) WithTranscription(t *TranscriptionWebhook) *Handler {
+	h.twilio = t
 	return h
 }
 
@@ -125,7 +133,7 @@ func (h *Handler) RecoverWith(c *Closer) *Handler {
 
 // Register mounts GET /i/{token}, its recording, the sealed document and
 // signature, the static files, and the extras mounted with WithDemo,
-// WithKapso and WithCentral.
+// WithKapso, WithTranscription and WithCentral.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+PagePrefix+"{token}", h.page)
 	mux.HandleFunc("GET "+PagePrefix+"{token}/audio.mp3", h.audio)
@@ -139,6 +147,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	}
 	if h.kapso != nil {
 		mux.Handle("POST /webhooks/kapso", h.kapso)
+	}
+	if h.twilio != nil {
+		mux.Handle("POST "+TranscriptionPath, h.twilio)
 	}
 	h.registerCentral(mux)
 	mux.HandleFunc("GET "+StaticPrefix+"{file}", serveStatic)

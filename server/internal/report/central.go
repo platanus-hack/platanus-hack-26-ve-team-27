@@ -260,18 +260,7 @@ const (
 // buildCentralCase turns the record into the detail page. token is the
 // case's report link, for its recording and PDF.
 func buildCentralCase(rec Record, x CaseExtras, opts Options) centralCase {
-	page := Build(rec, opts)
-	// The family page shows the transcript once the call ends; the central
-	// shows it while it happens, as soon as turns are stored (#97 appends
-	// them to calls.transcript during the call).
-	if page.Call == nil && page.CallActive {
-		for i := len(page.Calls) - 1; i >= 0; i-- {
-			if len(page.Calls[i].Turns) > 0 {
-				page.Call = &page.Calls[i]
-				break
-			}
-		}
-	}
+	page := Build(rec, opts) // its Call shows the turns while the call is on too (#143)
 	page.Route = centralRoute(rec.Points)
 	item := caseItemOf(rec, x)
 	d := centralCase{Page: page, Case: caseRow(item, opts.Now), at: opts.Now}

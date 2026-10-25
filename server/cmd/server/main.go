@@ -51,6 +51,7 @@ func main() {
 		reportHook(closer),
 	))
 	calls.SetProgress(progressHook(cfg, pool))
+	calls.SetTranscription(transcriptionURL(cfg, pool))
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -311,6 +312,12 @@ func newReports(cfg config.Config, pool *sql.DB, signing ed25519.PrivateKey) (*r
 	} else {
 		log.Print("report: KAPSO_WEBHOOK_SECRET is not set; the report shows each family message as sent, without delivery or read receipts")
 	}
+	if u := transcriptionURL(cfg, pool); u != "" {
+		log.Printf("report: the call is transcribed live: Twilio posts each phrase to %s", u)
+		h.WithTranscription(&report.TranscriptionWebhook{AuthToken: cfg.Twilio.AuthToken, URL: u, Store: store})
+	} else if cfg.Report.LiveTranscription {
+		log.Print("report: WARNING: LIVE_TRANSCRIPTION_ENABLED is on but TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN or PUBLIC_URL is not set; the conversation shows after the call only")
+	}
 	if cfg.Report.DemoKey != "" {
 		log.Print("report: demo shortcuts GET /demo/latest and /demo/next are on (DEMO_KEY is set)")
 		h.WithDemo(&report.Demo{Key: cfg.Report.DemoKey, Store: store, TTLDays: cfg.Report.TTLDays})
@@ -346,6 +353,26 @@ func progressHook(cfg config.Config, pool *sql.DB) func(context.Context, int64, 
 			log.Printf("report: call %d: store Twilio status %s: %v", callID, status, err)
 		}
 	}
+}
+
+// transcriptionURL is where Twilio posts the live transcription of a call
+// (#143), or "" when it is off: it needs LIVE_TRANSCRIPTION_ENABLED, the
+// report and its database, the Twilio account, and a public origin
+// (TWILIO_WEBHOOK_BASE_URL, else PUBLIC_URL). The call engine starts the
+// transcription with it and the report checks Twilio's signature over it.
+func transcriptionURL(cfg config.Config, pool *sql.DB) string {
+	if !cfg.Report.LiveTranscription || !cfg.Report.Enabled || pool == nil ||
+		cfg.Twilio.AccountSID == "" || cfg.Twilio.AuthToken == "" {
+		return ""
+	}
+	base := cfg.Twilio.WebhookBaseURL
+	if base == "" {
+		base = cfg.PublicURL
+	}
+	if base == "" {
+		return ""
+	}
+	return strings.TrimSuffix(base, "/") + report.TranscriptionPath
 }
 
 // reportSigningKey is the key that seals reports: the offline channel's when

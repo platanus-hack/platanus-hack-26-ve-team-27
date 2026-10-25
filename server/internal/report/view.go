@@ -163,9 +163,12 @@ type CallView struct {
 	Failed    bool
 	Verdict   string // "" until judged
 	Turns     []TurnView
-	Audio     *AudioView // nil: "Audio no disponible"
-	NoAudio   string     // why there is no audio
-	More      bool       // the collapsed transcript hides turns
+	// Provisional: Turns are what Twilio heard while the call is on (#143),
+	// until the post-call transcript replaces them.
+	Provisional bool
+	Audio       *AudioView // nil: "Audio no disponible"
+	NoAudio     string     // why there is no audio
+	More        bool       // the collapsed transcript hides turns
 }
 
 // TurnView is one transcript turn.
@@ -251,6 +254,9 @@ func Build(rec Record, opts Options) Page {
 	p.TriggerISO = iso(rec.Incident.TriggeredAt)
 	p.HasCallBranch = rec.Incident.Branch == contract.BranchCall
 	for i, c := range rec.Calls {
+		if rec.Seal != nil {
+			c.LiveTurns = nil // a sealed page shows only what the seal covers
+		}
 		v := callView(i+1, c, rec.Device, opts.Token)
 		if v.Active && (opts.Now.IsZero() || opts.Now.Sub(c.RequestedAt) < staleCall) && rec.Seal == nil {
 			p.CallActive, p.CallPhase, p.CallSince = true, v.Phase, v.Since
@@ -293,12 +299,14 @@ func Build(rec Record, opts Options) Page {
 		pt := rec.Points[n-1]
 		p.RouteLast, p.RouteLastClock, p.RouteMaps = iso(pt.ReceivedAt), clock(pt.RecordedAt), MapsURL(pt.Lat, pt.Lng)
 	}
-	if !p.CallActive {
-		for i := len(p.Calls) - 1; i >= 0; i-- {
-			if c := p.Calls[i]; len(c.Turns) > 0 || c.Audio != nil {
-				p.Call = &p.Calls[i]
-				break
-			}
+	for i := len(p.Calls) - 1; i >= 0; i-- {
+		c := p.Calls[i]
+		if p.CallActive && !c.Active {
+			continue // while a call is on, only its live turns (#143)
+		}
+		if len(c.Turns) > 0 || c.Audio != nil {
+			p.Call = &p.Calls[i]
+			break
 		}
 	}
 	switch {
@@ -493,8 +501,13 @@ func callView(n int, c Call, dev Device, token string) CallView {
 		v.Verdict = verdictLine(c.Verdict, c.VerdictReason)
 	}
 	answered, known := c.AnsweredAt()
-	phrase := phraseTurns(c.Transcript, dev.DuressPhrase)
-	for j, t := range c.Transcript {
+	turns, phrase := c.Transcript, phraseTurns(c.Transcript, dev.DuressPhrase)
+	if len(turns) == 0 && c.Status != "done" && len(c.LiveTurns) > 0 {
+		// The call is still on (#143): what Twilio heard so far. No turn is
+		// marked as the phrase: only the post-call transcript is judged.
+		turns, phrase, v.Provisional = c.LiveTurns, nil, true
+	}
+	for j, t := range turns {
 		tv := TurnView{
 			Agent:   t.Role == duress.RoleAgent,
 			Speaker: "Tu familiar",
@@ -512,10 +525,10 @@ func callView(n int, c Call, dev Device, token string) CallView {
 		v.Turns = append(v.Turns, tv)
 	}
 	// Collapsed on a phone, the transcript keeps the phrase turn, or the
-	// first two turns when none says it.
+	// first two turns when none says it. A live one keeps every turn.
 	kept := 0
 	for i := range v.Turns {
-		if v.Turns[i].Phrase {
+		if v.Turns[i].Phrase || v.Provisional {
 			v.Turns[i].Keep = true
 			kept++
 		}
@@ -538,6 +551,9 @@ func callView(n int, c Call, dev Device, token string) CallView {
 		}
 	} else {
 		v.NoAudio = noAudioReason(c)
+	}
+	if v.Provisional {
+		v.NoAudio = "En vivo: al colgar llegan la grabación y la transcripción definitiva."
 	}
 	return v
 }
