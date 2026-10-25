@@ -219,6 +219,17 @@ body[data-open] .mama { animation: float 5s ease-in-out infinite; }
   box-shadow: inset 0 0 0 2px var(--alarm), inset 0 0 48px var(--alarm-glow);
   opacity: .55; animation: alarm-frame 1.6s ease-in-out infinite;
 }
+/* The burst: for about 4 s after the chip turns red, the screen's edges flash
+ * red six times (0.6 s each, under WCAG's 3 a second), then it removes
+ * itself. Under reduced motion ficha.js fades one soft vignette instead. */
+@keyframes alarm-flash { 0%, 100% { opacity: 0; } 45% { opacity: 1; } }
+.alarm-flash {
+  position: fixed; inset: 0; z-index: 60; pointer-events: none; opacity: 0;
+  box-shadow: inset 0 0 0 10px var(--alarm), inset 0 0 180px 70px var(--alarm-glow);
+  background: radial-gradient(ellipse at center, transparent 50%, var(--alarm-glow) 100%);
+  animation: alarm-flash .6s ease-in-out 6 both;
+}
+.alarm-flash.calm { animation: none; box-shadow: inset 0 0 0 4px var(--alarm), inset 0 0 160px 60px var(--alarm-glow); }
 .node.node-alarm .node-dot { background: var(--alarm); border-color: var(--alarm); color: var(--on-alarm); box-shadow: 0 0 0 4px var(--alarm-glow); }
 .node.node-alarm .node-sub { color: var(--alarm); font-weight: 700; }
 .turn.phrase.alarm { background: var(--alarm); color: var(--on-alarm); border-color: var(--alarm); box-shadow: 0 0 0 4px var(--alarm-glow); animation: none; }
@@ -346,7 +357,7 @@ body[data-expanded] .more { display: none; }
 .seg { stroke: var(--primary); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 0; animation: draw 1.1s var(--ease) both; }
 .dot { fill: var(--primary); stroke: var(--surface-container); stroke-width: 2; }
 .dot.first { fill: var(--surface-lowest); stroke: var(--primary); stroke-width: 3; }
-.pulse { fill: var(--primary); transform-box: fill-box; transform-origin: center; animation: ping 1.6s var(--ease) infinite; pointer-events: none; }
+circle.pulse { fill: var(--primary); transform-box: fill-box; transform-origin: center; animation: ping 1.6s var(--ease) infinite; pointer-events: none; }
 .route-map { position: absolute; inset: 0; z-index: 1; border-radius: var(--r-m); overflow: hidden; opacity: 0; pointer-events: none; transition: opacity .6s var(--ease); }
 .route-map.on { opacity: 1; pointer-events: auto; }
 .route-map.on + .route { visibility: hidden; }

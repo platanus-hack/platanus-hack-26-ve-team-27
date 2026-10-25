@@ -119,12 +119,10 @@
   }
   var soundState = soundOn();
 
-  // alarms are the red alarms on screen, by key.
+  // alarms are the list's red rows, by key. The detail's chip turning red
+  // comes from ficha.js as a "ficha:alarm" event, with its flash.
   function alarms() {
     var now = {};
-    var chip = document.querySelector("[data-alarm-level]");
-    var level = chip && chip.getAttribute("data-alarm-level");
-    if (level === "heard" || level === "confirmed") { now.caso = true; }
     Array.prototype.forEach.call(document.querySelectorAll("[data-alarm]"), function (r) {
       now[r.getAttribute("data-alarm")] = true;
     });
@@ -168,6 +166,7 @@
       Object.keys(now).forEach(function (k) { if (!seen[k]) { fired = true; } seen[k] = true; });
       if (fired) { siren(); }
     });
+    document.addEventListener("ficha:alarm", siren);
     var touch = function () { touched = true; };
     document.addEventListener("pointerdown", touch, { once: true, capture: true });
     document.addEventListener("keydown", touch, { once: true, capture: true });

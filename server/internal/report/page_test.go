@@ -267,3 +267,33 @@ func TestFichaJSPlaysOneRecordingAtATime(t *testing.T) {
 		}
 	}
 }
+
+// The alarm burst: ficha.js flashes the screen's edges when the chip turns
+// red (and tells central.js's siren), and ficha.css paces it under WCAG's
+// three flashes a second, with a calm vignette under reduced motion. The
+// route halo rule is scoped to its <circle>, so no other .pulse (the alarm
+// chip, the list's alarm row) loses its clicks (#143).
+func TestAlarmFlashesTheScreenEdges(t *testing.T) {
+	read := func(name string) string {
+		b, err := fs.ReadFile(staticFS, "static/"+name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	js, css, central := read("ficha.js"), read("ficha.css"), read("central.js")
+	for _, want := range []string{"function flash()", "function watchAlarm()", `new CustomEvent("ficha:alarm")`, `"alarm-flash" + (motion ? "" : " calm")`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("ficha.js lacks %q", want)
+		}
+	}
+	if !strings.Contains(central, `document.addEventListener("ficha:alarm", siren)`) {
+		t.Error("central.js does not sound the siren on ficha:alarm")
+	}
+	if !strings.Contains(css, "animation: alarm-flash .6s ease-in-out 6 both") {
+		t.Error("ficha.css lacks the paced burst (6 flashes of 0.6 s)")
+	}
+	if strings.Contains(css, "\n.pulse {") || !strings.Contains(css, "circle.pulse {") {
+		t.Error("the route halo rule must be scoped to circle.pulse: a bare .pulse sets pointer-events: none on the alarm row")
+	}
+}
