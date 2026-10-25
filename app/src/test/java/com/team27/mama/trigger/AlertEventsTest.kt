@@ -2,6 +2,7 @@ package com.team27.mama.trigger
 
 import com.team27.mama.contract.AlertEvent
 import com.team27.mama.contract.ContractJson
+import com.team27.mama.contract.IncidentCancel
 import com.team27.mama.contract.LocationUpdate
 import com.team27.mama.contract.Trigger
 import org.junit.Assert.assertEquals
@@ -21,7 +22,15 @@ class AlertEventsTest {
     fun urlsTrimTheBase() {
         assertEquals("http://127.0.0.1:8080/incidents", AlertEvents.incidentsUrl(" http://127.0.0.1:8080/ "))
         assertEquals("http://h/incidents/abc/points", AlertEvents.pointsUrl("http://h", "abc"))
+        assertEquals("http://h/incidents/abc/cancel", AlertEvents.cancelUrl(" http://h/ ", "abc"))
         assertEquals("https://h/", AlertEvents.rootUrl("https://h//"))
+    }
+
+    @Test
+    fun cancelBodyIsTheFrozenIncidentCancel() {
+        val cancel = ContractJson.decodeFromString(IncidentCancel.serializer(), AlertEvents.cancelBody("i", "d"))
+        assertEquals(IncidentCancel("i", "d"), cancel)
+        assertEquals("""{"incident_id":"i","device_id":"d"}""", AlertEvents.cancelBody("i", "d"))
     }
 
     @Test

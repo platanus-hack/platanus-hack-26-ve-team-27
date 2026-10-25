@@ -2,6 +2,7 @@ package com.team27.mama.trigger
 
 import com.team27.mama.contract.AlertEvent
 import com.team27.mama.contract.ContractJson
+import com.team27.mama.contract.IncidentCancel
 import com.team27.mama.contract.LocationUpdate
 import com.team27.mama.contract.Point
 import com.team27.mama.contract.Trigger
@@ -20,6 +21,8 @@ object AlertEvents {
     fun incidentsUrl(baseUrl: String) = base(baseUrl) + "/incidents"
 
     fun pointsUrl(baseUrl: String, incidentId: String) = base(baseUrl) + "/incidents/$incidentId/points"
+
+    fun cancelUrl(baseUrl: String, incidentId: String) = base(baseUrl) + "/incidents/$incidentId/cancel"
 
     /** Good enough to send at once: at most [maxAgeMs] old and [maxAccuracyM] precise (an unknown accuracy is not). */
     fun isFreshEnough(ageMs: Long, accuracyM: Float?, maxAgeMs: Long = 30_000, maxAccuracyM: Float = USABLE_ACCURACY_M): Boolean =
@@ -75,6 +78,10 @@ object AlertEvents {
 
     fun pointsBody(incidentId: String, deviceId: String, points: List<Point>): String =
         ContractJson.encodeToString(LocationUpdate.serializer(), LocationUpdate(incidentId, deviceId, points))
+
+    /** The body of `POST /incidents/{incident_id}/cancel`: the incident and the device that owns it. */
+    fun cancelBody(incidentId: String, deviceId: String): String =
+        ContractJson.encodeToString(IncidentCancel.serializer(), IncidentCancel(incidentId, deviceId))
 
     private fun base(baseUrl: String) = baseUrl.trim().trimEnd('/')
 }
