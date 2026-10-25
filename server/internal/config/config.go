@@ -151,6 +151,11 @@ type Report struct {
 	// dashboard GET /central/ (#99), which sees every incident. Given once
 	// as ?key=, it becomes a cookie. Blank leaves the dashboard off (404).
 	CentralKey string
+	// MapKey is CARTO_BASEMAPS_KEY, optional: the free key of CARTO's
+	// basemaps (carto.com/basemaps/apikey), which the route map's tiles
+	// need. Blank leaves the route as the drawing, with no map. It is not a
+	// secret: the reader's browser sends it with every tile.
+	MapKey string
 }
 
 // Limits caps the calls the server places and the family messages it sends,
@@ -217,6 +222,7 @@ func LoadFrom(getenv func(string) string) Config {
 			TTLDays:    positiveInt(get("INCIDENT_REPORT_TTL_DAYS"), DefaultReportTTLDays),
 			DemoKey:    get("DEMO_KEY"),
 			CentralKey: get("CENTRAL_KEY"),
+			MapKey:     get("CARTO_BASEMAPS_KEY"),
 		},
 		Limits: Limits{
 			CallsPerNumber:    positiveInt(get("CALL_LIMIT_PER_NUMBER"), DefaultCallsPerNumber),

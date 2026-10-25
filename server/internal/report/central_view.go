@@ -391,6 +391,7 @@ func centralRoute(points []Point) *Route {
 			x, y, anchor, bx = place(false, true)
 		}
 		placed = append(placed, bx)
+		r.Map[i].Label = d.at
 		byIndex[i] = RouteLabel{
 			Key: "lbl-" + strconv.Itoa(i+1) + "-" + f(x) + "-" + f(y) + "-" + anchor, X: f(x), Y: f(y),
 			Anchor: anchor, Text: d.at, Newest: i == n-1,
