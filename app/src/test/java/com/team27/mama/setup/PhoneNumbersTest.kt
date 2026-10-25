@@ -44,6 +44,15 @@ class PhoneNumbersTest {
     }
 
     @Test
+    fun aPickedContactNumberIsShownGroupedOrAsStored() {
+        assertEquals("+58 414 123 4567", PhoneNumbers.fromContact("0414-123-4567"))
+        assertEquals("+58 414 123 4567", PhoneNumbers.fromContact(" +58 (414) 123 4567 "))
+        assertEquals("+15550100123", PhoneNumbers.fromContact("+1 555 010 0123"))
+        // Not callable as stored: kept, so the form's validation shows what is wrong.
+        assertEquals("*611", PhoneNumbers.fromContact(" *611 "))
+    }
+
+    @Test
     fun sameNumberIgnoresFormatting() {
         assertTrue(PhoneNumbers.sameNumber("+584141234567", "0414-123 4567"))
         assertTrue(PhoneNumbers.sameNumber("+1 555 010 0123", "+15550100123"))
