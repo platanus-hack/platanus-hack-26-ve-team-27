@@ -587,11 +587,17 @@ default; then every route below answers `404`). Code:
   `go run ./cmd/ficha <incident_id>` prints the link of an incident, creating it if needed.
 - **Privacy.** Every response under `/i/` carries `Referrer-Policy:
   no-referrer`, `X-Robots-Tag: noindex, nofollow, noarchive`, `Cache-Control:
-  no-store` and a `Content-Security-Policy` that allows only this server.
-  Fonts (Lexend, OFL), images, CSS and JS are embedded in the binary and
-  served from `/ficha/static/{file}`, so opening a report makes no request to
-  anyone else. There is no map with tiles: each location has an "Abrir en
-  Maps" link and the path is drawn in SVG. The page never shows the full phone
+  no-store` and a `Content-Security-Policy` that allows only this server,
+  plus the route map's tile images. Fonts (Lexend, OFL), images, CSS and JS
+  (Leaflet 1.9.4, BSD-2, vendored) are embedded in the binary and served
+  from `/ficha/static/{file}`. The one request to anyone else is the route
+  map's tiles (#143): with `CARTO_BASEMAPS_KEY` set (CARTO's free basemaps
+  key, carto.com/basemaps/apikey; without one CARTO answers tiles stamped
+  "API KEY REQUIRED"), the reader's browser asks `*.basemaps.cartocdn.com`
+  for the squares around the route, with no Referer, and the path is drawn
+  over them. Without the key, until the first tile arrives, or when the
+  tiles cannot load, the path is the SVG drawing alone, which is also what
+  the PDF uses. Each location has an "Abrir en Maps" link. The page never shows the full phone
   number (only `+58 ···67`), the device id or the duress phrase. No other
   response under `/i/` (`ficha.json`, `estado.json`, `/live`, the PDF)
   carries the device id either: it is the device's only credential on

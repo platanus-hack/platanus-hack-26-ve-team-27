@@ -105,6 +105,7 @@
     body.setAttribute("data-state", s.state);
     if (s.live) { body.setAttribute("data-open", ""); } else { body.removeAttribute("data-open"); }
     afterUpdate();
+    document.dispatchEvent(new CustomEvent("ficha:update")); // route-map.js redraws the map
   }
 
   function startLive() {

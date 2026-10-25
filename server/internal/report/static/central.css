@@ -382,7 +382,8 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
   .c-grid .panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .c-grid .panel-body { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; }
   .c-place .panel-body { flex: 1 1 auto; overflow: hidden; min-height: 0; }
-  .c-place .route { flex: 1 1 auto; min-height: 0; aspect-ratio: auto; height: 100%; }
+  .c-place .route-box { flex: 1 1 auto; min-height: 0; }
+  .c-place .route { position: absolute; inset: 0; height: 100%; aspect-ratio: auto; }
   .c-place .maps-btn { min-height: 36px; font-size: 13px; }
   .c-place .route-sum { font-size: 13px; line-height: 18px; }
   .panel-call .call-card { flex: 1; min-height: 0; }
