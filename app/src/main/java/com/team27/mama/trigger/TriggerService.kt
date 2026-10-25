@@ -29,6 +29,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -93,6 +96,8 @@ class TriggerService : Service() {
     }
 
     override fun onDestroy() {
+        // Cancelled, finished or ignored: whatever ended the service, no incident is running any more.
+        mutableProgress.value = TriggerProgress.Idle
         scope.cancel()
         main.removeCallbacksAndMessages(null)
         super.onDestroy()
@@ -136,6 +141,7 @@ class TriggerService : Service() {
         val deviceId = store.deviceId
         // Remembered from here on so "Fue sin querer" can cancel it on the server, even after this service ends.
         lastIncident = IncidentRef(incidentId, deviceId)
+        mutableProgress.value = TriggerProgress.Sending
         val triggeredAtMs = System.currentTimeMillis() - (SystemClock.elapsedRealtime() - detectedAt)
         val base = BuildConfig.SERVER_URL
         val graph = (application as MamaApp).graph
@@ -172,8 +178,10 @@ class TriggerService : Service() {
                         )
                     },
                 ).send(event)
+                mutableProgress.value = progressAfterAlert(outcome)
                 val handoff = handOff(incidentId, outcome, (application as MamaApp).graph.incomingCall) {
-                    TriggerScreens.openConfirmation(this, it)
+                    // The in-app button shows its own progress on the home screen.
+                    if (opensConfirmation(trigger)) TriggerScreens.openConfirmation(this, it)
                 }
                 TriggerLog.log(this, "alert $incidentId outcome=$outcome handoff=$handoff")
                 if (outcome is AlertOutcome.Accepted) followUp(base, incidentId, deviceId, first, fixes)
@@ -196,7 +204,9 @@ class TriggerService : Service() {
      */
     private suspend fun offlineFallback(alertStatus: Int?) {
         val offline = (application as MamaApp).graph.emergency?.takeIf { OfflineFallback.shouldDeclare(alertStatus) } ?: return
-        TriggerLog.log(this, "offline emergency declared=${offline.declare()} phase=${offline.state.value.phase}")
+        val declared = offline.declare()
+        mutableProgress.value = TriggerProgress.Active
+        TriggerLog.log(this, "offline emergency declared=$declared phase=${offline.state.value.phase}")
         OfflineFallback.awaitDelivered(offline)
         TriggerLog.log(this, "offline emergency released phase=${offline.state.value.phase}")
     }
@@ -289,6 +299,15 @@ class TriggerService : Service() {
             Intent(context, TriggerService::class.java)
                 .putExtra(EXTRA_TRIGGER, trigger.name)
                 .apply { if (detectedAtElapsed != null) putExtra(EXTRA_DETECTED_AT, detectedAtElapsed) }
+
+        private val mutableProgress = MutableStateFlow(TriggerProgress.Idle)
+
+        /**
+         * Where the online trigger is now. It lives here, next to the service that publishes it, so
+         * nothing else needs wiring: the service and the screens share one process. Back to
+         * [TriggerProgress.Idle] whenever the service stops (cancel, finish, or a start it ignored).
+         */
+        val progress: StateFlow<TriggerProgress> = mutableProgress.asStateFlow()
 
         /** The newest incident this process started: what "Fue sin querer" cancels on the server. */
         @Volatile
