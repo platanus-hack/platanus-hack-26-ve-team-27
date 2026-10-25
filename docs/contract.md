@@ -775,7 +775,9 @@ default; then every route below answers `404`). Code:
   `?key=<CENTRAL_KEY>` once, compared in constant time, sets an HttpOnly,
   Secure, SameSite=Strict cookie (an HMAC of the key, 24 h) and redirects to
   the URL without the key. No key, a wrong key or a bad cookie answers `404`,
-  the same as with `CENTRAL_KEY` unset. `?tema=claro` starts in light (dark is
+  the same as with `CENTRAL_KEY` unset. With `CENTRAL_PUBLIC=true` there is no
+  key at all: every route answers `200` to anyone with the URL, and the log
+  says `PUBLIC` at boot (a demo, never real users). `?tema=claro` starts in light (dark is
   the default); `?seguir=1` on the list opens the next new case by itself.
   Opening a case creates its report link if it has none, for the recording
   and the PDF.

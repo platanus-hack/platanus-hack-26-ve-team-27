@@ -87,6 +87,7 @@ Las variables se cargan desde un `.env` en la raíz (`set -a; . ./.env; set +a`)
 | `KAPSO_API_KEY`, `KAPSO_PHONE_NUMBER_ID`, `KAPSO_WEBHOOK_SECRET` | WhatsApp a la familia |
 | `ANTHROPIC_API_KEY` | LLM del detector y extracción del contexto de la llamada |
 | `INCIDENT_REPORT_ENABLED`, `CENTRAL_KEY`, `DEMO_KEY` | Ficha del caso y central web |
+| `CENTRAL_PUBLIC` | `true` abre la central a cualquiera, sin llave: ve cada incidente, su ubicación y su grabación. Solo para la demo. Apagada, manda `CENTRAL_KEY` |
 | `FALLBACK_TOKEN` | Página de respaldo WebRTC |
 | `CALL_LIMIT_*`, `NOTIFY_LIMIT_*` | Límites de llamadas y mensajes cada 10 min |
 | `EMERGENCY_OFFLINE_ENABLED` y `EMERGENCY_*` | Canal offline por SMS y malla BLE (apagado por defecto) |

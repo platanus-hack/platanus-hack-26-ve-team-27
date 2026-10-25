@@ -330,11 +330,16 @@ func newReports(cfg config.Config, pool *sql.DB, signing ed25519.PrivateKey) (*r
 }
 
 // central is the central dashboard (#99), GET /central/: every incident,
-// live. It is on only with CENTRAL_KEY (and the report, which builds it);
-// nil otherwise, and every /central route answers 404.
+// live. It is on only with CENTRAL_KEY, or with CENTRAL_PUBLIC=true for a
+// dashboard with no key (and the report, which builds it); nil otherwise, and
+// every /central route answers 404.
 func central(cfg config.Config, store report.CentralStore) *report.Central {
+	if cfg.Report.CentralPublic {
+		log.Print("report: WARNING: central dashboard GET /central/ is PUBLIC (CENTRAL_PUBLIC): anyone with the URL sees every incident, its position and its recording")
+		return &report.Central{Public: true, Store: store, TTLDays: cfg.Report.TTLDays}
+	}
 	if cfg.Report.CentralKey == "" {
-		log.Print("report: central dashboard GET /central/ is off (CENTRAL_KEY is not set)")
+		log.Print("report: central dashboard GET /central/ is off (CENTRAL_KEY is not set, CENTRAL_PUBLIC is not true)")
 		return nil
 	}
 	log.Print("report: central dashboard GET /central/ is on: open /central/?key=<CENTRAL_KEY> once on each screen")
