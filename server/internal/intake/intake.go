@@ -17,6 +17,9 @@
 //	POST /incidents/{incident_id}/points   204 stored (resent fixes ignored); 400 bad body or
 //	                                       path id != body incident_id; 403 incident belongs to
 //	                                       another device; 404 unknown incident
+//	POST /incidents/{incident_id}/cancel   204 cancelled (also when it already was); 400 bad body
+//	                                       or path id != body incident_id; 403 incident belongs
+//	                                       to another device; 404 unknown incident
 //
 // Every route answers 503 when the server has no database, and 500 with no
 // detail when a query fails. Errors are {"error": "..."}.
@@ -59,6 +62,8 @@ type Handler struct {
 	pool     *sql.DB
 	calls    CallStarter
 	notifier Notifier
+	// canceller hangs up the call of a cancelled incident; nil only marks it.
+	canceller CallCanceller
 	// spawn runs a handoff without blocking the response. Tests replace it.
 	spawn func(func())
 }
@@ -77,6 +82,12 @@ func New(pool *sql.DB, calls CallStarter, notifier Notifier) *Handler {
 			f()
 		}()
 	}}
+}
+
+// WithCanceller sets what stops the call of a cancelled incident and returns h.
+func (h *Handler) WithCanceller(c CallCanceller) *Handler {
+	h.canceller = c
+	return h
 }
 
 // WaitHandoffs blocks until every running handoff has returned, or ctx ends.
@@ -102,6 +113,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /devices", h.handleDevice)
 	mux.HandleFunc("POST /incidents", h.handleAlert)
 	mux.HandleFunc("POST /incidents/{incident_id}/points", h.handlePoints)
+	mux.HandleFunc("POST /incidents/{incident_id}/cancel", h.handleCancel)
 }
 
 func (h *Handler) handleDevice(w http.ResponseWriter, r *http.Request) {
@@ -205,6 +217,53 @@ func (h *Handler) handlePoints(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		internalError(w, "add points", err)
 		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleCancel marks the incident cancelled and stops its call. It stops the
+// call on every request, not only the first, so a retry after a failed hang-up
+// tries again; the engine does nothing when no call is left.
+func (h *Handler) handleCancel(w http.ResponseWriter, r *http.Request) {
+	if !h.ready(w) {
+		return
+	}
+	var c contract.IncidentCancel
+	if !decode(w, r, &c) {
+		return
+	}
+	switch {
+	case c.IncidentID != r.PathValue("incident_id"):
+		writeError(w, http.StatusBadRequest, "incident_id in the body does not match the path")
+		return
+	case !uuidRE.MatchString(c.IncidentID):
+		writeError(w, http.StatusBadRequest, "incident_id must be a UUID")
+		return
+	case c.DeviceID == "":
+		writeError(w, http.StatusBadRequest, "device_id is required")
+		return
+	}
+	switch err := cancelIncident(r.Context(), h.pool, c.IncidentID, c.DeviceID); {
+	case errors.Is(err, errUnknownIncident):
+		writeError(w, http.StatusNotFound, "incident not found")
+		return
+	case errors.Is(err, errDeviceMismatch):
+		writeError(w, http.StatusForbidden, "incident belongs to another device")
+		return
+	case err != nil:
+		internalError(w, "cancel incident", err)
+		return
+	}
+	if h.canceller != nil {
+		ctx := context.WithoutCancel(r.Context())
+		h.spawn(func() {
+			defer func() {
+				if p := recover(); p != nil {
+					log.Printf("intake: cancelling the call of incident %s panicked: %v", c.IncidentID, p)
+				}
+			}()
+			h.canceller.CancelCall(ctx, c.IncidentID)
+		})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

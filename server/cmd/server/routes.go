@@ -29,7 +29,7 @@ func newMux(pool *sql.DB, notifier intake.Notifier, calls *call.Routes, offline 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleRoot)
 	registerDeployRoutes(mux, pool)
-	incidents := intake.New(pool, calls.Starter(), notifier)
+	incidents := intake.New(pool, calls.Starter(), notifier).WithCanceller(calls.Canceller())
 	incidents.Register(mux)
 	calls.Register(mux)
 	voice.FromEnv(pool).Register(mux)

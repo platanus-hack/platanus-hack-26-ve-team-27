@@ -146,6 +146,26 @@ func TestDBStoreClaimIsAtMostOnce(t *testing.T) {
 	}
 }
 
+// A cancelled incident (POST /incidents/{id}/cancel) is never claimed, so its
+// family message is not sent.
+func TestDBStoreClaimRefusesACancelledIncident(t *testing.T) {
+	pool := newDB(t, contract.BranchImmediateAlert)
+	store := NewDBStore(pool)
+	ctx := context.Background()
+	if _, err := pool.ExecContext(ctx, `UPDATE incidents SET cancelled_at = now() WHERE id = $1`, incidentID); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := store.Claim(ctx, incidentID); err != nil || ok {
+		t.Fatalf("claim of a cancelled incident = %v, %v; want false", ok, err)
+	}
+
+	k := newKapsoServer(t, http.StatusOK)
+	New(store, k.sender()).Notify(ctx, incident(contract.BranchImmediateAlert))
+	if got := k.count(); got != 0 {
+		t.Errorf("Kapso requests = %d, want 0 for a cancelled incident", got)
+	}
+}
+
 // End to end on the real claim: concurrent and retried Notify calls send one
 // WhatsApp per family number, and notified_at is set.
 func TestNotifyOnDatabaseSendsOncePerFamilyNumber(t *testing.T) {

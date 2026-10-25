@@ -53,7 +53,7 @@ contract code but no longer decide the branch.
 
 ## Messages
 
-Endpoints are listed for the slices that implement them (#17 intake,
+Endpoints are listed for the slices that implement them (#17 intake and cancel,
 #18 call engine, #20 notifier, #55 `GET /config`).
 
 ### Point
@@ -289,6 +289,40 @@ Sample: `location_update.json`.
 }
 ```
 
+### IncidentCancel (phone → server, `POST /incidents/{incident_id}/cancel`)
+
+The person called off an open incident ("Fue sin querer" on the confirmation
+screen). Same identification as `POST /incidents/{incident_id}/points`: the
+body carries `incident_id` (must match the path) and the `device_id` that
+owns the incident; there is no other auth. Sample: `incident_cancel.json`.
+
+```json
+{
+  "incident_id": "9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f",
+  "device_id": "3f1c9a52-7b1e-4c8a-9a0e-2d6b8f4e1a77"
+}
+```
+
+- `204`: the incident is marked cancelled (`incidents.cancelled_at`, migration
+  0009). Cancelling again also answers `204` and keeps the first time.
+- `400` bad body, `incident_id` not a UUID or different from the path,
+  missing `device_id`; `403` the incident belongs to another device; `404`
+  unknown incident; `503` no database.
+
+What it does, best effort after the `204` is decided:
+
+- **The call.** The engine places no further attempt or retry and opens no
+  WebRTC fallback for that incident. A call already placed is hung up through
+  Twilio (`Status=canceled` while queued or ringing, `Status=completed` once
+  in progress); that needs `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`.
+  Without them the retries still stop and the log says the hang-up was
+  skipped. A repeated cancel tries the hang-up again.
+- **The family.** The claim above (`notified_at`) is refused for a cancelled
+  incident, so a message not sent yet is never sent. A message already sent
+  stays sent: nothing is unsent.
+- **The report.** The central dashboard and the report read `cancelled_at`
+  and show the case as `cancelado`.
+
 ### CallWebhook (ElevenLabs → server, `POST /webhooks/elevenlabs`)
 
 The ElevenLabs post-call webhook (`type: "post_call_transcription"`). Only
@@ -364,8 +398,9 @@ text, not to this JSON shape. `verdict` is `duress`, `no_duress` or
 `unclear`; `verdict` and `reason` are left out when no call happened (`immediate_alert`,
 `silent_tracker`). `incident_id` is the dedupe key: one message per incident.
 Before sending, the sender claims the incident with
-`UPDATE incidents SET notified_at = now() WHERE id = $1 AND notified_at IS NULL`
-and sends only if that changed a row (at most once). When an incident has
+`UPDATE incidents SET notified_at = now() WHERE id = $1 AND notified_at IS NULL AND cancelled_at IS NULL`
+and sends only if that changed a row (at most once, and never for a cancelled
+incident). When an incident has
 several calls, the verdict is `duress` if any call says `duress`, otherwise
 the newest call's verdict. Sample: `notifier_message.json`.
 
@@ -399,7 +434,8 @@ by the Tech lead on Oct 24); `0005_device_setup.sql` adds `user_name`,
 `safe_phrase` and `voice_id` to `devices` (#104, approved by the Tech lead on
 Oct 24); `0006_notify_deliveries.sql` adds `notify_deliveries` (#76); `0007_device_voice_consent.sql` adds
 `voice_consent_at` and `voice_consent_sha256` to `devices` (#107);
-`0008_offline_incidents.sql` adds `offline` to the `incidents.trigger` check (#59). The
+`0008_offline_incidents.sql` adds `offline` to the `incidents.trigger` check (#59);
+`0009_incident_cancelled.sql` adds `incidents.cancelled_at` (the cancel route above). The
 server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
@@ -408,7 +444,7 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 | Table | Key | Holds |
 | --- | --- | --- |
 | `devices` | `id` = `device_id` | phone number, family numbers, duress phrase; `user_name`, `safe_phrase` and `voice_id` (the cloned voice, #107), NULL until set; `voice_consent_at` and `voice_consent_sha256` (when the owner consented and the SHA-256 of the audio, never the audio), set with `voice_id`; `ed25519_public_key` (unique, 32 bytes) and `key_id` (unique, 8 bytes: the payload device_id derived from it), both NULL or both set |
-| `incidents` | `id` = `incident_id` | device, trigger, branch, speed used, `notified_at` |
+| `incidents` | `id` = `incident_id` | device, trigger, branch, speed used, `notified_at`, `cancelled_at` (NULL unless the person cancelled) |
 | `gps_points` | identity; unique `(incident_id, recorded_at)` | every fix of an incident |
 | `calls` | identity; unique `conversation_id` | call status, transcript (JSONB), duration, **verdict** |
 | `emergencies` | `emergency_id` (16 hex) | offline emergency: device, status, highest seq, last fix, channels, min hops (#57) |

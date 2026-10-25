@@ -26,6 +26,7 @@ type memStore struct {
 	callee   Callee   // the rest of the device's setup; Phone comes from phone
 	statuses []string // calls.status by call id - 1
 	convs    []string
+	sids     []string // what ActiveCallSIDs returns
 }
 
 func (s *memStore) Begin(_ context.Context, incidentID string) (int64, Callee, error) {
@@ -72,6 +73,8 @@ func (s *memStore) FailedConversation(_ context.Context, conv, _ string) error {
 }
 
 func (s *memStore) SaveTranscript(context.Context, contract.CallWebhook) error { return nil }
+
+func (s *memStore) ActiveCallSIDs(context.Context, string) ([]string, error) { return s.sids, nil }
 
 func (s *memStore) snapshot() []string {
 	s.mu.Lock()

@@ -46,11 +46,25 @@ func (f *fakeHandoff) Notify(_ context.Context, inc Incident) {
 	f.notifies = append(f.notifies, inc)
 }
 
+// fakeCanceller records the incidents whose call was cancelled.
+type fakeCanceller struct {
+	mu  sync.Mutex
+	ids []string
+}
+
+func (f *fakeCanceller) CancelCall(_ context.Context, incidentID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ids = append(f.ids, incidentID)
+}
+
 type env struct {
 	t    *testing.T
 	pool *sql.DB
 	mux  *http.ServeMux
 	fake *fakeHandoff
+	// cancelled is the incident ids handed to the call canceller, in order.
+	cancelled *fakeCanceller
 }
 
 // newEnv migrates a throwaway database and mounts the intake routes on it,
@@ -62,11 +76,12 @@ func newEnv(t *testing.T) *env {
 		t.Fatalf("migrate: %v", err)
 	}
 	fake := &fakeHandoff{}
-	h := New(pool, fake, fake)
+	canceller := &fakeCanceller{}
+	h := New(pool, fake, fake).WithCanceller(canceller)
 	h.spawn = func(f func()) { f() }
 	mux := http.NewServeMux()
 	h.Register(mux)
-	e := &env{t: t, pool: pool, mux: mux, fake: fake}
+	e := &env{t: t, pool: pool, mux: mux, fake: fake, cancelled: canceller}
 	if rec := e.post("/devices", sample(t, "device_registration.json")); rec.Code != http.StatusNoContent {
 		t.Fatalf("POST /devices = %d %s", rec.Code, rec.Body)
 	}
@@ -438,7 +453,7 @@ func TestBadInputIs400(t *testing.T) {
 func TestNoDatabaseIs503(t *testing.T) {
 	mux := http.NewServeMux()
 	New(nil, LogHandoff{}, LogHandoff{}).Register(mux)
-	for _, path := range []string{"/devices", "/incidents", "/incidents/" + incidentID + "/points"} {
+	for _, path := range []string{"/devices", "/incidents", "/incidents/" + incidentID + "/points", "/incidents/" + incidentID + "/cancel"} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`)))
 		if rec.Code != http.StatusServiceUnavailable {

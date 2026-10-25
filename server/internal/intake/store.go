@@ -143,6 +143,23 @@ func addPoints(ctx context.Context, pool *sql.DB, incidentID, deviceID string, p
 	return insertPoints(ctx, pool, incidentID, points)
 }
 
+// cancelIncident marks the incident cancelled, which must belong to deviceID.
+// The first call stamps cancelled_at; a repeat keeps that time and succeeds.
+func cancelIncident(ctx context.Context, pool *sql.DB, incidentID, deviceID string) error {
+	var owner string
+	err := pool.QueryRowContext(ctx, `SELECT device_id FROM incidents WHERE id = $1`, incidentID).Scan(&owner)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return errUnknownIncident
+	case err != nil:
+		return err
+	case owner != deviceID:
+		return errDeviceMismatch
+	}
+	_, err = pool.ExecContext(ctx, `UPDATE incidents SET cancelled_at = now() WHERE id = $1 AND cancelled_at IS NULL`, incidentID)
+	return err
+}
+
 func insertPoints(ctx context.Context, db execer, incidentID string, points []contract.Point) (int, error) {
 	added := 0
 	for _, p := range points {

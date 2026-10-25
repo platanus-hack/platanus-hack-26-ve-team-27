@@ -81,6 +81,7 @@ class ContractRoundTripTest {
     @Test fun alertResponse() = assertRoundTrip("alert_response.json", AlertResponse.serializer())
 
     @Test fun locationUpdate() = assertRoundTrip("location_update.json", LocationUpdate.serializer())
+    @Test fun incidentCancel() = assertRoundTrip("incident_cancel.json", IncidentCancel.serializer())
 
     @Test fun callWebhook() = assertRoundTrip("call_webhook.json", CallWebhook.serializer())
 
@@ -89,8 +90,8 @@ class ContractRoundTripTest {
     @Test
     fun everySampleHasACase() {
         val files = testdataDir.listFiles { f -> f.isFile && f.name.endsWith(".json") }.orEmpty()
-        if (files.size != 7) {
-            fail("testdata has ${files.size} samples, ContractRoundTripTest covers 7: add the new one here")
+        if (files.size != 8) {
+            fail("testdata has ${files.size} samples, ContractRoundTripTest covers 8: add the new one here")
         }
     }
 

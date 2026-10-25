@@ -24,6 +24,13 @@ type CallStarter interface {
 	StartCall(ctx context.Context, inc Incident)
 }
 
+// CallCanceller stops the "Mamá" call of an incident the person called off:
+// it hangs up a ringing or live call and places no retry. It must be safe to
+// call again for the same incident.
+type CallCanceller interface {
+	CancelCall(ctx context.Context, incidentID string)
+}
+
 // Notifier alerts the family for a BranchImmediateAlert or
 // BranchSilentTracker incident (#20).
 type Notifier interface {

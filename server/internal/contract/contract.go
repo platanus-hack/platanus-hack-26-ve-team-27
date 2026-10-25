@@ -170,6 +170,14 @@ type LocationUpdate struct {
 	Points     []Point `json:"points"`
 }
 
+// IncidentCancel is phone -> server: the person called off an open incident
+// ("Fue sin querer"), sent to POST /incidents/{incident_id}/cancel. The same
+// two ids as LocationUpdate prove which device owns the incident.
+type IncidentCancel struct {
+	IncidentID string `json:"incident_id"`
+	DeviceID   string `json:"device_id"`
+}
+
 // CallWebhook is ElevenLabs -> server: the post-call webhook
 // (type "post_call_transcription"). Only the fields the server reads are
 // modeled; the real payload has more and they are ignored.
