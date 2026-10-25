@@ -23,17 +23,23 @@ gets "¡Hola, mi vida!" and the "neither phrase" path, so pushing the prompt
 does not break those calls. The default phrases stay empty so no ordinary
 answer can match one by chance.
 
-How Mamá talks: she greets by name and asks "¿Cómo vas, mi amor?".
-- Safe phrase: she says goodbye quickly.
-- Alert phrase (or close to it): same tone, "Ah, ok, yo le digo", then up to
-  5 everyday questions, one at a time (where, with whom, how many, car or
-  walking, where to, all calm), then a normal goodbye.
-- Neither: she asks once more, then two questions (where, with whom) and
-  says goodbye.
+How Mamá talks: she greets by name and asks "¿Cómo vas, mi amor?". She
+talks like a mother, not a form: she reacts to each answer, says hello to
+whoever is named, tells something short from home now and then, and puts a
+comment between two questions.
+- Safe phrase: something warm, then a quick goodbye.
+- Alert phrase (or close to it): same tone, "Ah, ok... yo le digo", then she
+  keeps chatting and finds out, one question at a time, where they are and
+  with whom first, then how they move, where to and whether all is calm (at
+  most 5 questions, fewer if the answers are curt), then a normal goodbye.
+- Neither: she asks once more, then chats a little and asks only where and
+  with whom, and says goodbye.
 
-She never says the phrases, never says policía, emergencia, alerta, peligro,
-ayuda, "¿estás bien?" or "¿te están obligando?", and hangs up with `end_call`
-in under 90 seconds. `agent_test.go` checks the variables and that no example
+She never says the phrases or answers them with their own words, never says
+policía, emergencia, alerta, peligro, ayuda, "¿estás bien?" or "¿te están
+obligando?". The call is short, about a minute and never over two: she
+closes once her path has what it needs, says goodbye and only then hangs up
+with `end_call`. `agent_test.go` checks the variables and that no example
 line in the prompt uses a forbidden word.
 
 The example lines are written the way they are said in Venezuela ("mi amor",
@@ -135,8 +141,8 @@ ElevenLabs > Agents > Call history):
 
 | Case | User says after the greeting | Mamá should |
 | --- | --- | --- |
-| Safe | the test safe phrase | say goodbye quickly and hang up |
-| Alert | the test alert phrase | keep the tone, ask at most 5 everyday questions one at a time, say goodbye, hang up |
-| None | something else ("Bien, aquí en el tráfico") | ask once more, then only where and with whom, say goodbye, hang up |
+| Safe | the test safe phrase | say something warm, say goodbye quickly and hang up |
+| Alert | the test alert phrase | keep the tone and chat like a mother, find out where and with whom first (at most 5 questions, one at a time), say goodbye, hang up within about a minute |
+| None | something else ("Bien, aquí en el tráfico") | ask once more, chat a little asking only where and with whom, say goodbye, hang up |
 
 Also try `frase_segura=""`: only the alert phrase should change her course.
