@@ -303,17 +303,17 @@ body[data-expanded] .more { display: none; }
 .route-map.on { opacity: 1; pointer-events: auto; }
 .route-map.on + .route { visibility: hidden; }
 .route-map.leaflet-container { background: var(--surface-container); font-family: "Lexend", system-ui, sans-serif; font-size: 12px; line-height: 16px; }
-.route-map .map-line { fill: none; stroke: var(--primary); stroke-opacity: 1; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.route-map .map-line { fill: none; stroke: var(--primary); stroke-opacity: 1; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
 .route-map .map-dot { fill: var(--primary); fill-opacity: 1; stroke: var(--surface-lowest); stroke-opacity: 1; stroke-width: 2; }
 .route-map .map-dot.first { fill: var(--surface-lowest); stroke: var(--primary); stroke-width: 3; }
 .route-map .map-acc { fill: var(--primary); fill-opacity: .12; stroke: var(--primary); stroke-opacity: .5; stroke-width: 1; }
 .map-newest span { position: absolute; inset: 0; border-radius: 50%; }
 .map-newest .map-pulse { background: var(--primary); animation: ping 1.6s var(--ease) infinite; }
-.map-newest .map-me { background: var(--primary); border: 2px solid var(--surface-lowest); }
+.map-newest .map-me { background: var(--primary); border: 3px solid var(--surface-lowest); }
 .route-map .leaflet-tooltip { padding: 4px 8px; border: 0; border-radius: var(--r-s); background: var(--surface-highest); color: var(--on-background); box-shadow: none; font-weight: 500; font-variant-numeric: tabular-nums; }
 .route-map .leaflet-tooltip::before { display: none; }
-.route-map .leaflet-tooltip.map-time { padding: 0 4px; background: transparent; color: var(--on-surface-variant); font-size: 11px; text-shadow: 0 0 3px var(--surface-container), 0 0 3px var(--surface-container); }
-.route-map .leaflet-tooltip.map-time.newest { color: var(--on-background); font-weight: 700; }
+.route-map .leaflet-tooltip.map-time { padding: 0 4px; background: transparent; color: var(--on-surface-variant); font-size: 14px; text-shadow: 0 0 4px var(--surface-container), 0 0 4px var(--surface-container), 0 0 4px var(--surface-container); }
+.route-map .leaflet-tooltip.map-time.newest { color: var(--on-background); font-size: 17px; font-weight: 700; }
 .route-map .leaflet-bar { border: 0; border-radius: var(--r-s); overflow: hidden; box-shadow: none; }
 .route-map .leaflet-bar a { background: var(--surface-high); color: var(--on-background); border-bottom: 1px solid var(--outline-variant); }
 .route-map .leaflet-bar a:hover, .route-map .leaflet-bar a:focus-visible { background: var(--surface-highest); }
