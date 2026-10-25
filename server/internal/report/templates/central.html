@@ -35,7 +35,7 @@
 <html lang="es-VE" data-theme="{{.Theme}}">
 <head>
 {{template "central-meta"}}
-<title>Central de reportes · MAMÁ</title>
+<title>Central de reportes · Aló Mamá</title>
 </head>
 <body class="central c-list-page" data-state="list" data-live-url="/central/live" data-json-url="/central/estado.json" data-open{{if .Follow}} data-follow{{end}}>
 <div class="c-app">
@@ -96,7 +96,7 @@
 <html lang="es-VE" data-theme="{{.Theme}}">
 <head>
 {{template "central-meta"}}
-<title>{{if .Case.Name}}{{.Case.Name}}{{else}}Reporte {{.Case.Number}}{{end}} · Central · MAMÁ</title>
+<title>{{if .Case.Name}}{{.Case.Name}}{{else}}Reporte {{.Case.Number}}{{end}} · Central · Aló Mamá</title>
 </head>
 <body class="central c-case-page" data-state="{{.Case.State}}" data-live-url="/central/r/{{.Case.ID}}/live" data-json-url="/central/r/{{.Case.ID}}/estado.json" data-open{{with .MapKey}} data-map-key="{{.}}"{{end}}>
 <div class="c-app">
