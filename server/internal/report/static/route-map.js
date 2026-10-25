@@ -134,11 +134,11 @@
     st.dots.clearLayers();
     pts.forEach(function (p, i) {
       if (i < n) {
-        st.dots.addLayer(L.circleMarker(lls[i], { radius: i === 0 ? 5 : 4, className: "map-dot" + (i === 0 ? " first" : "") })
+        st.dots.addLayer(L.circleMarker(lls[i], { radius: i === 0 ? 7 : 6, className: "map-dot" + (i === 0 ? " first" : "") })
           .bindTooltip(text(p.title), { direction: "top", offset: [0, -6] }));
       }
       if (p.label) { // the central's times, as on its drawing
-        st.dots.addLayer(L.tooltip({ permanent: true, interactive: false, direction: "right", offset: [i === n ? 12 : 6, 0], className: "map-time" + (i === n ? " newest" : "") })
+        st.dots.addLayer(L.tooltip({ permanent: true, interactive: false, direction: "right", offset: [i === n ? 20 : 9, 0], className: "map-time" + (i === n ? " newest" : "") })
           .setLatLng(lls[i]).setContent(text(p.label)));
       }
     });
@@ -153,7 +153,7 @@
     }
     if (st.me) { st.me.setLatLng(lls[n]).setTooltipContent(text(last.title)); } else {
       st.me = L.marker(lls[n], {
-        icon: L.divIcon({ className: "map-newest", html: '<span class="map-pulse"></span><span class="map-me"></span>', iconSize: [16, 16] }),
+        icon: L.divIcon({ className: "map-newest", html: '<span class="map-pulse"></span><span class="map-me"></span>', iconSize: [28, 28] }),
         keyboard: false, zIndexOffset: 1000
       }).bindTooltip(text(last.title), { direction: "top", offset: [0, -10] }).addTo(st.map);
     }
