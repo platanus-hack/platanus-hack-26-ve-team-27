@@ -226,7 +226,7 @@ func TestFormatVerdictLabels(t *testing.T) {
 	}{
 		{contract.BranchCall, contract.VerdictDuress, "Veredicto: coacción\n"},
 		{contract.BranchCall, contract.VerdictNoDuress, "Veredicto: sin coacción\n"},
-		{contract.BranchCall, contract.VerdictUnclear, "Veredicto: no está claro\n"},
+		{contract.BranchCall, contract.VerdictUnclear, "Veredicto: no confirmó que está bien\n"},
 		{contract.BranchCall, "", "Veredicto: sin veredicto\n"},
 		// No call happened: verdict and reason are left out.
 		{contract.BranchImmediateAlert, "", "Veredicto: sin llamada, alerta inmediata\n"},

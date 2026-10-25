@@ -37,6 +37,6 @@ Delegated direct (writer trigger: 3 non-trivial areas across several files).
 - T1 0086827 (route: delegated direct), T2 0c7ba74, T3 09f86b0.
 - T2 gap: the server has no cancel endpoint for online incidents (POST /incidents only); app-side stop done, server-side cancel/call cancel not possible without a server change.
 - T4 a4f60f2 (delegated direct): Photo thumbnail row (update or insert, never two) plus full-size `RawContacts.DisplayPhoto`; failure only logged.
-- T5 server 4bc4606: `POST /incidents/{id}/cancel`, migration 0009 `incidents.cancelled_at`, Twilio hang-up, retries and fallback stopped, family claim refused when cancelled, contract docs and sample `incident_cancel.json`.
+- T5 server 4bc4606: `POST /incidents/{id}/cancel`, migration 0010 `incidents.cancelled_at`, Twilio hang-up, retries and fallback stopped, family claim refused when cancelled, contract docs and sample `incident_cancel.json`.
 - T5 app cd8f022: `TriggerService.cancel` POSTs the cancel from a scope that outlives the service (3 attempts, best effort).
 - T2 gap closed by T5. Gaps: auth is device_id only, like `/points`; a cancel before the alert reached the server answers 404 and the alert may still land.

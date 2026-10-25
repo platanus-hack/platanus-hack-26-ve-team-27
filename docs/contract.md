@@ -304,7 +304,7 @@ owns the incident; there is no other auth. Sample: `incident_cancel.json`.
 ```
 
 - `204`: the incident is marked cancelled (`incidents.cancelled_at`, migration
-  0009). Cancelling again also answers `204` and keeps the first time.
+  0010). Cancelling again also answers `204` and keeps the first time.
 - `400` bad body, `incident_id` not a UUID or different from the path,
   missing `device_id`; `403` the incident belongs to another device; `404`
   unknown incident; `503` no database.
@@ -404,6 +404,40 @@ incident). When an incident has
 several calls, the verdict is `duress` if any call says `duress`, otherwise
 the newest call's verdict. Sample: `notifier_message.json`.
 
+The verdict (#106, `server/internal/duress`) weighs the device's two phrases,
+only in what the person said (never Mamá's turns), in this order:
+
+| What the person said | `verdict` | Message |
+| --- | --- | --- |
+| The duress phrase or a close variant, not negated; or both phrases | `duress` | yes, "Veredicto: coacción" |
+| Nothing the whole call (only tags such as `[silencio]`) | `duress` | yes |
+| The safe phrase or a close variant, not negated ("no voy llegando" is not "voy llegando") | `no_duress` | **none**, to nobody, the reporter included |
+| Neither phrase, having talked, with a safe phrase configured | `unclear` | yes, "Veredicto: no confirmó que está bien" |
+| No safe phrase configured | the duress-only rules from before #106 | `duress` and `unclear` only |
+
+A `no_duress` call closes the incident like "Fue sin querer": no message, and
+the central shows it as `cancelado`. The LLM step (`duress.Chain`) runs only on
+`unclear` calls; with a safe phrase configured it may raise one to `duress`
+but never lower it to `no_duress`, so only the rules hearing the safe phrase
+cancel an alert.
+
+`ficha` (optional) is the call's context, taken once the call ends and only on
+`duress` and `unclear` calls: an LLM step (`duress.LLM.Extract`, the same
+Messages API client and model as the verdict, low effort, transcript fenced as
+data) reads the transcript and returns `lugar`, `personas`, `vehiculo`,
+`rumbo`, `situacion` (one sentence) and `confianza` (`baja`, `media` or
+`alta`). Any field is `"no se sabe"` when the call did not say it; it only
+uses what was said or heard on the person's line, and a field that quotes
+either phrase is dropped to `"no se sabe"`. It starts together with the
+verdict's LLM step (unless the rules already heard the safe phrase), so the
+two waits overlap, and has its own 6 s timeout: if it fails or times out, the
+message goes out without it. It is
+stored in `calls.ficha` with the verdict, before the message. Only the
+WhatsApp text shows it, one line per known field, after the verdict:
+"Dijo que está: <lugar>", "Con: <personas>", "En: <vehiculo>", "Va hacia:
+<rumbo>", "Lo que parece: <situacion> (confianza <confianza>)". The SMS
+fallback leaves it out. It is not the incident report's `ficha.json` (#76).
+
 `reporter` is the reporting device's own `phone_number` (left out when
 unknown). With `NOTIFY_SELF=true` (#102, off by default) the notifier adds it
 to the recipients on the `NOTIFIER` channel (WhatsApp), once even when it is
@@ -420,7 +454,15 @@ none got the alert.
   "location": {"lat": 10.4961, "lng": -66.8531, "accuracy_m": 12.5, "recorded_at": "2026-10-24T09:10:00Z"},
   "verdict": "duress",
   "reason": "the user said the duress phrase",
-  "triggered_at": "2026-10-24T09:10:00.253Z"
+  "triggered_at": "2026-10-24T09:10:00.253Z",
+  "ficha": {
+    "lugar": "la autopista",
+    "personas": "dos panas",
+    "vehiculo": "un carro",
+    "rumbo": "no se sabe",
+    "situacion": "Va en un carro con dos panas por la autopista y dijo la frase de alerta.",
+    "confianza": "media"
+  }
 }
 ```
 
@@ -435,7 +477,8 @@ by the Tech lead on Oct 24); `0005_device_setup.sql` adds `user_name`,
 Oct 24); `0006_notify_deliveries.sql` adds `notify_deliveries` (#76); `0007_device_voice_consent.sql` adds
 `voice_consent_at` and `voice_consent_sha256` to `devices` (#107);
 `0008_offline_incidents.sql` adds `offline` to the `incidents.trigger` check (#59);
-`0009_incident_cancelled.sql` adds `incidents.cancelled_at` (the cancel route above). The
+`0009_call_ficha.sql` adds `ficha` (JSONB) to `calls` (#106);
+`0010_incident_cancelled.sql` adds `incidents.cancelled_at` (the cancel route above). The
 server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
@@ -446,7 +489,7 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 | `devices` | `id` = `device_id` | phone number, family numbers, duress phrase; `user_name`, `safe_phrase` and `voice_id` (the cloned voice, #107), NULL until set; `voice_consent_at` and `voice_consent_sha256` (when the owner consented and the SHA-256 of the audio, never the audio), set with `voice_id`; `ed25519_public_key` (unique, 32 bytes) and `key_id` (unique, 8 bytes: the payload device_id derived from it), both NULL or both set |
 | `incidents` | `id` = `incident_id` | device, trigger, branch, speed used, `notified_at`, `cancelled_at` (NULL unless the person cancelled) |
 | `gps_points` | identity; unique `(incident_id, recorded_at)` | every fix of an incident |
-| `calls` | identity; unique `conversation_id` | call status, transcript (JSONB), duration, **verdict** |
+| `calls` | identity; unique `conversation_id` | call status, transcript (JSONB), duration, **verdict**; `ficha` (JSONB, #106): the call's context, set with the verdict on `duress` and `unclear` calls, NULL otherwise |
 | `emergencies` | `emergency_id` (16 hex) | offline emergency: device, status, highest seq, last fix, channels, min hops (#57) |
 | `incident_reports` | `incident_id` | the report link: `token` (unique, 22 base64url chars), `created_at`, `expires_at` (#76) |
 | `call_recordings` | `call_id` | a call's recording: `content_type`, `audio` (bytes), `sha256`, `stored_at` (#76) |
@@ -563,7 +606,7 @@ default; then every route below answers `404`). Code:
   authorities. Once sealed, it is built from the stored `ficha.json`; before
   that it is marked "Borrador, sin sellar". The family messages and linked
   offline emergencies come from the live record and are labelled as outside
-  the seal. A call with a ficha (#106, `calls.ficha`) gets a "Contexto de la
+  the seal. A call with a context (#106, `calls.ficha`) gets a "Contexto de la
   llamada" section after it, with situación, lugar, personas, vehículo, rumbo
   and confianza (those with a value), and a note that an AI extracted them
   and they must be checked against the recording. The seal signs that
@@ -625,8 +668,8 @@ default; then every route below answers `404`). Code:
   `cerrado`). `GET /central/r/{incident_id}` follows one case: the stage
   track (its only timeline), the call with the transcript as it is stored
   (also during the call), the route with each point's time, the call's
-  one-line situation under the name (`calls.ficha` → `situacion`, #106, when
-  the column exists; nothing otherwise), and the notified people: a summary,
+  one-line situation under the name (`calls.ficha` → `situacion`, #106;
+  nothing when the call has none), and the notified people: a summary,
   one row per person by role (relatives, then whoever asked for help) and
   each channel's status in words. Both stream through the same
   live loop as `/i/{token}/live` (`/central/live`,
@@ -638,6 +681,28 @@ default; then every route below answers `404`). Code:
   the default); `?seguir=1` on the list opens the next new case by itself.
   Opening a case creates its report link if it has none, for the recording
   and the PDF.
+- **Trace.** Every step of an incident logs one line,
+  `trace incident=<id> step=<step> k=v …` (`internal/trace`): `alert_received`,
+  `call_requested`, `call_placed`, `call_failed`, `call_retry`, `call_outcome`,
+  `twilio_status`, `webhook_received`, `webhook_rejected`, `verdict`, `notify`
+  (per recipient), `notify_skipped`, `kapso_status`, `recording_stored` and
+  `sealed`. A webhook refused by its HMAC, and one for a call the server does
+  not know, log `level=ERROR` with a hint. No trace line carries the duress or
+  safe phrase, what was said, or a phone number. The verdict line's
+  `phrase_match_diag`, `phrase_turn` and `phrase_at_s` come from a display-only
+  key-word matcher, not from the detector. `GET /central/r/{incident_id}/traza`
+  (behind `CENTRAL_KEY`, linked as "Ver traza" from the detail) shows the same
+  case read back from the database, live:
+  - a summary of each step;
+  - the incident on each clock, and every call attempt with its
+    `conversation_id`, `call_sid` and Twilio statuses;
+  - whether the post-call webhook arrived. If it did not, it says so in red
+    and names `<PUBLIC_URL>/webhooks/elevenlabs` and the secret;
+  - the device's phrases, every turn with the ones holding the phrase
+    highlighted, the rules re-run on the stored transcript and the stored
+    verdict;
+  - the family messages with their Kapso statuses, the recording, the seal
+    and the timeline.
 - **Clocks.** Each timeline row says which clock its time comes from: the
   phone (`triggered_at`, `gps_points.recorded_at`), the server
   (`incidents.created_at`, `calls.requested_at`, `verdict_at`, `notified_at`,

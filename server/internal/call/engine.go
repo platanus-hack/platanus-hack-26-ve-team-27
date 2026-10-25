@@ -12,6 +12,7 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/intake"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/notify"
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/ratelimit"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/trace"
 )
 
 // placeTimeout bounds the outbound-call request. The phone must ring within
@@ -193,6 +194,7 @@ func (e *Engine) StartCall(ctx context.Context, inc intake.Incident) {
 		}
 		if res == attemptFailed && t.attempts < maxAttempts {
 			log.Printf("call: incident %s: attempt %d failed; retrying", inc.ID, t.attempts)
+			trace.Log(inc.ID, "call_retry", "failed_attempt", t.attempts, "after_ms", e.RetryDelay)
 			if !sleep(ctx, e.RetryDelay) {
 				outcome = "canceled"
 				break
@@ -208,6 +210,7 @@ func (e *Engine) StartCall(ctx context.Context, inc intake.Incident) {
 		break
 	}
 	e.logTiming(inc.ID, outcome, t)
+	trace.Log(inc.ID, "call_outcome", "result", outcome, "attempts", t.attempts)
 }
 
 // attempt stores a requested call, places it with the device's dynamic
@@ -227,13 +230,16 @@ func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) (a
 	}
 	if err != nil {
 		log.Printf("call: incident %s: store call: %v", inc.ID, err)
+		trace.Log(inc.ID, "call_failed", "reason", "store_error", "error", err)
 		return attemptFailed, nil
 	}
+	trace.Log(inc.ID, "call_requested", "call", callID, "attempt", t.attempts, "to", notify.Mask(callee.Phone), "voice", callee.VoiceID != "")
 	vars := CallVariables(inc.ID, callee)
 	if !venezuela.MatchString(callee.Phone) {
 		// No auth on /devices: refusing other numbers keeps a stranger from
 		// running up international calls on the Twilio account.
 		log.Printf("call: incident %s call %d: the device number is not a +58 number; not calling", inc.ID, callID)
+		trace.Log(inc.ID, "call_failed", "call", callID, "reason", "not_a_venezuelan_number")
 		e.fail(ctx, inc.ID, callID)
 		return attemptHopeless, vars
 	}
@@ -242,6 +248,7 @@ func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) (a
 		// incident_ids places a paid call each and fills the agent's
 		// concurrency, so the real call gets 429.
 		log.Printf("call: incident %s call %d: call to %s %v; not calling", inc.ID, callID, notify.Mask(callee.Phone), err)
+		trace.Log(inc.ID, "call_failed", "call", callID, "reason", "rate_limited", "error", err)
 		e.fail(ctx, inc.ID, callID)
 		return attemptLimited, vars
 	}
@@ -255,6 +262,7 @@ func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) (a
 	cancel()
 	if err != nil {
 		log.Printf("call: incident %s call %d: place: %v", inc.ID, callID, err)
+		trace.Log(inc.ID, "call_failed", "call", callID, "reason", "place_error", "error", err)
 		e.fail(ctx, inc.ID, callID)
 		return attemptFailed, vars
 	}
@@ -262,6 +270,7 @@ func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) (a
 		t.placed = e.now()
 	}
 	log.Printf("call: incident %s call %d: placed conversation %s in %d ms", inc.ID, callID, placed.ConversationID, e.now().Sub(start).Milliseconds())
+	trace.Log(inc.ID, "call_placed", "call", callID, "conversation_id", placed.ConversationID, "call_sid", placed.CallSID, "place_ms", e.now().Sub(start))
 	if err := e.Store.Placed(ctx, callID, placed); err != nil {
 		log.Printf("call: incident %s call %d: store conversation %s: %v", inc.ID, callID, placed.ConversationID, err)
 	}
@@ -275,6 +284,7 @@ func (e *Engine) attempt(ctx context.Context, inc intake.Incident, t *timing) (a
 	if e.await(ctx, inc.ID, callID, placed, outcomes, t) {
 		return attemptConnected, vars
 	}
+	trace.Log(inc.ID, "call_failed", "call", callID, "conversation_id", placed.ConversationID, "reason", "not_connected")
 	e.fail(ctx, inc.ID, callID)
 	return attemptFailed, vars
 }
@@ -310,6 +320,7 @@ func (e *Engine) await(ctx context.Context, incidentID string, callID int64, pla
 			return true
 		case <-deadline.C:
 			log.Printf("call: incident %s call %d: no outcome after %s; not retrying", incidentID, callID, timeout)
+			trace.Log(incidentID, "twilio_status", "call", callID, "status", "no_outcome", "after_ms", timeout)
 			t.unconfirmed = true
 			return true
 		case o := <-outcomes:
@@ -321,6 +332,7 @@ func (e *Engine) await(ctx context.Context, incidentID string, callID int64, pla
 			}
 			if o.failed {
 				log.Printf("call: incident %s call %d: ElevenLabs reports the call never connected", incidentID, callID)
+				trace.Log(incidentID, "twilio_status", "call", callID, "status", "elevenlabs_initiation_failure")
 				return false
 			}
 			// The call ended. A post-call webhook can also come for a phone
@@ -328,6 +340,7 @@ func (e *Engine) await(ctx context.Context, incidentID string, callID int64, pla
 			if e.Status != nil && placed.CallSID != "" {
 				if status, err := e.Status.Status(ctx, placed.CallSID); err == nil && unanswered(status) {
 					log.Printf("call: incident %s call %d: twilio %s", incidentID, callID, status)
+					trace.Log(incidentID, "twilio_status", "call", callID, "status", status, "after", "post_call_webhook")
 					return false
 				}
 			}
@@ -344,8 +357,11 @@ func (e *Engine) await(ctx context.Context, incidentID string, callID int64, pla
 				}
 				continue
 			}
-			if status != lastStatus && e.Progress != nil {
-				e.Progress(ctx, callID, status, e.now())
+			if status != lastStatus {
+				trace.Log(incidentID, "twilio_status", "call", callID, "status", status)
+				if e.Progress != nil {
+					e.Progress(ctx, callID, status, e.now())
+				}
 			}
 			lastStatus = status
 			switch status {
@@ -514,10 +530,16 @@ func (e *Engine) fail(ctx context.Context, incidentID string, callID int64) {
 func (e *Engine) Received(ctx context.Context, hook contract.CallWebhook) error {
 	LogSummary(hook)
 	err := e.Store.SaveTranscript(ctx, hook)
+	user, agent := trace.Turns(hook.Data.Transcript)
 	if errors.Is(err, ErrUnknownIncident) {
 		log.Printf("call webhook: conversation %s: no call or incident %q to store it on; dropped", hook.Data.ConversationID, hook.IncidentID())
+		trace.Log(hook.IncidentID(), "webhook_received", "level", "ERROR", "found", false, "conversation_id", hook.Data.ConversationID,
+			"status", hook.Data.Status, "duration_s", hook.Data.Metadata.CallDurationSecs, "user_turns", user, "agent_turns", agent,
+			"hint", "ElevenLabs posted a call this server does not know: wrong server or database, or an incident_id the call was not placed with; DROPPED, no verdict and no alert")
 		return nil
 	}
+	trace.Log(hook.IncidentID(), "webhook_received", "found", err == nil, "conversation_id", hook.Data.ConversationID,
+		"status", hook.Data.Status, "duration_s", hook.Data.Metadata.CallDurationSecs, "user_turns", user, "agent_turns", agent, "store_error", err)
 	if err != nil {
 		return err
 	}

@@ -1,9 +1,13 @@
 package main
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/duress"
 )
 
 func TestScoreOutcomes(t *testing.T) {
@@ -53,5 +57,26 @@ func TestScoreWithNoPositives(t *testing.T) {
 	s := scoreOutcomes([]outcome{{ID: "a", Duress: false, Pred: "no_duress"}})
 	if s.Strict.Precision != 1 || s.Strict.Recall != 1 {
 		t.Errorf("got %+v, want 1/1 when nothing is positive", s.Strict)
+	}
+}
+
+func TestFichaMarkdownCountsInventedAndMissed(t *testing.T) {
+	unknown := contract.CallContextUnknown
+	rows := []fichaRow{
+		{dialog: duress.EvalFichaDialog{ID: "f1", Known: []string{"lugar", "personas"}},
+			ctx: contract.CallContext{Lugar: "la autopista", Personas: unknown, Vehiculo: "un carro", Rumbo: unknown,
+				Situacion: "va en carro", Confianza: "media"}},
+		{dialog: duress.EvalFichaDialog{ID: "f2", Known: []string{"vehiculo"}}, err: errors.New("timeout")},
+	}
+	got := fichaMarkdown(rows)
+	for _, want := range []string{
+		"| f1 | la autopista | no se sabe | un carro | no se sabe | va en carro | media | 1 (vehiculo) | 1 (personas) |",
+		"| f2 | error: timeout |",
+		"- Field checks: 8", "- Invented (labeled unknown, extracted anyway): 1", "- Missed (labeled known, extracted as no se sabe): 2",
+		"- Extraction errors: 1",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("fichaMarkdown misses %q:\n%s", want, got)
+		}
 	}
 }

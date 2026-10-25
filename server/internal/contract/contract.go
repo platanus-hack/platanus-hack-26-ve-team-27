@@ -246,7 +246,8 @@ func (w CallWebhook) IncidentID() string {
 // Verdict and Reason are empty when no call happened (immediate_alert,
 // silent_tracker). IncidentID is the dedupe key: one message per incident.
 // Reporter is the reporting device's own phone_number; the notifier writes to
-// it only with NOTIFY_SELF (#102, demo only).
+// it only with NOTIFY_SELF (#102, demo only). Ficha is left out when the call
+// has none (no_duress, no call, or the extraction failed).
 type NotifierMessage struct {
 	IncidentID  string    `json:"incident_id"`
 	To          []string  `json:"to"`                 // E.164 family numbers
@@ -256,4 +257,30 @@ type NotifierMessage struct {
 	Verdict     Verdict   `json:"verdict,omitempty"`
 	Reason      string    `json:"reason,omitempty"`
 	TriggeredAt time.Time `json:"triggered_at"`
+	// Ficha is the context of the call behind the verdict (calls.ficha,
+	// #106), when one was extracted. Only the WhatsApp text shows it.
+	Ficha *CallContext `json:"ficha,omitempty"`
 }
+
+// CallContext is what an LLM took from a finished call's transcript (#106),
+// stored in calls.ficha. It is not the incident report's ficha.json (#76).
+// Every field is CallContextUnknown when the call did not say it; the
+// extraction never invents one.
+type CallContext struct {
+	Lugar     string `json:"lugar"`     // where the person said they are
+	Personas  string `json:"personas"`  // who is with them
+	Vehiculo  string `json:"vehiculo"`  // the vehicle they are in
+	Rumbo     string `json:"rumbo"`     // where they are heading
+	Situacion string `json:"situacion"` // one sentence: what seems to be happening
+	Confianza string `json:"confianza"` // ConfianzaBaja, ConfianzaMedia or ConfianzaAlta
+}
+
+// CallContextUnknown is a CallContext field the call did not say.
+const CallContextUnknown = "no se sabe"
+
+// CallContext.Confianza values.
+const (
+	ConfianzaBaja  = "baja"
+	ConfianzaMedia = "media"
+	ConfianzaAlta  = "alta"
+)

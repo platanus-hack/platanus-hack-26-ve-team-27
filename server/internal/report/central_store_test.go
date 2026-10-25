@@ -100,7 +100,7 @@ func TestCasesNewestFirstWithTheirStatesOnPostgres(t *testing.T) {
 func TestLoadReadsTheCallContextOnceTheColumnExistsOnPostgres(t *testing.T) {
 	s := centralDB(t)
 	ctx := context.Background()
-	// Migration 0009 adds incidents.cancelled_at; the report still has to work
+	// Migration 0010 adds incidents.cancelled_at; the report still has to work
 	// on a database that does not have the column yet.
 	exec(t, s.pool, `ALTER TABLE incidents DROP COLUMN cancelled_at`)
 	rec, err := s.Load(ctx, testIncidentID)
@@ -114,7 +114,7 @@ func TestLoadReadsTheCallContextOnceTheColumnExistsOnPostgres(t *testing.T) {
 	if _, err := s.Extras(ctx, "00000000-0000-4000-8000-000000000000"); err != ErrUnknownIncident {
 		t.Errorf("unknown incident: %v", err)
 	}
-	exec(t, s.pool, `ALTER TABLE calls ADD COLUMN ficha JSONB`)
+	exec(t, s.pool, `ALTER TABLE calls ADD COLUMN IF NOT EXISTS ficha JSONB`)
 	if rec, _ := s.Load(ctx, testIncidentID); rec.Calls[0].Context != nil {
 		t.Errorf("an empty ficha column: %+v", rec.Calls[0].Context)
 	}
