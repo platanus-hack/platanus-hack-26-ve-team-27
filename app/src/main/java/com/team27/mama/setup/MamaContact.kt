@@ -3,13 +3,18 @@ package com.team27.mama.setup
 import android.content.ContentProviderOperation
 import android.content.ContentResolver
 import android.content.ContentUris
+import android.net.Uri
 import android.provider.ContactsContract
 import android.provider.ContactsContract.CommonDataKinds.Phone
+import android.provider.ContactsContract.CommonDataKinds.Photo
 import android.provider.ContactsContract.CommonDataKinds.StructuredName
 import android.provider.ContactsContract.Data
 import android.provider.ContactsContract.RawContacts
+import android.util.Log
 
 const val MAMA_CONTACT_NAME = "Mamá"
+
+private const val TAG = "MamaContactWriter"
 
 /** A raw contact as setup sees it: its ID, display name and phone numbers. */
 data class RawContactInfo(val id: Long, val name: String?, val phones: List<String>)
@@ -50,17 +55,72 @@ fun planMamaContact(number: String, ours: RawContactInfo?, namedMama: List<RawCo
  * call shows her name. Needs READ_CONTACTS and WRITE_CONTACTS. Returns the
  * raw contact ID to remember for the next run. Runs blocking; call it off the
  * main thread.
+ *
+ * It also sets the contact photo from [photo] (null: none), replacing the one
+ * the contact has; a photo that fails is logged and never fails the save.
  */
-class MamaContactWriter(private val resolver: ContentResolver) {
+class MamaContactWriter(
+    private val resolver: ContentResolver,
+    private val photo: () -> MamaPhoto? = { null },
+) {
 
     fun upsert(number: String, savedRawContactId: Long?): Long {
         val ours = savedRawContactId?.let(::load)
-        return when (val plan = planMamaContact(number, ours, namedMama())) {
+        val id = when (val plan = planMamaContact(number, ours, namedMama())) {
             is ContactPlan.Keep -> plan.rawContactId
             is ContactPlan.Adopt -> plan.rawContactId
             is ContactPlan.Rewrite -> rewrite(plan.rawContactId, number)
             ContactPlan.Insert -> insert(number)
         }
+        setPhoto(id)
+        return id
+    }
+
+    /** Sets the thumbnail row and the full-size display photo of [rawContactId]. Never throws. */
+    private fun setPhoto(rawContactId: Long) {
+        try {
+            val image = photo() ?: return
+            writeThumbnail(rawContactId, image.thumbnailJpeg)
+            writeDisplayPhoto(rawContactId, image.displayJpeg)
+        } catch (e: Exception) {
+            Log.w(TAG, "setting the Mamá contact photo failed", e)
+        }
+    }
+
+    /** Updates the contact's Photo row, or inserts it when there is none: never two. */
+    private fun writeThumbnail(rawContactId: Long, jpeg: ByteArray) {
+        val existing = mutableListOf<Long>()
+        resolver.query(
+            Data.CONTENT_URI,
+            arrayOf(Data._ID),
+            "${Data.RAW_CONTACT_ID} = ? AND ${Data.MIMETYPE} = ?",
+            arrayOf(rawContactId.toString(), Photo.CONTENT_ITEM_TYPE),
+            "${Data._ID} ASC",
+        )?.use { while (it.moveToNext()) existing += it.getLong(0) }
+        val op = when (val plan = planPhotoRow(existing)) {
+            is PhotoRowPlan.Update -> ContentProviderOperation.newUpdate(Data.CONTENT_URI)
+                .withSelection("${Data._ID} = ?", arrayOf(plan.dataId.toString()))
+                .withValue(Photo.PHOTO, jpeg)
+            PhotoRowPlan.Insert -> ContentProviderOperation.newInsert(Data.CONTENT_URI)
+                .withValue(Data.RAW_CONTACT_ID, rawContactId)
+                .withValue(Data.MIMETYPE, Photo.CONTENT_ITEM_TYPE)
+                .withValue(Photo.PHOTO, jpeg)
+        }
+        resolver.applyBatch(ContactsContract.AUTHORITY, arrayListOf(op.build()))
+    }
+
+    /**
+     * Writes the full-size photo, which the incoming-call screen shows large.
+     * The provider keeps it as a file and refreshes the Photo row's thumbnail
+     * from it; that is the row [writeThumbnail] made, so no second one appears.
+     */
+    private fun writeDisplayPhoto(rawContactId: Long, jpeg: ByteArray) {
+        val uri = Uri.withAppendedPath(
+            ContentUris.withAppendedId(RawContacts.CONTENT_URI, rawContactId),
+            RawContacts.DisplayPhoto.CONTENT_DIRECTORY,
+        )
+        val fd = resolver.openAssetFileDescriptor(uri, "w") ?: error("no display photo descriptor")
+        fd.use { it.createOutputStream().use { out -> out.write(jpeg) } }
     }
 
     /** The raw contact with [id], or null when it no longer exists or is marked deleted. */
