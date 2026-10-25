@@ -190,8 +190,10 @@ main() {
   # Nothing secret inside.
   local bad passwords=()
   bad="$(unzip -Z1 "$apk" | check_apk_entries)" || die "the APK contains signing material or env files:"$'\n'"$bad"
-  mapfile -t passwords < <(signing_passwords)
-  bad="$(check_apk_contents "$work/apk" "${passwords[@]}")" ||
+  # A read loop, not mapfile: macOS ships bash 3.2, which has no mapfile.
+  local line
+  while IFS= read -r line; do passwords+=("$line"); done < <(signing_passwords)
+  bad="$(check_apk_contents "$work/apk" ${passwords[@]+"${passwords[@]}"})" ||
     die "the APK contains a key-shaped string or a signing password in:"$'\n'"$bad"
 
   local sum
