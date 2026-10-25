@@ -86,6 +86,7 @@ fun HomeScreen(
     onCancel: () -> Unit,
     onOpenProfile: () -> Unit,
     onOpenSettings: (() -> Unit)? = null,
+    onEditData: () -> Unit = {},
 ) {
     val incidentShown = state.phase == HomePhase.Processing || state.phase == HomePhase.Listening
     Scaffold(
@@ -124,6 +125,8 @@ fun HomeScreen(
                 HomePhase.Failed -> state.failure?.let { FailureRow(it) }
                 else -> Unit
             }
+            // Setup is no longer the start screen: this is the way back to its contacts, phrases and permissions.
+            if (state.phase == HomePhase.Idle) TextButton(onClick = onEditData) { Text("Cambiar mis datos") }
         }
     }
 }
