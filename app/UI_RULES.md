@@ -31,6 +31,14 @@ Read this before touching any screen in `app/`. These rules keep the look in one
 - A bottom action bar pads for the keyboard and the navigation bar together: `Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))` (the activity uses `adjustResize` with edge-to-edge).
 - The trigger confirmation screen can be read by a bystander: neutral words only (no alerta, emergencia, peligro), and never explain the duress phrase or what the family receives there.
 
+## Home
+
+- `ui/screens/HomeScreen.kt` is the start screen once setup is done (`Route.Home`); Setup's done "Continuar" goes to it. The logic is `ui/home/HomeModel.kt` (pure Kotlin, unit tested); the animated pieces are `ui/components/HomeVisuals.kt`.
+- Mamá's portrait is the trigger: hold it for 1.5 s while a ring fills (releasing early cancels). It is a custom touch target on purpose (`pointerInput` press detection, not a `Button`), so it carries a `contentDescription` and a long-click semantics action as the TalkBack way to trigger.
+- While the call is placed the pose is `Calling` (never `Typing`), then `Listening`. "Fue sin querer" (`TextButton` + caption) is always shown while an incident is on screen.
+- The voice waveform and the halo bars are decorative: the app records no audio and they are not tied to a microphone. Do not describe them as a recording.
+- Every animation stands still when system animations are off (`rememberAnimationsEnabled`).
+
 ## In screens
 
 - Colors: `MaterialTheme.colorScheme.*` only (`primary`, `onSurface`, `errorContainer`, ...). No `Color(0x...)`, no `Color.Red`, no `colorResource`.

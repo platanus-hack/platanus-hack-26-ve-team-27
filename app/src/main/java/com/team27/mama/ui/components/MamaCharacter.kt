@@ -158,7 +158,7 @@ fun MamaCharacter(pose: MamaPose, modifier: Modifier = Modifier, size: Dp = 160.
 
 /** False when the user turned animations off (animator duration scale 0). */
 @Composable
-private fun rememberAnimationsEnabled(): Boolean {
+fun rememberAnimationsEnabled(): Boolean {
     if (LocalInspectionMode.current) return true
     val resolver = LocalContext.current.contentResolver
     return remember(resolver) {
