@@ -45,7 +45,7 @@ class SetupFormTest {
 
     @Test
     fun eachWrongFieldGetsItsOwnMessage() {
-        val errors = valid.copy(ownNumber = "123", familyNumbers = listOf("", "0414 999"), duressPhrase = "hola").errors()
+        val errors = valid.copy(ownNumber = "123", familyNumbers = listOf("", "0414 999"), duressPhrase = " ").errors()
         assertNotNull(errors.ownNumber)
         assertNotNull(errors.familyNumbers[0])
         assertNotNull(errors.familyNumbers[1])
@@ -69,10 +69,11 @@ class SetupFormTest {
     }
 
     @Test
-    fun phraseNeedsThreeWords() {
-        assertNotNull(valid.copy(duressPhrase = "tía Carmen").errors().duressPhrase)
-        assertNull(valid.copy(duressPhrase = "llego tarde hoy").errors().duressPhrase)
-        assertNotNull(valid.copy(safePhrase = "todo bien").errors().safePhrase)
+    fun phraseNeedsOneWord() {
+        assertNotNull(valid.copy(duressPhrase = "  ").errors().duressPhrase)
+        assertNotNull(valid.copy(safePhrase = "¡!").errors().safePhrase)
+        assertNull(valid.copy(duressPhrase = "Carmen").errors().duressPhrase)
+        assertNull(valid.copy(safePhrase = "todo bien").errors().safePhrase)
     }
 
     @Test

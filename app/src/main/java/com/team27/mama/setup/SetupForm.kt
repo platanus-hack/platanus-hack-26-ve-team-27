@@ -16,8 +16,8 @@ data class SetupForm(
         const val DEFAULT_SAFE_PHRASE = "voy llegando, ya casi"
         const val MAX_FAMILY_NUMBERS = 5
 
-        /** Fewer words than this is too easy to say by accident. */
-        const val MIN_PHRASE_WORDS = 3
+        /** One word is allowed; a shorter phrase is easier to say by accident. */
+        const val MIN_PHRASE_WORDS = 1
 
         /** The server's caps (docs/contract.md, DeviceRegistration): longer gets a 422. */
         const val MAX_NAME_CHARS = 30
@@ -93,12 +93,12 @@ fun SetupForm.errors(): SetupFormErrors {
     )
 }
 
-/** Too short to be safe from saying it by accident, or over the server's caps. */
+/** Empty, or over the server's caps. */
 private fun phraseError(phrase: String): String? {
     val words = PhraseSimilarity.words(phrase).size
     return when {
         words < SetupForm.MIN_PHRASE_WORDS ->
-            "Usa una frase de al menos ${SetupForm.MIN_PHRASE_WORDS} palabras que no dirías por casualidad."
+            "Escribe una frase que no dirías por casualidad."
         words > SetupForm.MAX_PHRASE_WORDS || phrase.trim().let { it.codePointCount(0, it.length) } > SetupForm.MAX_PHRASE_CHARS ->
             "Usa una frase más corta: de ${SetupForm.MAX_PHRASE_WORDS} palabras y ${SetupForm.MAX_PHRASE_CHARS} letras o menos."
         else -> null
