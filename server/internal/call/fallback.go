@@ -170,7 +170,7 @@ var fallbackTmpl = template.Must(template.New("fallback").Parse(`<!doctype html>
   {{- if not .Incidents}}
   <meta http-equiv="refresh" content="5">
   {{- end}}
-  <title>MAMÁ: llamada de respaldo</title>
+  <title>Aló Mamá: llamada de respaldo</title>
   <style>
     :root { color-scheme: light dark; }
     body { margin: 0; padding: 16px; font: 16px/1.5 system-ui, sans-serif; background: Canvas; color: CanvasText; }

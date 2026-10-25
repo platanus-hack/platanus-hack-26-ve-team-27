@@ -240,7 +240,7 @@ var vet = time.FixedZone("VET", -4*60*60)
 // what the call said (msg.Ficha, #106: only its known fields) and the time,
 // with no link. FormatWithReport adds the report's.
 //
-//	🚨 Alerta de MAMÁ
+//	🚨 Alerta de Aló Mamá
 //	Ubicación: 10.4961, -66.8531 (±12 m)
 //	Veredicto: coacción
 //	Dijo que está: la autopista
@@ -258,7 +258,7 @@ func Format(msg contract.NotifierMessage) string { return FormatWithReport(msg, 
 //	Ficha: https://mama.example.com/i/Mq-7vD8oe12cyws_nqXsWg
 func FormatWithReport(msg contract.NotifierMessage, reportURL string) string {
 	var b strings.Builder
-	b.WriteString("🚨 Alerta de MAMÁ\n")
+	b.WriteString("🚨 Alerta de Aló Mamá\n")
 	fmt.Fprintf(&b, "Ubicación: %.4f, %.4f", msg.Location.Lat, msg.Location.Lng)
 	if a := msg.Location.AccuracyM; a != nil && *a >= 0 && !math.IsInf(*a, 0) {
 		fmt.Fprintf(&b, " (±%.0f m)", *a)

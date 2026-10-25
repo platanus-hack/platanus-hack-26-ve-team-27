@@ -1,4 +1,4 @@
-# MAMÁ
+# Aló Mamá
 
 <img src="./project-logo.png" alt="Mamá" width="200" />
 
@@ -11,7 +11,7 @@ Platanus Hack 26: Caracas · Track 🚨 Emergencies · team-27
 
 ## Qué es
 
-En un secuestro o un robo, sacar el teléfono para pedir ayuda puede empeorar las cosas. MAMÁ convierte una llamada normal con tu mamá en una alarma silenciosa:
+En un secuestro o un robo, sacar el teléfono para pedir ayuda puede empeorar las cosas. Aló Mamá convierte una llamada normal con tu mamá en una alarma silenciosa:
 
 1. **Configuración.** Tu nombre, los números de tu familia, una frase de alerta y una frase de "todo bien". La app guarda a "Mamá" en tus contactos.
 2. **Disparo.** Volumen **arriba-abajo-arriba**, incluso con el teléfono bloqueado. La app manda tu GPS al servidor.

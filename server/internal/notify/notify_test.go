@@ -208,7 +208,7 @@ func assertNoLink(t *testing.T, body string) {
 // Acceptance criterion 2: location and verdict, and no link.
 func TestFormatHasLocationAndVerdictAndNoLink(t *testing.T) {
 	got := Format(sampleMessage())
-	want := "🚨 Alerta de MAMÁ\n" +
+	want := "🚨 Alerta de Aló Mamá\n" +
 		"Ubicación: 10.4961, -66.8531 (±12 m)\n" +
 		"Veredicto: coacción\n" +
 		"Hora: 09:10 VET"

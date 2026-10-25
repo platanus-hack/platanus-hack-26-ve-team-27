@@ -91,7 +91,7 @@ type PDFOptions struct {
 }
 
 // honestText is what the seal proves, and what it does not.
-const honestText = "El sello prueba que el registro no cambió desde que el servidor de MAMÁ lo cerró. " +
+const honestText = "El sello prueba que el registro no cambió desde que el servidor de Aló Mamá lo cerró. " +
 	"No es una firma electrónica certificada ni reemplaza una experticia."
 
 // buildPDF gathers the PDF's content. Sealed, it reads the incident, points
@@ -118,7 +118,7 @@ func buildPDF(rec Record, opts PDFOptions) (pdfReport, error) {
 		{"Quién", nonEmpty(rec.Device.UserName, "sin nombre registrado")},
 		{"Pidió ayuda", "el " + longDate(inc.TriggeredAt) + ", " + triggerLabel(inc.Trigger) + " (reloj del teléfono)"},
 		{"Llegó al servidor", longClock(inc.CreatedAt) + " (" + receivedLabel(inc.CreatedAt.Sub(inc.TriggeredAt)) + ")"},
-		{"Qué hizo MAMÁ", branchLabel(inc.Branch, inc.SpeedMPS)},
+		{"Qué hizo Aló Mamá", branchLabel(inc.Branch, inc.SpeedMPS)},
 		{"Teléfono", maskPhone(rec.Device.PhoneNumber)},
 		{"Familiares registrados", strconv.Itoa(src.Device.FamilyNumbers)},
 	}
@@ -193,7 +193,7 @@ func buildPDF(rec Record, opts PDFOptions) (pdfReport, error) {
 		r.Verify = []string{
 			"1. Descarga ficha.json y ficha.sig de los enlaces de arriba.",
 			"2. Toma la llave pública del servidor de esta página o de su GET /config.",
-			"3. En el repositorio de MAMÁ, carpeta server: go run ./cmd/verify-ficha ficha.json ficha.sig " + base64.StdEncoding.EncodeToString(s.PublicKey),
+			"3. En el repositorio de Aló Mamá, carpeta server: go run ./cmd/verify-ficha ficha.json ficha.sig " + base64.StdEncoding.EncodeToString(s.PublicKey),
 			"4. Debe responder «firma válida». Si cambió un solo byte, dice que no.",
 		}
 	} else {
@@ -327,9 +327,9 @@ func renderPDF(r pdfReport) ([]byte, error) {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetCreationDate(time.Unix(0, 0).UTC())
 	pdf.SetModificationDate(time.Unix(0, 0).UTC())
-	pdf.SetTitle("Ficha del incidente · MAMÁ", true)
-	pdf.SetAuthor("MAMÁ", true)
-	pdf.SetProducer("MAMÁ", true)
+	pdf.SetTitle("Ficha del incidente · Aló Mamá", true)
+	pdf.SetAuthor("Aló Mamá", true)
+	pdf.SetProducer("Aló Mamá", true)
 	for style, file := range map[string]string{"": "lexend_regular.ttf", "B": "lexend_bold.ttf", "I": "lexend_medium.ttf"} {
 		b, err := fs.ReadFile(staticFS, "static/"+file)
 		if err != nil {
@@ -357,7 +357,7 @@ func renderPDF(r pdfReport) ([]byte, error) {
 		pdf.SetY(-13)
 		pdf.SetFont("Lexend", "", 8)
 		color(pdfGraphite)
-		pdf.CellFormat(textW/2, 5, "MAMÁ · Ficha del incidente "+shortID(r.IncidentID)+" · "+strings.ToLower(status), "", 0, "L", false, 0, "")
+		pdf.CellFormat(textW/2, 5, "Aló Mamá · Ficha del incidente "+shortID(r.IncidentID)+" · "+strings.ToLower(status), "", 0, "L", false, 0, "")
 		pdf.CellFormat(textW/2, 5, "Página "+strconv.Itoa(pdf.PageNo())+" de {nb}", "", 0, "R", false, 0, "")
 	})
 	pdf.AddPage()
@@ -369,7 +369,7 @@ func renderPDF(r pdfReport) ([]byte, error) {
 	pdf.SetXY(margin+22, 9)
 	pdf.SetFont("Lexend", "B", 20)
 	color(pdfLime)
-	pdf.CellFormat(60, 9, "MAMÁ", "", 2, "L", false, 0, "")
+	pdf.CellFormat(60, 9, "ALÓ MAMÁ", "", 2, "L", false, 0, "")
 	pdf.SetX(margin + 22)
 	pdf.SetFont("Lexend", "", 10)
 	pdf.SetTextColor(0xE5, 0xE5, 0xDB)

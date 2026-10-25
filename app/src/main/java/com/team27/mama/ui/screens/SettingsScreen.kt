@@ -63,7 +63,7 @@ fun SettingsScreen(
         ) {
             Text("Ayuda cercana", style = MaterialTheme.typography.headlineMedium)
             Text(
-                "Si alguien cerca de ti con MAMÁ pide ayuda sin internet, tu teléfono puede pasar su alerta.",
+                "Si alguien cerca de ti con Aló Mamá pide ayuda sin internet, tu teléfono puede pasar su alerta.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -74,7 +74,7 @@ fun SettingsScreen(
                 ListItem(
                     headlineContent = { Text("Ayudar a otros cerca de ti") },
                     supportingContent = {
-                        Text("Funciona por Bluetooth, también con MAMÁ cerrada. No ves su ubicación ni sus datos.")
+                        Text("Funciona por Bluetooth, también con Aló Mamá cerrada. No ves su ubicación ni sus datos.")
                     },
                     trailingContent = { Switch(checked = enabled, onCheckedChange = onEnabledChange) },
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -86,7 +86,7 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                "Si reinicias el teléfono, abre MAMÁ una vez para volver a activarlo.",
+                "Si reinicias el teléfono, abre Aló Mamá una vez para volver a activarlo.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -99,7 +99,7 @@ fun SettingsScreen(
                     ),
                 ) {
                     Text(
-                        "Para ayudar a otros, MAMÁ necesita permiso de Bluetooth y ubicación.",
+                        "Para ayudar a otros, Aló Mamá necesita permiso de Bluetooth y ubicación.",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(MamaSpacing.m),
                     )

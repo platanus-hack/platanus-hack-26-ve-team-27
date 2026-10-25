@@ -284,7 +284,7 @@ object MamaSpacing {
 // --------------------------------------------------------------- Wordmark
 
 /**
- * The MAMÁ wordmark: Mamá's face in a circle, then "MAMÁ". The letters take
+ * The Aló Mamá wordmark: Mamá's face in a circle, then "ALÓ MAMÁ". The letters take
  * onSurface and MamaTypography, so they follow every palette or font change in
  * this file; the mark is the illustration itself (#89). [compact] is the
  * top-bar size.
@@ -295,7 +295,7 @@ fun MamaWordmark(modifier: Modifier = Modifier, compact: Boolean = false) {
     val text = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge
     Row(
         modifier = modifier.clearAndSetSemantics {
-            contentDescription = "MAMÁ"
+            contentDescription = "Aló Mamá"
             heading()
         },
         verticalAlignment = Alignment.CenterVertically,
@@ -303,7 +303,7 @@ fun MamaWordmark(modifier: Modifier = Modifier, compact: Boolean = false) {
     ) {
         MamaMark(size = tile)
         Text(
-            text = "MAMÁ",
+            text = "ALÓ MAMÁ",
             style = text.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.04.em),
             color = MaterialTheme.colorScheme.onSurface,
         )

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">MAMÁ</string>
-    <string name="a11y_description">Permite que MAMÁ reconozca la combinación de botones de volumen que configuraste.</string>
-    <string name="widget_description">Acceso directo a MAMÁ.</string>
+    <string name="app_name">Aló Mamá</string>
+    <string name="a11y_description">Permite que Aló Mamá reconozca la combinación de botones de volumen que configuraste.</string>
+    <string name="widget_description">Acceso directo a Aló Mamá.</string>
 </resources>

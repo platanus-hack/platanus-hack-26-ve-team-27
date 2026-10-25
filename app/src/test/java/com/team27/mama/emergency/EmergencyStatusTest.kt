@@ -40,7 +40,7 @@ class EmergencyStatusTest {
             state(EmergencyPhase.SEARCHING_NEARBY, MeshIssue.UNAVAILABLE).toStatus()?.detail,
         )
         assertEquals(
-            "Para avisar sin internet, abre MAMÁ una vez con internet.",
+            "Para avisar sin internet, abre Aló Mamá una vez con internet.",
             state(EmergencyPhase.NO_CHANNEL, MeshIssue.NO_SERVER_KEYS).toStatus()?.detail,
         )
         assertNull(state(EmergencyPhase.NOTIFIED, MeshIssue.UNAVAILABLE).toStatus()?.detail)

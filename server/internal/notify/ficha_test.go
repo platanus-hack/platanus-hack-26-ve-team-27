@@ -24,7 +24,7 @@ func carFicha() *contract.CallContext {
 func TestFormatShowsOnlyTheKnownFichaFields(t *testing.T) {
 	msg := sampleMessage()
 	msg.Ficha = carFicha()
-	want := "🚨 Alerta de MAMÁ\n" +
+	want := "🚨 Alerta de Aló Mamá\n" +
 		"Ubicación: 10.4961, -66.8531 (±12 m)\n" +
 		"Veredicto: coacción\n" +
 		"Dijo que está: la autopista\n" +

@@ -1,10 +1,10 @@
-# MAMÁ — Project Summary
+# Aló Mamá — Project Summary
 
 *Platanus Hack 26 Caracas · Idea locked Sat Oct 24, 2026, 03:05 VET*
 
 ## What it is
 
-MAMÁ is an Android app that lets someone ask for help in secret when they're in danger, for example during a kidnapping or a robbery. The person presses volume **up-down-up**, or taps a home screen widget, and within 15 seconds they get a call from "Mamá". "Mamá" is an AI voice agent. If the person says the duress phrase during the call (*"dile a la tía Carmen que llego tarde"*), or stays silent, the family gets a WhatsApp right away with the location and the verdict. To anyone watching, it looks like an ordinary call with mom.
+Aló Mamá is an Android app that lets someone ask for help in secret when they're in danger, for example during a kidnapping or a robbery. The person presses volume **up-down-up**, or taps a home screen widget, and within 15 seconds they get a call from "Mamá". "Mamá" is an AI voice agent. If the person says the duress phrase during the call (*"dile a la tía Carmen que llego tarde"*), or stays silent, the family gets a WhatsApp right away with the location and the verdict. To anyone watching, it looks like an ordinary call with mom.
 
 ## Why we chose it
 

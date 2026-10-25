@@ -91,7 +91,7 @@ class RelayForegroundService : Service() {
 
     private fun createChannel() {
         val channel = NotificationChannel(CHANNEL_ID, "Ayuda cercana", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "Aviso fijo mientras MAMÁ escucha alertas de teléfonos cercanos."
+            description = "Aviso fijo mientras Aló Mamá escucha alertas de teléfonos cercanos."
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
@@ -105,7 +105,7 @@ class RelayForegroundService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_mama_mark)
-            .setContentTitle("MAMÁ está atenta a emergencias cercanas")
+            .setContentTitle("Aló Mamá está atenta a emergencias cercanas")
             .setOngoing(true)
             .setSilent(true)
             .setContentIntent(open)

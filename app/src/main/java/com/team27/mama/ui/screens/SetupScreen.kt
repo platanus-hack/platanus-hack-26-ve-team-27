@@ -156,13 +156,13 @@ private fun copyFor(step: SetupStep): StepCopy = when (step) {
     )
     SetupStep.AUTOSTART -> StepCopy(
         title = "Inicio automático",
-        why = "Para que MAMÁ siga activa después de reiniciar.",
+        why = "Para que Aló Mamá siga activa después de reiniciar.",
         action = "Abrir inicio automático",
-        hint = "Activa el interruptor de MAMÁ y vuelve aquí.",
+        hint = "Activa el interruptor de Aló Mamá y vuelve aquí.",
     )
     SetupStep.BATTERY -> StepCopy(
         title = "Batería sin límites",
-        why = "Para que el teléfono no cierre MAMÁ.",
+        why = "Para que el teléfono no cierre Aló Mamá.",
         action = "Abrir ajustes de batería",
         hint = "Elige «Sin restricciones» y vuelve aquí.",
     )
@@ -176,7 +176,7 @@ private fun copyFor(step: SetupStep): StepCopy = when (step) {
         title = "Accesibilidad",
         why = "Para detectar los botones de volumen con el teléfono bloqueado.",
         action = "Abrir accesibilidad",
-        hint = "Si MAMÁ aparece bloqueada: Ajustes > Apps > MAMÁ > ⋮ > Permitir ajustes restringidos.",
+        hint = "Si Aló Mamá aparece bloqueada: Ajustes > Apps > Aló Mamá > ⋮ > Permitir ajustes restringidos.",
     )
 }
 
@@ -255,7 +255,7 @@ fun SetupScreen(
         onRetry = viewModel::retry,
         onEdit = viewModel::edit,
         onReviewPermissions = viewModel::reviewPermissions,
-        // The done state goes on to the home screen; without one, MAMÁ works in the background, so leaving is the way on.
+        // The done state goes on to the home screen; without one, Aló Mamá works in the background, so leaving is the way on.
         onContinue = { if (onDone != null) onDone() else activity?.finish() },
     )
     val mamaNumber = PhoneNumbers.normalize(BuildConfig.TWILIO_NUMBER)?.let(PhoneNumbers::display)
@@ -395,7 +395,7 @@ private fun PermissionsPhase(flow: PermissionFlow, onStepClick: (SetupStep) -> U
     Header(
         title = "Tu familia, a un gesto",
         body = when (currentStatus) {
-            StepStatus.DENIED -> "Sin este permiso MAMÁ funciona a medias. Puedes intentarlo de nuevo o seguir sin él."
+            StepStatus.DENIED -> "Sin este permiso Aló Mamá funciona a medias. Puedes intentarlo de nuevo o seguir sin él."
             StepStatus.BLOCKED -> "Android ya no muestra el aviso. Actívalo en Ajustes > Permisos y vuelve aquí."
             null -> "Listo. Ahora cuéntanos a quién avisar."
             else -> "Si algún día estás en peligro, presionas volumen arriba-abajo-arriba y Mamá te llama. " +
@@ -569,7 +569,7 @@ private fun FormPhase(state: SetupUiState, mamaNumber: String?, actions: SetupAc
 @Composable
 private fun FinishingPhase(state: SetupUiState) {
     Header(
-        title = if (state.anyTaskFailed) "Falta un paso" else "Activando MAMÁ",
+        title = if (state.anyTaskFailed) "Falta un paso" else "Activando Aló Mamá",
         body = if (state.anyTaskFailed) "Revisa lo que falló y vuelve a intentarlo." else "Esto toma unos segundos.",
         pose = if (state.anyTaskFailed) MamaPose.Alert else MamaPose.Typing,
     )
@@ -599,7 +599,7 @@ private fun TaskRow(number: Int, title: String, why: String, task: SetupTask) {
 @Composable
 private fun DonePhase(state: SetupUiState, mamaNumber: String?) {
     Header(
-        title = "MAMÁ está lista",
+        title = "Aló Mamá está lista",
         body = "Si algún día estás en peligro, presiona volumen arriba-abajo-arriba. Mamá te llama en segundos.",
         pose = MamaPose.Relieved,
     )

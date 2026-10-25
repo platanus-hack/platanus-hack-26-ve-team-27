@@ -17,9 +17,9 @@ sealed interface OnboardingResult {
 fun OnboardingResult.userMessage(): String? = when (this) {
     OnboardingResult.Done -> null
     OnboardingResult.Offline ->
-        "Necesitas internet para terminar de configurar MAMÁ. Conéctate a wifi o datos y vuelve a intentarlo."
+        "Necesitas internet para terminar de configurar Aló Mamá. Conéctate a wifi o datos y vuelve a intentarlo."
     OnboardingResult.ServerUnavailable ->
-        "No pudimos conectar con MAMÁ. Revisa tu conexión y vuelve a intentarlo."
+        "No pudimos conectar con Aló Mamá. Revisa tu conexión y vuelve a intentarlo."
 }
 
 /**
