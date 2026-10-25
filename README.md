@@ -24,6 +24,31 @@ El widget de la pantalla de inicio no llama: avisa a la familia de inmediato.
 
 **Para la demo usa el patrón de volumen**, no el widget.
 
+## Cómo funciona
+
+<p align="center">
+  <img src="./docs/presentacion/visuales/flujo.png" alt="Volumen arriba, abajo, arriba aunque esté bloqueado; Mamá llama en menos de 15 s; tu familia recibe tu ubicación y el veredicto" width="100%" />
+</p>
+
+<table>
+  <tr>
+    <td width="35%" align="center">
+      <img src="./docs/presentacion/visuales/llamada-entrante.png" alt="Llamada entrante de Mamá en la pantalla del teléfono" width="240" />
+    </td>
+    <td width="65%">
+      <p>Entra una llamada real de "Mamá". Para quien esté mirando, es solo una llamada de casa.</p>
+      <img src="./docs/presentacion/visuales/frase-clave.png" alt="Mamá dice '¡Hola mi amor! ¿Cómo vas?' y el usuario responde con la frase de alerta 'Dile a la tía Carmen que llego tarde.'" width="100%" />
+      <p>Hablas con ella con normalidad. Decir tu frase de alerta es la señal.</p>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="./docs/presentacion/visuales/tres-veredictos.png" alt="Frase de alerta: se avisa a tu familia al instante. Frase de todo bien: no se avisa a nadie. Ninguna de las dos o silencio: se avisa a tu familia igual" width="100%" />
+</p>
+
+Tres resultados: la frase de alerta avisa a tu familia al instante, la frase de "todo bien" no avisa a nadie, y cualquier otra cosa (o el silencio) les avisa igual.
+
 ## Arquitectura
 
 ```mermaid
