@@ -35,7 +35,7 @@ func TestTraceNeedsTheKey(t *testing.T) {
 		t.Errorf("unknown case = %d, want 404", resp.StatusCode)
 	}
 	// The detail links to it.
-	if _, body := cget(t, srv.URL+"/central/r/"+testIncidentID, ck); !strings.Contains(body, `href="/central/r/`+testIncidentID+`/traza">Ver traza</a>`) {
+	if _, body := cget(t, srv.URL+"/central/r/"+testIncidentID, ck); !strings.Contains(body, `href="/central/r/`+testIncidentID+`/traza" aria-label="Ver traza">`) {
 		t.Error("the detail has no Ver traza link")
 	}
 }

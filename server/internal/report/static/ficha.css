@@ -184,6 +184,18 @@ body[data-open] .mama { animation: float 5s ease-in-out infinite; }
 .head-clock { flex: none; display: flex; flex-direction: column; align-items: flex-end; }
 .clock-label { font-size: 12px; line-height: 16px; color: var(--on-surface-variant); }
 .big-clock { font-weight: 700; font-size: 22px; line-height: 28px; font-variant-numeric: tabular-nums; }
+@media (max-width: 599px) {
+  .head {
+    display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center;
+    grid-template-areas: "mama title clock" "alarm alarm alarm" "when when when"; gap: 6px 12px;
+  }
+  .head .head-text, .head .title-row { display: contents; }
+  .head .mama { grid-area: mama; width: 44px; height: 44px; }
+  .head .title { grid-area: title; }
+  .head .alarm-wrap { grid-area: alarm; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+  .head .when { grid-area: when; margin-top: 0; }
+  .head .head-clock { grid-area: clock; }
+}
 
 /* ---------------------------------------------------------------- the alarm (#143)
  * A chip beside the name, the height of the state chips: red from the
@@ -212,7 +224,9 @@ body[data-open] .mama { animation: float 5s ease-in-out infinite; }
 .alarm-chip.reveal { animation: alarm-in .7s var(--ease) both; }
 .alarm-unclear { background: var(--warn-container); color: var(--on-warn-container); }
 .alarm-unclear + .alarm-sub { color: var(--warn); }
-.alarm-cleared { background: var(--surface-high); color: var(--on-surface-variant); font-weight: 500; }
+.alarm-wrap { display: contents; }
+.alarm-cleared, .alarm-cancelled { background: var(--surface-high); color: var(--on-surface-variant); font-weight: 500; }
+.alarm-cancelled + .alarm-sub { color: var(--on-surface-variant); }
 .alarm-cleared + .alarm-sub { color: var(--on-surface-variant); }
 .alarm-frame {
   position: fixed; inset: 0; z-index: 40; pointer-events: none;

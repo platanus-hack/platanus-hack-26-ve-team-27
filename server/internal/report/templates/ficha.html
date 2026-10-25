@@ -163,8 +163,9 @@
   changes. While the case is live a thin frame pulses around the screen. */}}
 {{define "alarm-chip" -}}
 {{with .Alarm -}}
-<span data-key="alarm-{{.Level}}" data-live-children data-reveal data-alarm-level="{{.Level}}" class="alarm-chip alarm-{{.Level}}{{if .Pulse}} pulse{{end}}" role="alert" title="{{.Hint}}">
-  <span data-key="icon" class="alarm-icon" aria-hidden="true">{{if or .Red (eq .Level "unclear")}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a1 1 0 0 1 1 1v1.07A7 7 0 0 1 19 11v4.59l1.7 1.7A1 1 0 0 1 20 19H4a1 1 0 0 1-.7-1.71L5 15.59V11a7 7 0 0 1 6-6.93V3a1 1 0 0 1 1-1Zm-2.24 18h4.48a2.5 2.5 0 0 1-4.48 0Z"/></svg>{{else}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9.5 16.6 5.4 12.5 4 13.9l5.5 5.5L20 8.9l-1.4-1.4z"/></svg>{{end}}</span>
+<span data-key="alarm-wrap" data-live-children class="alarm-wrap">
+<span data-key="alarm-{{.Level}}" data-live-children data-reveal data-alarm-level="{{.Level}}" class="alarm-chip alarm-{{.Level}}{{if .Pulse}} pulse{{end}}" role="{{if .Red}}alert{{else}}status{{end}}" title="{{.Hint}}">
+  <span data-key="icon" class="alarm-icon" aria-hidden="true">{{if or .Red (eq .Level "unclear")}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a1 1 0 0 1 1 1v1.07A7 7 0 0 1 19 11v4.59l1.7 1.7A1 1 0 0 1 20 19H4a1 1 0 0 1-.7-1.71L5 15.59V11a7 7 0 0 1 6-6.93V3a1 1 0 0 1 1-1Zm-2.24 18h4.48a2.5 2.5 0 0 1-4.48 0Z"/></svg>{{else if eq .Level "cancelled"}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6z"/></svg>{{else}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9.5 16.6 5.4 12.5 4 13.9l5.5 5.5L20 8.9l-1.4-1.4z"/></svg>{{end}}</span>
   <span data-key="chip-{{.Chip}}" class="alarm-chip-text">{{.Chip}}</span>
 </span>
 {{- with .Sub}}
@@ -173,6 +174,7 @@
 {{- if .Pulse}}
 <span data-key="alarm-frame" class="alarm-frame" aria-hidden="true"></span>
 {{- end}}
+</span>
 {{- end}}
 {{- end}}
 

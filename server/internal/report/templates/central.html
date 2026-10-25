@@ -110,7 +110,7 @@
     <span class="c-now" data-now aria-label="Hora de Caracas">—</span>
     {{template "central-sound"}}
     {{template "central-theme"}}
-    <a class="pdf-btn c-trace-link" href="/central/r/{{.Case.ID}}/traza">Ver traza</a>
+    <a class="pdf-btn c-trace-link" href="/central/r/{{.Case.ID}}/traza" aria-label="Ver traza"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 7a1 1 0 0 1 1-1h9a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm1 6a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2H5Zm13.5-6a3.5 3.5 0 0 1 2.9 5.46l1.32 1.33a1 1 0 0 1-1.42 1.41l-1.32-1.32A3.5 3.5 0 1 1 18.5 12Zm0 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"/></svg><span class="trace-text">Ver traza</span></a>
     <a class="pdf-btn" href="{{.PDFURL}}" download aria-label="Descargar PDF"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V9h5.5L13 3.5ZM12 11a1 1 0 0 0-1 1v4.59l-1.3-1.3a1 1 0 1 0-1.4 1.42l3 3a1 1 0 0 0 1.4 0l3-3a1 1 0 0 0-1.4-1.42L13 16.6V12a1 1 0 0 0-1-1Z"/></svg><span class="pdf-text">PDF</span></a>
   </div>
 </header>
@@ -155,7 +155,8 @@
   {{- template "alarm-chip" .}}
   </div>
   {{- with .Situation}}
-  <p data-key="situation-{{.}}" class="c-situation-line">{{.}}</p>
+  <p data-key="situation-{{.}}" class="c-situation-line" data-summary>{{.}}</p>
+  <button data-key="situation-more" type="button" class="c-summary-more" data-summary-toggle hidden>Ver más</button>
   {{- end}}
   <p data-key="sub-{{.Case.Name}}-{{.Case.Line}}-{{.Case.LineSince}}" class="c-sub"><span class="c-num">{{if .Case.Name}}{{.Case.Number}}{{else}}Sin nombre registrado{{end}}</span><span class="c-line">{{.Case.Line}}{{if .Case.LineSince}} <span class="ticker" data-since="{{.Case.LineSince}}" data-format="clock">—</span>{{end}}</span></p>
 </div>

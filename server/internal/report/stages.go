@@ -107,7 +107,7 @@ func Stages(rec Record, channel string, live bool) []Stage {
 		if verdictAt != nil {
 			sub = verdict
 		}
-		add("verdict", "Veredicto", sub, verdictAt).Alarm = verdictAt != nil && kind == string(contract.VerdictDuress)
+		add("verdict", "Veredicto", sub, verdictAt).Alarm = verdictAt != nil && kind == string(contract.VerdictDuress) && inc.CancelledAt == nil
 	}
 
 	s := add("family", "Familia avisada", familySummary(rec, channel), inc.NotifiedAt)
