@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -517,7 +519,11 @@ private fun FormPhase(state: SetupUiState, mamaNumber: String?, actions: SetupAc
                         // No contacts app on the phone: typing the number stays the way.
                         try { contactPicker.launch(Unit) } catch (e: ActivityNotFoundException) { pickingIndex = null }
                     },
-                ) { Text("Elegir de mis contactos") }
+                ) {
+                    Icon(painterResource(R.drawable.ic_contacts), contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(MamaSpacing.s))
+                    Text("Elegir de mis contactos")
+                }
             }
             if (form.familyNumbers.size < SetupForm.MAX_FAMILY_NUMBERS) {
                 TextButton(onClick = { actions.onFormChange(form.copy(familyNumbers = form.familyNumbers + "")) }) {
