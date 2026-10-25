@@ -76,7 +76,7 @@
   {{- if .Turns}}
   <ol data-key="turns" data-live-children class="turns"{{if .Provisional}} data-provisional{{end}} aria-label="Transcripción{{if .Provisional}} en vivo{{end}}">
   {{- range $i, $t := .Turns}}
-    <li data-key="turn-{{$i}}" class="{{if .Agent}}agent{{else}}user{{end}}"><button type="button" class="turn{{if .Phrase}} phrase{{end}}" data-call="{{$c.N}}" data-seek="{{.Seek}}"{{if not $c.Audio}} disabled{{end}}><span class="who"><span>{{.Speaker}}</span><span>{{.Offset}}{{if .At}} · {{.At}}{{end}}</span></span><span class="msg">{{.Message}}</span>{{if .Phrase}}<span class="phrase-tag">La frase acordada</span>{{end}}</button></li>
+    <li data-key="turn-{{$i}}" class="{{if .Agent}}agent{{else}}user{{end}}"><button type="button" class="turn{{if .Phrase}} phrase{{end}}{{if .Alarm}} alarm{{end}}" data-call="{{$c.N}}" data-seek="{{.Seek}}"{{if not $c.Audio}} disabled{{end}}><span class="who"><span>{{.Speaker}}</span><span>{{.Offset}}{{if .At}} · {{.At}}{{end}}</span></span><span class="msg">{{.Message}}</span>{{if .Phrase}}<span class="phrase-tag">{{if $c.Provisional}}Frase de alerta · en vivo{{else}}La frase acordada{{end}}</span>{{end}}</button></li>
   {{- end}}
   </ol>
   {{- else if not .Active}}

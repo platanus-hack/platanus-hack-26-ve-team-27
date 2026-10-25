@@ -8,9 +8,10 @@
  * this page is served by the Go server and cannot read the app's theme. If you
  * change a color or the font in Theme.kt, change it here too, and the reverse.
  *
- * Red (--error*) is for errors only, never for emphasis. Lexend 400/500/700,
- * self-hosted (no third-party request). Every animation stops under
- * prefers-reduced-motion.
+ * Red (--error*) is for errors only, never for emphasis, with one exception:
+ * the duress alarm (--alarm*, #143), the one place red dominates. Lexend
+ * 400/500/700, self-hosted (no third-party request). Every animation stops
+ * under prefers-reduced-motion.
  */
 
 @font-face { font-family: "Lexend"; font-weight: 400; font-display: swap; src: url("/ficha/static/lexend_regular.ttf") format("truetype"); }
@@ -53,6 +54,10 @@
   --on-warn: #181918;
   --warn-container: #FFEBB8;
   --on-warn-container: #3D2B00;
+  /* Alarm red, page-only (#143): the duress alarm, never anything else. */
+  --alarm: #C8102E;
+  --on-alarm: #FFFFFF;
+  --alarm-glow: rgba(200, 16, 46, 0.45);
 
   /* MamaShapes and MamaSpacing */
   --r-s: 12px; --r-m: 16px; --r-l: 24px;
@@ -94,6 +99,9 @@
     --on-warn: #181918;
     --warn-container: #4A3800;
     --on-warn-container: #FFEBB8;
+    --alarm: #E5243B;
+    --on-alarm: #FFFFFF;
+    --alarm-glow: rgba(255, 59, 72, 0.5);
   }
 }
 
@@ -176,6 +184,58 @@ body[data-open] .mama { animation: float 5s ease-in-out infinite; }
 .head-clock { flex: none; display: flex; flex-direction: column; align-items: flex-end; }
 .clock-label { font-size: 12px; line-height: 16px; color: var(--on-surface-variant); }
 .big-clock { font-weight: 700; font-size: 22px; line-height: 28px; font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- the alarm (#143)
+ * Red from the moment the phrase is heard; it pulses (banner, bell, a frame
+ * around the screen) only while the case is live, then stays a still red
+ * banner. Amber for an unclear verdict; a calm note when it steps down. */
+
+@keyframes alarm-in {
+  0% { opacity: 0; transform: scale(.94); }
+  25% { opacity: 1; transform: scale(1.02); filter: brightness(1.7); }
+  45% { filter: brightness(1); }
+  65% { filter: brightness(1.5); }
+  100% { transform: none; filter: none; }
+}
+@keyframes alarm-beat { 0%, 100% { box-shadow: 0 6px 24px var(--alarm-glow), 0 0 0 0 var(--alarm-glow); } 50% { box-shadow: 0 6px 24px var(--alarm-glow), 0 0 0 10px transparent; } }
+@keyframes alarm-ring { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(14deg); } 30% { transform: rotate(-12deg); } 45% { transform: rotate(8deg); } 60% { transform: rotate(-4deg); } 75% { transform: none; } }
+@keyframes alarm-frame { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
+.alarm-box { display: none; }
+body[data-alarm] .alarm-box { display: block; } /* ficha.js keeps data-alarm on <body> in step with the section */
+.alarm {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px;
+  margin: 2px 0 10px; padding: 12px 16px; border-radius: var(--r-l);
+  background: var(--alarm); color: var(--on-alarm);
+  box-shadow: 0 6px 24px var(--alarm-glow);
+}
+.alarm-icon { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .2); font-weight: 700; font-size: 24px; }
+.alarm-icon svg { width: 26px; height: 26px; }
+.alarm-text { flex: 1 1 12em; min-width: 0; display: flex; flex-direction: column; }
+.alarm-title { font-weight: 700; font-size: 20px; line-height: 26px; letter-spacing: .02em; text-transform: uppercase; overflow-wrap: anywhere; }
+.alarm-detail { font-size: 14px; line-height: 20px; opacity: .92; }
+.alarm-status { flex: none; padding: 4px 14px; border-radius: 999px; background: rgba(0, 0, 0, .24); font-weight: 700; font-size: 14px; line-height: 22px; white-space: nowrap; }
+.alarm.pulse { animation: alarm-beat 1.1s ease-in-out infinite; }
+.alarm.pulse .alarm-icon { animation: alarm-ring 1.4s ease-in-out infinite; }
+.alarm.reveal { animation: alarm-in .9s var(--ease) both; }
+.alarm-unclear { background: var(--warn-container); color: var(--on-warn-container); box-shadow: none; }
+.alarm-unclear .alarm-icon { background: var(--warn-dot); color: var(--on-warn); }
+.alarm-unclear .alarm-title { text-transform: none; }
+.alarm-unclear .alarm-status { background: rgba(0, 0, 0, .08); }
+.alarm-cleared { background: var(--surface-container); color: var(--on-background); box-shadow: none; }
+.alarm-cleared .alarm-icon { background: var(--surface-highest); color: var(--primary); }
+.alarm-cleared .alarm-title { text-transform: none; font-size: 17px; line-height: 24px; }
+.alarm-cleared .alarm-detail { color: var(--on-surface-variant); opacity: 1; }
+.alarm-frame {
+  position: fixed; inset: 0; z-index: 40; pointer-events: none;
+  box-shadow: inset 0 0 0 5px var(--alarm), inset 0 0 110px 12px var(--alarm-glow);
+  animation: alarm-frame 1.1s ease-in-out infinite;
+}
+.node.node-alarm .node-dot { background: var(--alarm); border-color: var(--alarm); color: var(--on-alarm); box-shadow: 0 0 0 4px var(--alarm-glow); }
+.node.node-alarm .node-sub { color: var(--alarm); font-weight: 700; }
+.turn.phrase.alarm { background: var(--alarm); color: var(--on-alarm); border-color: var(--alarm); box-shadow: 0 0 0 4px var(--alarm-glow); animation: none; }
+.turn.phrase.alarm .phrase-tag { background: var(--on-alarm); color: var(--alarm); }
+body[data-open] .turn.phrase.alarm { animation: alarm-beat 1.1s ease-in-out infinite; }
 
 /* ---------------------------------------------------------------- track */
 
@@ -365,6 +425,11 @@ body[data-expanded] .more { display: none; }
     display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); row-gap: 10px;
     padding: 0 32px 24px;
   }
+  body[data-alarm] .app { grid-template-rows: auto auto auto auto minmax(0, 1fr); }
+  .alarm { margin: 0; padding: 10px 18px; }
+  .alarm-title { font-size: 24px; line-height: 30px; }
+  .alarm-detail { font-size: 15px; }
+  .alarm-status { font-size: 16px; padding: 6px 16px; }
   .top { min-height: 60px; }
   .wordmark { font-size: 22px; }
   .mark { width: 32px; height: 32px; }
@@ -492,5 +557,6 @@ code { font-family: inherit; font-size: 13px; background: var(--surface-high); p
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+  .alarm-frame { opacity: .8; }
   .seg { stroke-dashoffset: 0; }
 }

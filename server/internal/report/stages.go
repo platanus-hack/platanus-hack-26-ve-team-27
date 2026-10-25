@@ -20,6 +20,7 @@ type Stage struct {
 	Error bool   // a failure: the call never connected
 	Mark  string // a small marker: "2 intentos", "respaldo web"
 	Warn  bool   // done, but with a warning: the phone missed an important permission
+	Alarm bool   // the verdict node of a duress verdict: the page's alarm (#143)
 	// Ready is the "Teléfono listo" node's permission list (#125), which a
 	// tap opens; nil on every other node.
 	Ready *PhoneReady
@@ -106,7 +107,7 @@ func Stages(rec Record, channel string, live bool) []Stage {
 		if verdictAt != nil {
 			sub = verdict
 		}
-		add("verdict", "Veredicto", sub, verdictAt)
+		add("verdict", "Veredicto", sub, verdictAt).Alarm = verdictAt != nil && kind == string(contract.VerdictDuress)
 	}
 
 	s := add("family", "Familia avisada", familySummary(rec, channel), inc.NotifiedAt)

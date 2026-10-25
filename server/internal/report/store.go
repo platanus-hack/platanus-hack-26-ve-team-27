@@ -422,15 +422,16 @@ func loadCalls(ctx context.Context, tx *sql.Tx, incidentID string) ([]Call, erro
 	return out, rows.Err()
 }
 
-// loadLiveTurns fills LiveTurns (#143) of the calls with no post-call
-// transcript yet, ordered by Twilio's Timestamp across both tracks
-// (SequenceId orders one track only), counted from when Twilio said the call
-// was answered.
+// loadLiveTurns fills LiveTurns (#143) of the calls, ordered by Twilio's
+// Timestamp across both tracks (SequenceId orders one track only), counted
+// from when Twilio said the call was answered. They stay loaded after the
+// post-call transcript: the page then shows the transcript, and the alarm
+// still knows whether the phrase was heard live.
 func loadLiveTurns(ctx context.Context, tx *sql.Tx, incidentID string, calls []Call) error {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT t.call_id, t.track, t.message, t.said_at
 		FROM call_live_turns t JOIN calls c ON c.id = t.call_id
-		WHERE c.incident_id = $1 AND c.transcript IS NULL
+		WHERE c.incident_id = $1
 		ORDER BY t.call_id, t.said_at, t.track, t.sequence_id`, incidentID)
 	if err != nil {
 		return err

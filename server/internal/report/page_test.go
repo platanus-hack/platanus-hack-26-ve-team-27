@@ -81,7 +81,7 @@ func TestPageRendersTheSealedReport(t *testing.T) {
 	body := html.UnescapeString(rec.Body.String())
 	for _, want := range []string{
 		"Sellada ✓", ">Coacción<", "mama_lista.webp", "Pidió ayuda · sáb 24 oct, 09:10", "duró",
-		`class="node node-done" data-stage="stage-trigger"`, `class="node node-done" data-stage="stage-verdict"`,
+		`class="node node-done" data-stage="stage-trigger"`, `class="node node-done node-alarm" data-stage="stage-verdict"`,
 		`class="node node-done" data-stage="stage-family"`, `class="node node-done" data-stage="stage-sealed"`,
 		`class="node node-skipped" data-stage="stage-rang"`, ">09:11:25<", "Familia avisada",
 		`<audio id="audio-1" data-call="1" preload="none" src="/i/` + testToken + `/audio.mp3?llamada=1">`,

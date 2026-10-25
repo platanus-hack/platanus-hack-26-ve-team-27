@@ -172,8 +172,8 @@ func liveRecord() Record {
 var liveNow = at("2026-10-24T13:10:20Z")
 
 // While the call is on, the family page shows what Twilio heard, every turn
-// visible on a phone and none marked as the phrase: only the post-call
-// transcript is judged.
+// visible on a phone, and the turn that says the phrase marked as the alarm
+// (#143): only the post-call transcript is judged, but the page alarms at once.
 func TestFamilyPageShowsTheLiveTurnsDuringTheCall(t *testing.T) {
 	opts := Options{Token: testToken, Channel: "WhatsApp", CanSeal: true, Now: liveNow}
 	p := Build(liveRecord(), opts)
@@ -181,8 +181,8 @@ func TestFamilyPageShowsTheLiveTurnsDuringTheCall(t *testing.T) {
 		t.Fatalf("active %v call %+v", p.CallActive, p.Call)
 	}
 	for i, tv := range p.Call.Turns {
-		if tv.Phrase || !tv.Keep {
-			t.Errorf("turn %d = %+v, want kept and not marked", i, tv)
+		if marked := i == 1; tv.Phrase != marked || tv.Alarm != marked || !tv.Keep {
+			t.Errorf("turn %d = %+v, want kept and marked %v", i, tv, marked)
 		}
 	}
 	if p.Call.Turns[0].Speaker != "Mamá" || p.Call.Turns[1].Speaker != "Tu familiar" || p.Call.Turns[1].Offset != "0:06" {
@@ -199,8 +199,8 @@ func TestFamilyPageShowsTheLiveTurnsDuringTheCall(t *testing.T) {
 			t.Errorf("call section lacks %q:\n%s", want, call)
 		}
 	}
-	if strings.Contains(call, "La frase acordada") {
-		t.Errorf("a live turn is marked as the phrase:\n%s", call)
+	if strings.Contains(call, "La frase acordada") || !strings.Contains(call, "Frase de alerta · en vivo") || !strings.Contains(call, "phrase alarm") {
+		t.Errorf("the live phrase turn is not tagged as live and red:\n%s", call)
 	}
 }
 
@@ -266,8 +266,9 @@ func TestSealAndPDFIgnoreLiveTurns(t *testing.T) {
 }
 
 // Stored live turns load in the order they were said across both tracks,
-// counted from the answer, only until the post-call transcript is stored. A
-// repeated callback and an unknown call store nothing.
+// counted from the answer, and stay loaded after the post-call transcript
+// (the alarm still needs them, #143). A repeated callback and an unknown call
+// store nothing.
 func TestSaveAndLoadLiveTurns(t *testing.T) {
 	pool := newDB(t)
 	s := NewDBStore(pool)
@@ -309,8 +310,11 @@ func TestSaveAndLoadLiveTurns(t *testing.T) {
 		t.Errorf("LiveTurns = %+v\nwant %+v", got, want)
 	}
 	exec(t, pool, `UPDATE calls SET status = 'done', transcript = '[{"role":"agent","message":"¿Aló?","time_in_call_secs":0}]' WHERE id = $1`, callID)
-	if rec, err = s.Load(ctx, testIncidentID); err != nil || len(rec.Calls[0].LiveTurns) != 0 {
+	if rec, err = s.Load(ctx, testIncidentID); err != nil || !reflect.DeepEqual(rec.Calls[0].LiveTurns, want) {
 		t.Errorf("after the post-call transcript: LiveTurns %+v, %v", rec.Calls[0].LiveTurns, err)
+	}
+	if p := Build(rec, Options{Token: testToken, Now: at("2026-10-24T13:12:00Z")}); p.Call == nil || p.Call.Provisional || len(p.Call.Turns) != 1 {
+		t.Errorf("after the post-call transcript the page shows %+v, want the transcript", p.Call)
 	}
 }
 

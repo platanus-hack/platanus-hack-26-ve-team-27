@@ -134,6 +134,7 @@ type Page struct {
 	Family         []FamilyChip
 	FamilyNote     string
 	PDFURL         string
+	Alarm          *AlarmView // the duress alarm across the top; nil for none
 }
 
 // PointRow is one row of the locations table.
@@ -181,6 +182,7 @@ type TurnView struct {
 	Offset  string  // "0:04"
 	At      string  // time of day on ElevenLabs' clock; "" when the start is unknown
 	Phrase  bool    // the turn that says the duress phrase
+	Alarm   bool    // Phrase, while the page's alarm is the red one
 	Keep    bool    // shown while the transcript is collapsed on a phone
 }
 
@@ -330,6 +332,15 @@ func Build(rec Record, opts Options) Page {
 		p.FamilyNote = familyNote(rec, opts.Channel, p.Live)
 	}
 	p.PDFURL = PDFPath(opts.Token)
+	// The alarm reads the live turns even on a sealed page: a phrase heard
+	// live and never confirmed says so, rather than vanishing (#143).
+	if p.Alarm = alarmView(rec, p.Live); p.Alarm != nil && p.Alarm.Red() {
+		for i := range p.Calls {
+			for j := range p.Calls[i].Turns {
+				p.Calls[i].Turns[j].Alarm = p.Calls[i].Turns[j].Phrase
+			}
+		}
+	}
 	return p
 }
 
@@ -506,9 +517,10 @@ func callView(n int, c Call, dev Device, token string) CallView {
 	answered, known := c.AnsweredAt()
 	turns, phrase := c.Transcript, phraseTurns(c.Transcript, dev.DuressPhrase)
 	if len(turns) == 0 && c.Status != "done" && len(c.LiveTurns) > 0 {
-		// The call is still on (#143): what Twilio heard so far. No turn is
-		// marked as the phrase: only the post-call transcript is judged.
-		turns, phrase, v.Provisional = c.LiveTurns, nil, true
+		// The call is still on (#143): what Twilio heard so far, with the
+		// turn that says the phrase marked for the alarm. Only the post-call
+		// transcript is judged.
+		turns, phrase, v.Provisional = c.LiveTurns, phraseTurns(c.LiveTurns, dev.DuressPhrase), true
 	}
 	for j, t := range turns {
 		tv := TurnView{

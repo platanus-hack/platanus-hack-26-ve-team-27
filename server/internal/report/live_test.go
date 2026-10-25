@@ -181,7 +181,7 @@ func TestLiveSendsEachChangeInOrderAndEndsWhenSealed(t *testing.T) {
 	rec.Calls[0].Verdict, rec.Calls[0].VerdictAt, rec.Calls[0].VerdictReason = "duress", ptr(at("2026-10-24T13:11:07Z")), "the user said the duress phrase"
 	src.set(testToken, rec)
 	second := decodeSnapshot(t, next(t, msgs))
-	if second.Version == first.Version || !node(second, "done", "verdict") || !node(second, "current", "family") ||
+	if second.Version == first.Version || !node(second, "done node-alarm", "verdict") || !node(second, "current", "family") ||
 		!strings.Contains(second.Sections["header"], ">Coacción<") {
 		t.Fatal("second update is not the verdict alone")
 	}
