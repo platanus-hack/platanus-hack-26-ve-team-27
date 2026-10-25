@@ -3,8 +3,6 @@ package com.team27.mama.setup
 import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
-import android.os.PowerManager
-import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
@@ -13,6 +11,7 @@ import com.team27.mama.BuildConfig
 import com.team27.mama.MamaApp
 import com.team27.mama.onboarding.OnboardingResult
 import com.team27.mama.onboarding.userMessage
+import com.team27.mama.permissions.AndroidPermissions
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,8 +43,20 @@ data class SetupUiState(
     val registration: SetupTask = SetupTask(),
     /** False when the person skipped contacts: Mamá then calls as a bare number. */
     val mamaInContacts: Boolean = true,
+    /** The server's 422 for one field, shown on it until that field changes. */
+    val serverError: Pair<FormField, String>? = null,
 ) {
     val formErrors: SetupFormErrors get() = form.errors()
+
+    /** The message under [field]: the form's own check first, then the server's. */
+    fun errorFor(field: FormField): String? {
+        val local = when (field) {
+            FormField.USER_NAME -> formErrors.userName
+            FormField.DURESS_PHRASE -> formErrors.duressPhrase
+            FormField.SAFE_PHRASE -> formErrors.safePhrase
+        }
+        return (if (showFormErrors) local else null) ?: serverError?.takeIf { it.first == field }?.second
+    }
     val anyTaskFailed: Boolean get() = contact.status == TaskStatus.FAILED || registration.status == TaskStatus.FAILED
 }
 
@@ -62,6 +73,7 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
     private val client = RegistrationClient(BuildConfig.SERVER_URL)
     private val graph get() = (app as MamaApp).graph
     private val isXiaomi = SystemScreens.isXiaomi()
+    private val systemPermissions = AndroidPermissions(application)
 
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<SetupUiState> = _state.asStateFlow()
@@ -72,9 +84,11 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
     private fun initialState(): SetupUiState {
         val steps = SetupStep.forDevice(android.os.Build.VERSION.SDK_INT, isXiaomi)
         val saved = SetupForm(
+            userName = store.userName.orEmpty(),
             ownNumber = store.ownNumber.orEmpty(),
             familyNumbers = store.familyNumbers.ifEmpty { listOf("") },
             duressPhrase = store.duressPhrase ?: SetupForm.DEFAULT_DURESS_PHRASE,
+            safePhrase = store.safePhrase ?: SetupForm.DEFAULT_SAFE_PHRASE,
         )
         val done = store.setupCompleted
         return SetupUiState(
@@ -108,11 +122,15 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
         updatePermissions { it.skip(step) }
     }
 
-    /** Applies [change] and saves the statuses the system cannot give back after a restart. */
+    /**
+     * Applies [change] and saves the statuses the system cannot give back after a restart.
+     * It also notes the time of each permission change for the report (#125).
+     */
     private fun updatePermissions(change: (PermissionFlow) -> PermissionFlow) {
         _state.update { it.copy(permissions = change(it.permissions)) }
         val settled = _state.value.permissions.settled
         if (settled != store.settledSteps) store.settledSteps = settled
+        graph.permissionSync.sync()
     }
 
     fun continueToForm() {
@@ -120,7 +138,15 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onFormChange(form: SetupForm) {
-        _state.update { it.copy(form = form) }
+        _state.update {
+            val stale = when (it.serverError?.first) {
+                FormField.USER_NAME -> form.userName != it.form.userName
+                FormField.DURESS_PHRASE -> form.duressPhrase != it.form.duressPhrase
+                FormField.SAFE_PHRASE -> form.safePhrase != it.form.safePhrase
+                null -> false
+            }
+            it.copy(form = form, serverError = if (stale) null else it.serverError)
+        }
     }
 
     fun submitForm() {
@@ -133,10 +159,12 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
         store.ownNumber = valid.ownNumber
         store.familyNumbers = valid.familyNumbers
         store.duressPhrase = valid.duressPhrase
+        store.userName = valid.userName
+        store.safePhrase = valid.safePhrase
         // Until the new data reaches the server, a relaunch must not open on "done".
         store.setupCompleted = false
         _state.update {
-            it.copy(phase = SetupPhase.FINISHING, contact = SetupTask(), registration = SetupTask())
+            it.copy(phase = SetupPhase.FINISHING, contact = SetupTask(), registration = SetupTask(), serverError = null)
         }
         runPendingTasks()
     }
@@ -148,7 +176,7 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(phase = SetupPhase.PERMISSIONS) }
     }
 
-    /** From the done screen: change the numbers or the phrase. Saving runs both tasks again. */
+    /** From the done screen: change the name, the numbers or the phrases. Saving runs both tasks again. */
     fun edit() {
         _state.update { it.copy(phase = SetupPhase.FORM, showFormErrors = false) }
     }
@@ -165,13 +193,35 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 if (_state.value.registration.status != TaskStatus.DONE) {
                     _state.update { it.copy(registration = SetupTask(TaskStatus.RUNNING)) }
-                    val registration = register()
-                    _state.update { it.copy(registration = registration) }
+                    when (val result = registerDevice()) {
+                        RegistrationResult.Registered -> _state.update { it.copy(registration = SetupTask(TaskStatus.DONE)) }
+                        is RegistrationResult.Failed -> if (result.field != null) {
+                            // The server rejected a field (422): back to the form, with the message on that field.
+                            _state.update {
+                                it.copy(
+                                    phase = SetupPhase.FORM,
+                                    registration = SetupTask(),
+                                    serverError = result.field to result.message,
+                                )
+                            }
+                            return@launch
+                        } else {
+                            _state.update { it.copy(registration = failed(result.message)) }
+                        }
+                    }
+                    val registration = _state.value.registration
+                    if (registration.status == TaskStatus.DONE && graph.offlineEmergency) {
+                        _state.update { it.copy(registration = SetupTask(TaskStatus.RUNNING)) }
+                        val onboarding = finishOnboarding()
+                        _state.update { it.copy(registration = onboarding) }
+                    }
                 }
                 val state = _state.value
                 if (state.contact.status == TaskStatus.DONE && state.registration.status == TaskStatus.DONE) {
                     store.setupCompleted = true
                     _state.update { it.copy(phase = SetupPhase.DONE) }
+                    // The device is registered: send when each permission was granted (#125).
+                    graph.permissionSync.sync()
                 }
             } finally {
                 running = false
@@ -209,19 +259,15 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun register(): SetupTask {
+    private suspend fun registerDevice(): RegistrationResult {
         val registration = store.registration(BuildConfig.VERSION_NAME)
-            ?: return failed("Faltan tus datos. Vuelve al paso anterior.")
+            ?: return RegistrationResult.Failed("Faltan tus datos. Vuelve al paso anterior.")
         // With the offline flag, POST /devices also carries the device key (#59), so the server
         // can verify this phone's offline emergencies.
-        val result = if (graph.offlineEmergency) {
+        return if (graph.offlineEmergency) {
             KeyedRegistration.register(graph.deviceRegistrar(graph.deviceSigner), registration)
         } else {
             client.register(registration)
-        }
-        return when (result) {
-            RegistrationResult.Registered -> if (graph.offlineEmergency) finishOnboarding() else SetupTask(TaskStatus.DONE)
-            is RegistrationResult.Failed -> failed(result.message)
         }
     }
 
@@ -244,13 +290,8 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
 
     /** What the system says about [step]; null when it cannot be read back (MIUI screens). */
     private fun isGranted(step: SetupStep): Boolean? = when (step) {
-        SetupStep.BATTERY ->
-            app.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(app.packageName)
-        SetupStep.ACCESSIBILITY ->
-            Settings.Secure.getString(app.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-                ?.split(':')
-                ?.any { it.startsWith(app.packageName + "/") }
-                ?: false
+        SetupStep.BATTERY -> systemPermissions.ignoringBatteryOptimizations()
+        SetupStep.ACCESSIBILITY -> systemPermissions.accessibilityServiceOn()
         SetupStep.AUTOSTART, SetupStep.POPUPS -> null
         else -> step.isGrantedBy(::hasPermission)
     }

@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/trace"
 )
 
 // KapsoSignatureHeader carries Kapso's webhook signature: the hex
@@ -105,6 +107,13 @@ func (k *KapsoWebhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if changed {
 		log.Printf("kapso webhook: message %s is %s", ev.Message.ID, status)
+		incident := ""
+		if l, ok := k.Store.(interface {
+			DeliveryIncident(context.Context, string) (string, error)
+		}); ok {
+			incident, _ = l.DeliveryIncident(r.Context(), ev.Message.ID)
+		}
+		trace.Log(incident, "kapso_status", "message_id", ev.Message.ID, "status", status, "error", errText)
 	}
 	w.WriteHeader(http.StatusOK)
 }

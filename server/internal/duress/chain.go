@@ -25,6 +25,11 @@ const DefaultLLMTimeout = 6 * time.Second
 // talks the model into "no_duress" can only silence a call that was already
 // unclear; the prompt fences the transcript as data to make that harder.
 //
+// With a safe phrase configured (#106) the LLM may raise an unclear call to
+// duress but never lower it to no duress: only the rules hearing the safe
+// phrase cancel the alert, so a call where the person did not confirm they
+// are fine always reaches the family.
+//
 // Chain never errors and always answers within Timeout plus the rules' own
 // microseconds: on any LLM failure (no key, HTTP error, timeout, bad JSON)
 // it returns the rules verdict with a reason that says the LLM fell back.
@@ -36,12 +41,12 @@ type Chain struct {
 
 var _ Detector = Chain{}
 
-func (c Chain) Detect(ctx context.Context, transcript []contract.TranscriptTurn, phrase string) (Result, error) {
+func (c Chain) Detect(ctx context.Context, transcript []contract.TranscriptTurn, phrases Phrases) (Result, error) {
 	rules := c.Rules
 	if rules == nil {
 		rules = Rules{}
 	}
-	base, err := rules.Detect(ctx, transcript, phrase)
+	base, err := rules.Detect(ctx, transcript, phrases)
 	if err != nil {
 		// Rules{} never errors; a custom first step that does still must not
 		// lose the call. Unclear lets the notifier decide.
@@ -57,23 +62,27 @@ func (c Chain) Detect(ctx context.Context, transcript []contract.TranscriptTurn,
 	}
 	llmCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	got, err := detectBounded(llmCtx, c.LLM, transcript, phrase)
+	got, err := detectBounded(llmCtx, c.LLM, transcript, phrases)
 	if err != nil {
 		return Result{base.Verdict, base.Reason + " (LLM unavailable: " + fallbackCause(llmCtx, err) + ")"}, nil
 	}
-	return Result{got.Verdict, "rules: " + base.Reason + "; LLM: " + got.Reason}, nil
+	reason := "rules: " + base.Reason + "; LLM: " + got.Reason
+	if got.Verdict == contract.VerdictNoDuress && phrases.hasSafe() {
+		return Result{contract.VerdictUnclear, reason + " (kept unclear: only the safe phrase cancels the alert)"}, nil
+	}
+	return Result{got.Verdict, reason}, nil
 }
 
 // detectBounded returns when d answers or ctx ends, whichever is first, so a
 // Detector that ignores its context still can't hold the verdict.
-func detectBounded(ctx context.Context, d Detector, transcript []contract.TranscriptTurn, phrase string) (Result, error) {
+func detectBounded(ctx context.Context, d Detector, transcript []contract.TranscriptTurn, phrases Phrases) (Result, error) {
 	type answer struct {
 		r   Result
 		err error
 	}
 	ch := make(chan answer, 1)
 	go func() {
-		r, err := d.Detect(ctx, transcript, phrase)
+		r, err := d.Detect(ctx, transcript, phrases)
 		ch <- answer{r, err}
 	}()
 	select {

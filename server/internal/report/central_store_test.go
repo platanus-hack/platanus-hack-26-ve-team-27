@@ -94,30 +94,31 @@ func TestCasesNewestFirstWithTheirStatesOnPostgres(t *testing.T) {
 	}
 }
 
-// Extras reads #106's calls.ficha and an incident cancellation column once
-// they exist, and nothing before.
-func TestExtrasReadsTheFichaOnceTheColumnExistsOnPostgres(t *testing.T) {
+// Load reads each call's #106 ficha (calls.ficha) once that column exists,
+// and nothing before; Extras reads an incident cancellation column the same
+// way.
+func TestLoadReadsTheCallContextOnceTheColumnExistsOnPostgres(t *testing.T) {
 	s := centralDB(t)
 	ctx := context.Background()
+	rec, err := s.Load(ctx, testIncidentID)
+	if err != nil || rec.Calls[0].Context != nil {
+		t.Fatalf("before the column: %+v %v", rec.Calls[0].Context, err)
+	}
 	x, err := s.Extras(ctx, testIncidentID)
-	if err != nil || x.Ficha != nil || x.Cancelled {
-		t.Fatalf("before the columns: %+v %v", x, err)
+	if err != nil || x.Cancelled {
+		t.Fatalf("extras before the column: %+v %v", x, err)
 	}
 	if _, err := s.Extras(ctx, "00000000-0000-4000-8000-000000000000"); err != ErrUnknownIncident {
 		t.Errorf("unknown incident: %v", err)
 	}
-	exec(t, s.pool, `ALTER TABLE calls ADD COLUMN ficha JSONB`)
-	if x, _ := s.Extras(ctx, testIncidentID); x.Ficha != nil {
-		t.Errorf("an empty ficha column: %s", x.Ficha)
+	exec(t, s.pool, `ALTER TABLE calls ADD COLUMN IF NOT EXISTS ficha JSONB`)
+	if rec, _ := s.Load(ctx, testIncidentID); rec.Calls[0].Context != nil {
+		t.Errorf("an empty ficha column: %+v", rec.Calls[0].Context)
 	}
 	exec(t, s.pool, `UPDATE calls SET ficha = $2 WHERE incident_id = $1`, testIncidentID, testFicha)
-	x, err = s.Extras(ctx, testIncidentID)
-	if err != nil || contextView(x.Ficha) == nil || contextView(x.Ficha).Fields[1].Value != "Dos hombres" {
-		t.Fatalf("with a ficha: %s %v", x.Ficha, err)
-	}
-	var m map[string]any
-	if json.Unmarshal(x.Ficha, &m) != nil {
-		t.Errorf("ficha is not an object: %s", x.Ficha)
+	rec, err = s.Load(ctx, testIncidentID)
+	if err != nil || rec.Calls[0].Context == nil || *rec.Calls[0].Context != *parseCallContext(json.RawMessage(testFicha)) {
+		t.Fatalf("with a ficha: %+v %v", rec.Calls[0].Context, err)
 	}
 
 	exec(t, s.pool, `ALTER TABLE incidents ADD COLUMN cancelled_at TIMESTAMPTZ`)

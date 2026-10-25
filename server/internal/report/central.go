@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -36,9 +38,11 @@ func CentralCasePath(incidentID string) string { return CentralPrefix + "r/" + i
 var CentralSections = []string{"c-counts", "c-list"}
 
 // CentralCaseSections are the central detail's live sections: the family
-// page's track, call, route and status, the timeline and points blocks, and
-// the central's own header, context and notified people.
-var CentralCaseSections = []string{"status", "c-head", "track", "call", "route", "points", "c-context", "c-family", "timeline"}
+// page's status, track, call and route (with the points' times), and the
+// central's own header (with the call's one-line summary), the phone's
+// preparation strip (#125) and notified people. The horizontal track is its
+// only timeline.
+var CentralCaseSections = []string{"status", "c-head", "track", "c-prep", "call", "route", "c-family"}
 
 // Central is the central dashboard, mounted by Handler.WithCentral.
 type Central struct {
@@ -79,6 +83,9 @@ func (h *Handler) registerCentral(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+CentralPrefix+"r/{id}", c.gate(h.centralCase))
 	mux.HandleFunc("GET "+CentralPrefix+"r/{id}/live", c.gate(h.centralCaseLive))
 	mux.HandleFunc("GET "+CentralPrefix+"r/{id}/estado.json", c.gate(h.centralCaseState))
+	mux.HandleFunc("GET "+CentralPrefix+"r/{id}/traza", c.gate(h.centralTrace))
+	mux.HandleFunc("GET "+CentralPrefix+"r/{id}/traza/live", c.gate(h.centralTraceLive))
+	mux.HandleFunc("GET "+CentralPrefix+"r/{id}/traza/estado.json", c.gate(h.centralTraceState))
 }
 
 // ---------------------------------------------------------------- access
@@ -99,7 +106,7 @@ func (c *Central) gate(next http.HandlerFunc) http.HandlerFunc {
 			}
 			http.SetCookie(w, &http.Cookie{
 				Name: centralCookie, Value: c.cookieValue(), Path: "/central",
-				MaxAge: int(centralCookieMaxAge.Seconds()), HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+				MaxAge: int(centralCookieMaxAge.Seconds()), HttpOnly: true, Secure: !isLoopback(r.Host), SameSite: http.SameSiteStrictMode,
 			})
 			q.Del("key")
 			u := url.URL{Path: r.URL.Path, RawQuery: q.Encode()}
@@ -230,71 +237,48 @@ func (h *Handler) centralListState(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------- one case
 
 // centralCase is what the detail page renders: the family page's Page plus
-// the central's header, context and notified people.
+// the central's header and notified people.
 type centralCase struct {
 	Page
-	Theme        string
-	Case         CaseRow
-	Context      *ContextView
-	ContextNote  string
-	ContextWait  bool             // the context can still come: show its fields waiting
-	People       []NotifiedPerson // who was notified, one entry per number
-	NotifiedNote string           // the notified panel's line when nobody was
-	at           time.Time
-	follow       bool // the detail's stream stays open (see centralCaseSnapshot)
+	Theme string
+	Case  CaseRow
+	// Situation is the call's one-line summary from #106's ficha
+	// (calls.ficha.situacion), shown under the name; "" without one.
+	Situation    string
+	Notified     NotifiedView
+	NotifiedNote string // the notified panel's line when nobody was
+	// Prep is the "Preparación del teléfono" strip (#125); nil when the
+	// device sent no permission events. The family page does not show it.
+	Prep   []PrepStep
+	at     time.Time
+	follow bool // the detail's stream stays open (see centralCaseSnapshot)
 }
 
-// NotifiedPerson is one number the notifier wrote to, with each channel's
-// message (#102 sends WhatsApp and SMS, and also to the person who asked
-// for help).
-type NotifiedPerson struct {
-	Key       string
-	Recipient string // masked
-	Self      bool   // the reporter's own number
-	Sends     []FamilyChip
-}
-
-// notifiedPeople groups the family chips by number, in first-sent order.
-func notifiedPeople(chips []FamilyChip, self string) []NotifiedPerson {
-	var out []NotifiedPerson
-	at := map[string]int{}
-	for _, c := range chips {
-		i, ok := at[c.Recipient]
-		if !ok {
-			i = len(out)
-			at[c.Recipient] = i
-			out = append(out, NotifiedPerson{Key: "person-" + c.Recipient, Recipient: c.Recipient, Self: c.Recipient == self})
-		}
-		out[i].Sends = append(out[i].Sends, c)
-	}
-	return out
-}
+// The central's route drawing: a little taller than the family page's
+// (16:10, so it fills its column at 1440x900 and at 1280x720) and with room
+// at the edges for the time labels.
+const (
+	centralRouteW, centralRouteH, centralRoutePad = 320.0, 200.0, 30.0
+)
 
 // buildCentralCase turns the record into the detail page. token is the
 // case's report link, for its recording and PDF.
 func buildCentralCase(rec Record, x CaseExtras, opts Options) centralCase {
-	page := Build(rec, opts)
-	// The family page shows the transcript once the call ends; the central
-	// shows it while it happens, as soon as turns are stored (#97 appends
-	// them to calls.transcript during the call).
-	if page.Call == nil && page.CallActive {
-		for i := len(page.Calls) - 1; i >= 0; i-- {
-			if len(page.Calls[i].Turns) > 0 {
-				page.Call = &page.Calls[i]
-				break
-			}
+	page := Build(rec, opts) // its Call shows the turns while the call is on too (#143)
+	page.Route = centralRoute(rec.Points)
+	item := caseItemOf(rec, x)
+	d := centralCase{Page: page, Case: caseRow(item, opts.Now), Prep: prepSteps(rec), at: opts.Now}
+	for i := len(rec.Calls) - 1; i >= 0; i-- { // the newest call's summary
+		if c := rec.Calls[i].Context; c != nil && c.Situacion != "" {
+			d.Situation = c.Situacion
+			break
 		}
 	}
-	item := caseItemOf(rec, x)
-	d := centralCase{Page: page, Case: caseRow(item, opts.Now), Context: contextView(x.Ficha), at: opts.Now}
 	d.follow = page.Live || (rec.Seal != nil && opts.Now.Sub(rec.Seal.SealedAt) < followSeal)
 	if d.Case.State == CaseCancelled {
 		d.Title, d.TitleKind = "Cancelado por la persona", "cancelled"
 	}
-	if d.Context == nil {
-		d.ContextNote, d.ContextWait = contextNote(rec, d.Case.State, page.Live)
-	}
-	d.People = notifiedPeople(page.Family, MaskRecipient(rec.Device.PhoneNumber))
+	d.Notified = notifiedView(page.Family, MaskRecipient(rec.Device.PhoneNumber))
 	if len(page.Family) == 0 {
 		d.NotifiedNote = page.FamilyNote
 		if d.Case.State == CaseCancelled && rec.Incident.NotifiedAt == nil {
@@ -302,20 +286,6 @@ func buildCentralCase(rec Record, x CaseExtras, opts Options) centralCase {
 		}
 	}
 	return d
-}
-
-// contextNote is the context card's line while there is no ficha, and
-// whether its fields still wait for one.
-func contextNote(rec Record, state string, live bool) (string, bool) {
-	switch {
-	case state == CaseCancelled:
-		return "La persona dijo que está bien: no se saca contexto.", false
-	case rec.Incident.Branch != "call":
-		return "Sin llamada no hay contexto: esta alerta no pasó por Mamá.", false
-	case live:
-		return "Mamá lo saca de la llamada cuando cuelga: lugar, personas, vehículo y rumbo.", true
-	}
-	return "Esta llamada no dejó contexto.", false
 }
 
 // centralCaseOf loads a case and renders it at now.
@@ -432,4 +402,19 @@ func (h *Handler) centralCaseState(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// isLoopback reports whether host (a Host header, port optional) is this
+// machine. The central cookie is Secure everywhere else; on plain-http
+// localhost Safari would drop a Secure cookie and the dashboard would 404
+// after the key redirect, so local runs get it without the flag.
+func isLoopback(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }

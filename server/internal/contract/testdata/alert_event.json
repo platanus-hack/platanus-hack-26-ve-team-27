@@ -12,5 +12,19 @@
       "recorded_at": "2026-10-24T09:10:00Z"
     }
   ],
-  "has_audio": false
+  "has_audio": false,
+  "device_state": {
+    "captured_at": "2026-10-24T09:10:00.251Z",
+    "permissions": {
+      "location_fine": true,
+      "location_background": true,
+      "microphone": true,
+      "contacts": true,
+      "sms": true,
+      "notifications": true,
+      "accessibility_service": true,
+      "battery_unrestricted": false,
+      "hibernation_exempt": true
+    }
+  }
 }

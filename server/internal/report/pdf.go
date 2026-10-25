@@ -37,7 +37,9 @@ type pdfReport struct {
 	Facts       [][2]string
 	Timeline    []pdfEvent
 	Points      []pdfPoint
+	Phone       *pdfPhone // the phone's permissions (#125); nil when it sent none
 	Calls       []pdfCall
+	Contexts    []pdfContext // the calls' contexts (#106); none without a ficha
 	Family      []pdfFamily
 	FamilyNote  string
 	Emergencies []string
@@ -59,12 +61,26 @@ type pdfCall struct {
 	Turns []pdfTurn
 }
 
+// pdfContext is one call's context: its fields that have a value.
+type pdfContext struct {
+	Title  string
+	Fields [][2]string
+}
+
 type pdfTurn struct {
 	Speaker, Offset, Text string
 	Phrase                bool
 }
 
 type pdfFamily struct{ Recipient, Status, Time, Error string }
+
+// pdfPhone is "Preparación del teléfono" (#125): the permissions at the
+// gesture and how they were granted. Read from the live record: it is not
+// part of the seal.
+type pdfPhone struct {
+	Ready *PhoneReady
+	Prep  []PrepStep
+}
 
 // PDFOptions are the PDF settings that do not come from the record.
 type PDFOptions struct {
@@ -119,8 +135,18 @@ func buildPDF(rec Record, opts PDFOptions) (pdfReport, error) {
 			Accuracy: accuracy(p.AccuracyM), Speed: movement(p.SpeedMPS), Maps: MapsURL(p.Lat, p.Lng),
 		})
 	}
+	if ready, prep := phoneReady(rec), prepSteps(rec); ready != nil || len(prep) > 0 {
+		r.Phone = &pdfPhone{Ready: ready, Prep: prep}
+	}
 	for i, c := range src.Calls {
 		r.Calls = append(r.Calls, pdfCallOf(i+1, len(src.Calls), c, src.Device))
+		if c.Context != nil {
+			title := "Contexto de la llamada"
+			if len(src.Calls) > 1 {
+				title += " " + strconv.Itoa(i+1)
+			}
+			r.Contexts = append(r.Contexts, pdfContext{Title: title, Fields: c.Context.Fields()})
+		}
 	}
 	for _, d := range rec.Deliveries {
 		f := pdfFamily{Recipient: d.Recipient, Error: d.Error}
@@ -263,6 +289,10 @@ func recordFromDocument(raw []byte, live Record) (Record, error) {
 			ConversationID: c.ConversationID, Status: c.Status, Transcript: c.Transcript, DurationSecs: c.DurationSecs,
 			RequestedAt: parse(c.RequestedAt), EndedAt: parsePtr(c.EndedAt),
 			Verdict: contract.Verdict(c.Verdict), VerdictReason: c.VerdictReason, VerdictAt: parsePtr(c.VerdictAt),
+		}
+		if c.Context != nil {
+			ctx := *c.Context
+			call.Context = &ctx
 		}
 		if r := c.Recording; r != nil {
 			rr := &Recording{ContentType: r.ContentType, Size: r.SizeBytes, StoredAt: parse(r.StoredAt)}
@@ -464,6 +494,46 @@ func renderPDF(r pdfReport) ([]byte, error) {
 		}
 	}
 
+	if ph := r.Phone; ph != nil {
+		heading("Preparación del teléfono")
+		if rd := ph.Ready; rd != nil {
+			color(pdfInk)
+			pdf.SetFont("Lexend", "B", 9.5)
+			line := "Al pedir ayuda (" + rd.Time + ", reloj del teléfono): " + strings.TrimSuffix(rd.Summary, " ✓") + " permisos."
+			if rd.Missing != "" {
+				line += " Falta: " + rd.Missing + "."
+			}
+			pdf.MultiCell(textW, 5, line, "", "L", false)
+			pdf.Ln(1)
+			kv := make([][2]string, 0, len(rd.Chips))
+			for _, c := range rd.Chips {
+				v := "sí"
+				if !c.OK {
+					v = "no"
+				}
+				kv = append(kv, [2]string{permissionTexts[c.Name].On, v})
+			}
+			facts(kv)
+		}
+		if len(ph.Prep) > 0 {
+			pdf.Ln(1)
+			color(pdfGraphite)
+			row([]string{"Hora (VET)", "Cómo se preparó"}, []float64{22, textW - 22}, []string{"B", "B"}, 8.5, "")
+			color(pdfInk)
+			for _, s := range ph.Prep {
+				txt := s.Label
+				if s.Later {
+					txt += " (cambio posterior)"
+				}
+				row([]string{s.Time, txt}, []float64{22, textW - 22}, []string{"I", ""}, 9, "")
+			}
+		}
+		pdf.Ln(1)
+		color(pdfGraphite)
+		pdf.SetFont("Lexend", "", 8)
+		pdf.MultiCell(textW, 4, "Lo informó el teléfono con su propio reloj; no forma parte del sello.", "", "L", false)
+	}
+
 	for _, c := range r.Calls {
 		heading(c.Title)
 		facts(c.Facts)
@@ -501,6 +571,15 @@ func renderPDF(r pdfReport) ([]byte, error) {
 				pdf.SetY(y + float64(n)*4.8 + 8)
 			}
 		}
+	}
+
+	for _, c := range r.Contexts {
+		heading(c.Title)
+		color(pdfGraphite)
+		pdf.SetFont("Lexend", "", 8.5)
+		pdf.MultiCell(textW, 4.2, ContextNote, "", "L", false)
+		pdf.Ln(1.5)
+		facts(c.Fields)
 	}
 
 	heading("Aviso a la familia")

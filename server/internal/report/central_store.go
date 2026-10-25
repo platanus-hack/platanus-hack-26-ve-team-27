@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
@@ -41,13 +42,14 @@ type CaseItem struct {
 }
 
 // CaseExtras is what the central detail reads beyond the Record: columns
-// other tickets add, read so their absence is no error.
+// other tickets may add, read so their absence is no error. (The calls'
+// ficha, #106, is in the Record: Call.Context.)
 type CaseExtras struct {
 	Cancelled bool
-	// Ficha is the newest call's context from #106 (calls.ficha: lugar,
-	// personas, vehículo, rumbo, situación, confianza) as stored; nil when
-	// the column does not exist or no call has one.
-	Ficha json.RawMessage
+	// For the trace page: the device's safe phrase (#104, devices.safe_phrase)
+	// and each call's Twilio CallSid by calls.id.
+	SafePhrase string
+	CallSIDs   map[int64]string
 }
 
 // casesQuery is the central list: the newest incidents with their newest
@@ -133,21 +135,27 @@ func (s DBStore) Extras(ctx context.Context, incidentID string) (CaseExtras, err
 		return CaseExtras{}, ErrUnknownIncident
 	}
 	var x CaseExtras
-	var ficha []byte
+	var sids []byte
 	err := s.pool.QueryRowContext(ctx, `
-		SELECT (to_jsonb(i) ->> 'cancelled_at') IS NOT NULL,
-		       (SELECT to_jsonb(c) -> 'ficha' FROM calls c
-		        WHERE c.incident_id = i.id AND jsonb_typeof(to_jsonb(c) -> 'ficha') IN ('object', 'string')
-		        ORDER BY c.requested_at DESC, c.id DESC LIMIT 1)
-		FROM incidents i WHERE i.id = $1`, incidentID).Scan(&x.Cancelled, &ficha)
+		SELECT (to_jsonb(i) ->> 'cancelled_at') IS NOT NULL, COALESCE(to_jsonb(d) ->> 'safe_phrase', ''),
+		       (SELECT json_object_agg(c.id, c.call_sid) FROM calls c WHERE c.incident_id = i.id AND c.call_sid IS NOT NULL)
+		FROM incidents i JOIN devices d ON d.id = i.device_id WHERE i.id = $1`, incidentID).Scan(&x.Cancelled, &x.SafePhrase, &sids)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaseExtras{}, ErrUnknownIncident
 	}
 	if err != nil {
 		return CaseExtras{}, err
 	}
-	if len(ficha) > 0 {
-		x.Ficha = json.RawMessage(ficha)
+	if len(sids) > 0 {
+		byID := map[string]string{}
+		if json.Unmarshal(sids, &byID) == nil {
+			x.CallSIDs = map[int64]string{}
+			for k, v := range byID {
+				if id, err := strconv.ParseInt(k, 10, 64); err == nil {
+					x.CallSIDs[id] = v
+				}
+			}
+		}
 	}
 	return x, nil
 }

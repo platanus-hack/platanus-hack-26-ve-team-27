@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"log"
 
@@ -23,7 +24,7 @@ func NewDBStore(pool *sql.DB) DBStore { return DBStore{pool: pool} }
 // Message reads the family numbers and own phone number of the incident's
 // device, its newest GPS fix (inc.Location when none is stored) and its
 // verdict: duress if any call says duress, otherwise the newest judged call's
-// verdict.
+// verdict, with that call's context (calls.ficha, #106) when it has one.
 func (s DBStore) Message(ctx context.Context, inc intake.Incident) (contract.NotifierMessage, error) {
 	msg := contract.NotifierMessage{
 		IncidentID:  inc.ID,
@@ -78,11 +79,12 @@ func (s DBStore) Message(ctx context.Context, inc intake.Incident) (contract.Not
 	}
 
 	var verdict, reason string
+	var ficha []byte
 	err = s.pool.QueryRowContext(ctx, `
-		SELECT verdict, COALESCE(verdict_reason, '') FROM calls
+		SELECT verdict, COALESCE(verdict_reason, ''), ficha FROM calls
 		WHERE incident_id = $1 AND verdict IS NOT NULL
 		ORDER BY verdict = 'duress' DESC, requested_at DESC, id DESC LIMIT 1`, inc.ID).
-		Scan(&verdict, &reason)
+		Scan(&verdict, &reason, &ficha)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 	case err != nil:
@@ -90,6 +92,15 @@ func (s DBStore) Message(ctx context.Context, inc intake.Incident) (contract.Not
 	default:
 		msg.Verdict = contract.Verdict(verdict)
 		msg.Reason = reason
+		if len(ficha) > 0 {
+			var c contract.CallContext
+			if err := json.Unmarshal(ficha, &c); err != nil {
+				// The alert goes out without the context.
+				log.Printf("notify: incident %s: read the call context: %v", inc.ID, err)
+			} else {
+				msg.Ficha = &c
+			}
+		}
 	}
 	return msg, nil
 }

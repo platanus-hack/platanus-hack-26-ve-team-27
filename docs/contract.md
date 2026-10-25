@@ -257,9 +257,69 @@ a GPS point. An emergency already cancelled opens nothing.
   "points": [
     {"lat": 10.4961, "lng": -66.8531, "accuracy_m": 12.5, "speed_mps": 0.4, "recorded_at": "2026-10-24T09:10:00Z"}
   ],
-  "has_audio": false
+  "has_audio": false,
+  "device_state": {
+    "captured_at": "2026-10-24T09:10:00.251Z",
+    "permissions": {
+      "location_fine": true, "location_background": true, "microphone": true, "contacts": true, "sms": true,
+      "notifications": true, "accessibility_service": true, "battery_unrestricted": false, "hibernation_exempt": true
+    }
+  }
 }
 ```
+
+`device_state` (optional, #125, approved by the Tech lead on Oct 24) is what
+the phone's permissions were at the gesture, read without asking for
+anything. `captured_at` is the phone clock. `permissions` maps a name to
+whether it was granted:
+
+| Name | Granted when |
+| --- | --- |
+| `location_fine` | precise location (`ACCESS_FINE_LOCATION`) |
+| `location_background` | location "all the time" (`ACCESS_BACKGROUND_LOCATION`; before Android 10 it comes with the foreground one) |
+| `microphone` | `RECORD_AUDIO` |
+| `contacts` | `READ_CONTACTS` and `WRITE_CONTACTS` |
+| `sms` | `SEND_SMS` |
+| `notifications` | the app's notifications are on |
+| `accessibility_service` | the volume gesture's accessibility service is on |
+| `battery_unrestricted` | battery optimization is off for the app |
+| `full_screen_intent` | `NotificationManager.canUseFullScreenIntent()`; Android 14+ only |
+| `hibernation_exempt` | unused-app restrictions are off (`isAutoRevokeWhitelisted`); Android 11+ only |
+
+A permission that does not apply to the phone is left out, never `null`
+(the sample's phone runs Android 13, so it has no `full_screen_intent`). An
+app without #125 sends no `device_state` and the alert works as before. The
+server stores it in `incidents.device_state` and **never rejects an alert
+because of it**: unknown fields are ignored and unknown names kept, a value
+that is not a boolean is dropped, a malformed `captured_at` is left out, and
+a `device_state` with no boolean permission (or that is not an object)
+stores nothing.
+
+### PermissionEvents (phone → server, `POST /devices/{device_id}/permissions`, #125)
+
+When each permission was granted or lost, as the phone saw it, with the
+names of `device_state`. A route of its own so `POST /devices` stays as it
+is. The phone sends every grant of first-run setup once the device is
+registered, then only what changed, when the app opens or an alert is
+triggered; it keeps what the server has not confirmed and sends it again.
+Sample: `permission_events.json`.
+
+```json
+{
+  "events": [
+    {"permission": "notifications", "granted": true, "at": "2026-10-24T08:02:11.512Z"},
+    {"permission": "location_fine", "granted": true, "at": "2026-10-24T08:02:40.127Z"},
+    {"permission": "location_background", "granted": true, "at": "2026-10-24T08:02:53.648Z"},
+    {"permission": "location_background", "granted": false, "at": "2026-10-24T09:40:03.951Z"}
+  ]
+}
+```
+
+`at` is the phone clock. The server answers `204` and stores each event once:
+a resent one (same device, `permission` and `at`) is ignored. `400` for a bad
+body, no events or more than 50, a `permission` that is not a snake_case name
+of at most 40 characters (a name the server does not know yet is stored), or
+a missing `at`; `422` when the device is not registered.
 
 ### AlertResponse (server → phone, reply to `POST /incidents`)
 
@@ -369,6 +429,40 @@ and sends only if that changed a row (at most once). When an incident has
 several calls, the verdict is `duress` if any call says `duress`, otherwise
 the newest call's verdict. Sample: `notifier_message.json`.
 
+The verdict (#106, `server/internal/duress`) weighs the device's two phrases,
+only in what the person said (never Mamá's turns), in this order:
+
+| What the person said | `verdict` | Message |
+| --- | --- | --- |
+| The duress phrase or a close variant, not negated; or both phrases | `duress` | yes, "Veredicto: coacción" |
+| Nothing the whole call (only tags such as `[silencio]`) | `duress` | yes |
+| The safe phrase or a close variant, not negated ("no voy llegando" is not "voy llegando") | `no_duress` | **none**, to nobody, the reporter included |
+| Neither phrase, having talked, with a safe phrase configured | `unclear` | yes, "Veredicto: no confirmó que está bien" |
+| No safe phrase configured | the duress-only rules from before #106 | `duress` and `unclear` only |
+
+A `no_duress` call closes the incident like "Fue sin querer": no message, and
+the central shows it as `cancelado`. The LLM step (`duress.Chain`) runs only on
+`unclear` calls; with a safe phrase configured it may raise one to `duress`
+but never lower it to `no_duress`, so only the rules hearing the safe phrase
+cancel an alert.
+
+`ficha` (optional) is the call's context, taken once the call ends and only on
+`duress` and `unclear` calls: an LLM step (`duress.LLM.Extract`, the same
+Messages API client and model as the verdict, low effort, transcript fenced as
+data) reads the transcript and returns `lugar`, `personas`, `vehiculo`,
+`rumbo`, `situacion` (one sentence) and `confianza` (`baja`, `media` or
+`alta`). Any field is `"no se sabe"` when the call did not say it; it only
+uses what was said or heard on the person's line, and a field that quotes
+either phrase is dropped to `"no se sabe"`. It starts together with the
+verdict's LLM step (unless the rules already heard the safe phrase), so the
+two waits overlap, and has its own 6 s timeout: if it fails or times out, the
+message goes out without it. It is
+stored in `calls.ficha` with the verdict, before the message. Only the
+WhatsApp text shows it, one line per known field, after the verdict:
+"Dijo que está: <lugar>", "Con: <personas>", "En: <vehiculo>", "Va hacia:
+<rumbo>", "Lo que parece: <situacion> (confianza <confianza>)". The SMS
+fallback leaves it out. It is not the incident report's `ficha.json` (#76).
+
 `reporter` is the reporting device's own `phone_number` (left out when
 unknown). With `NOTIFY_SELF=true` (#102, off by default) the notifier adds it
 to the recipients on the `NOTIFIER` channel (WhatsApp), once even when it is
@@ -385,7 +479,15 @@ none got the alert.
   "location": {"lat": 10.4961, "lng": -66.8531, "accuracy_m": 12.5, "recorded_at": "2026-10-24T09:10:00Z"},
   "verdict": "duress",
   "reason": "the user said the duress phrase",
-  "triggered_at": "2026-10-24T09:10:00.253Z"
+  "triggered_at": "2026-10-24T09:10:00.253Z",
+  "ficha": {
+    "lugar": "la autopista",
+    "personas": "dos panas",
+    "vehiculo": "un carro",
+    "rumbo": "no se sabe",
+    "situacion": "Va en un carro con dos panas por la autopista y dijo la frase de alerta.",
+    "confianza": "media"
+  }
 }
 ```
 
@@ -399,7 +501,11 @@ by the Tech lead on Oct 24); `0005_device_setup.sql` adds `user_name`,
 `safe_phrase` and `voice_id` to `devices` (#104, approved by the Tech lead on
 Oct 24); `0006_notify_deliveries.sql` adds `notify_deliveries` (#76); `0007_device_voice_consent.sql` adds
 `voice_consent_at` and `voice_consent_sha256` to `devices` (#107);
-`0008_offline_incidents.sql` adds `offline` to the `incidents.trigger` check (#59). The
+`0008_offline_incidents.sql` adds `offline` to the `incidents.trigger` check (#59);
+`0009_call_ficha.sql` adds `ficha` (JSONB) to `calls` (#106);
+`0010_device_permissions.sql` adds `device_state` (JSONB) to `incidents` and the
+`device_permission_events` table (#125); `0011_call_live_turns.sql` adds
+`call_live_turns` (#143). The
 server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
@@ -408,15 +514,17 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 | Table | Key | Holds |
 | --- | --- | --- |
 | `devices` | `id` = `device_id` | phone number, family numbers, duress phrase; `user_name`, `safe_phrase` and `voice_id` (the cloned voice, #107), NULL until set; `voice_consent_at` and `voice_consent_sha256` (when the owner consented and the SHA-256 of the audio, never the audio), set with `voice_id`; `ed25519_public_key` (unique, 32 bytes) and `key_id` (unique, 8 bytes: the payload device_id derived from it), both NULL or both set |
-| `incidents` | `id` = `incident_id` | device, trigger, branch, speed used, `notified_at` |
+| `incidents` | `id` = `incident_id` | device, trigger, branch, speed used, `notified_at`; `device_state` (JSONB, #125): the alert's permission snapshot, NULL when it had none |
 | `gps_points` | identity; unique `(incident_id, recorded_at)` | every fix of an incident |
-| `calls` | identity; unique `conversation_id` | call status, transcript (JSONB), duration, **verdict** |
+| `calls` | identity; unique `conversation_id` | call status, transcript (JSONB), duration, **verdict**; `ficha` (JSONB, #106): the call's context, set with the verdict on `duress` and `unclear` calls, NULL otherwise |
 | `emergencies` | `emergency_id` (16 hex) | offline emergency: device, status, highest seq, last fix, channels, min hops (#57) |
 | `incident_reports` | `incident_id` | the report link: `token` (unique, 22 base64url chars), `created_at`, `expires_at` (#76) |
 | `call_recordings` | `call_id` | a call's recording: `content_type`, `audio` (bytes), `sha256`, `stored_at` (#76) |
 | `incident_seals` | `incident_id` | the seal: `sealed_at`, `document` (exact bytes of `ficha.json`), `signature`, `public_key` (#76) |
 | `call_progress` | `call_id` | what the call engine saw polling Twilio: last `twilio_status`, `ringing_at`, `answered_at` (server clock, #76) |
+| `call_live_turns` | `(call_id, track, sequence_id)` | what Twilio's real-time transcription heard while the call lasted (#143): `track` (`inbound_track` = the person called, `outbound_track` = "Mamá"), `message`, `said_at` (Twilio's `Timestamp`), `received_at`. Provisional: shown until `calls.transcript` arrives, never judged, never sealed |
 | `notify_deliveries` | identity; unique `message_id` | each family message the notifier sent: masked `recipient`, `channel`, provider `message_id` (Kapso wamid), `status` (`accepted`, `failed`, `sent`, `delivered`, `read`), `error`, `sent_at`, `delivered_at`, `read_at` (#76) |
+| `device_permission_events` | `(device_id, permission, at)` | when each permission of a device was granted or lost: `granted`, `at` (phone clock), `received_at` (#125) |
 | `schema_migrations` | `version` | applied migration files |
 
 The verdict lives on `calls` (`verdict`, `verdict_reason`, `verdict_at`)
@@ -481,11 +589,17 @@ default; then every route below answers `404`). Code:
   `go run ./cmd/ficha <incident_id>` prints the link of an incident, creating it if needed.
 - **Privacy.** Every response under `/i/` carries `Referrer-Policy:
   no-referrer`, `X-Robots-Tag: noindex, nofollow, noarchive`, `Cache-Control:
-  no-store` and a `Content-Security-Policy` that allows only this server.
-  Fonts (Lexend, OFL), images, CSS and JS are embedded in the binary and
-  served from `/ficha/static/{file}`, so opening a report makes no request to
-  anyone else. There is no map with tiles: each location has an "Abrir en
-  Maps" link and the path is drawn in SVG. The page never shows the full phone
+  no-store` and a `Content-Security-Policy` that allows only this server,
+  plus the route map's tile images. Fonts (Lexend, OFL), images, CSS and JS
+  (Leaflet 1.9.4, BSD-2, vendored) are embedded in the binary and served
+  from `/ficha/static/{file}`. The one request to anyone else is the route
+  map's tiles (#143): with `CARTO_BASEMAPS_KEY` set (CARTO's free basemaps
+  key, carto.com/basemaps/apikey; without one CARTO answers tiles stamped
+  "API KEY REQUIRED"), the reader's browser asks `*.basemaps.cartocdn.com`
+  for the squares around the route, with no Referer, and the path is drawn
+  over them. Without the key, until the first tile arrives, or when the
+  tiles cannot load, the path is the SVG drawing alone, which is also what
+  the PDF uses. Each location has an "Abrir en Maps" link. The page never shows the full phone
   number (only `+58 ···67`), the device id or the duress phrase. No other
   response under `/i/` (`ficha.json`, `estado.json`, `/live`, the PDF)
   carries the device id either: it is the device's only credential on
@@ -519,7 +633,11 @@ default; then every route below answers `404`). Code:
   - a header with the state and the clock since the gesture;
   - a horizontal track of the case's stages (Pidió ayuda → Llegó al servidor →
     Mamá llamó → Sonó → Contestó → Colgó → Veredicto → Familia avisada →
-    Sellado);
+    Sellado). When the alert carried `device_state` (#125), "Teléfono listo"
+    comes first, with "7 de 8 ✓" over the permissions that apply to the
+    phone; it is yellow when precise or background location, accessibility,
+    notifications or the unrestricted battery is missing, and a tap opens
+    the permissions in plain words;
   - three panels: the route, the call (the player and the transcript, once it
     ends) and the family (one chip per relative with what Kapso reported).
   - `devices.user_name`, when the column exists (#104), names the person.
@@ -527,7 +645,16 @@ default; then every route below answers `404`). Code:
   authorities. Once sealed, it is built from the stored `ficha.json`; before
   that it is marked "Borrador, sin sellar". The family messages and linked
   offline emergencies come from the live record and are labelled as outside
-  the seal. It uses `github.com/go-pdf/fpdf` with Lexend embedded.
+  the seal. A call with a context (#106, `calls.ficha`) gets a "Contexto de la
+  llamada" section after it, with situación, lugar, personas, vehículo, rumbo
+  and confianza (those with a value), and a note that an AI extracted them
+  and they must be checked against the recording. The seal signs that
+  context too, as the optional `calls[].context` in `ficha.json` (ADR 0005).
+  "Preparación del teléfono" (#125) lists the permissions at the gesture
+  and when each was granted, with later changes marked; it comes from the
+  live record and is labelled as outside the seal (`ficha.json` stays v1).
+  The central detail shows the same strip under its track; the family page
+  does not. It uses `github.com/go-pdf/fpdf` with Lexend embedded.
 - **Family messages.** With the report on, the notifier records every send in
   `notify_deliveries`, with the number masked. Kapso's message status webhook
   (`whatsapp.message.sent`, `.delivered`, `.read`, `.failed`) goes to
@@ -537,6 +664,25 @@ default; then every route below answers `404`). Code:
     the secret the route is not mounted.
   - Statuses only move forward, and a failure never overrides "read".
   - Other events and unknown message ids answer `200`.
+- **The conversation while it happens (#143).** With
+  `LIVE_TRANSCRIPTION_ENABLED=true`, the Twilio account and a public origin
+  (`TWILIO_WEBHOOK_BASE_URL`, else `PUBLIC_URL`), the call engine starts
+  Twilio's real-time transcription when Twilio says the call was answered:
+  `POST /2010-04-01/Accounts/{sid}/Calls/{CallSid}/Transcriptions.json` with
+  `Track=both_tracks`, `LanguageCode=es-US`, final results only.
+  - Twilio posts each event to `POST /webhooks/twilio/transcription`, a form
+    signed in `X-Twilio-Signature` over that exact URL with
+    `TWILIO_AUTH_TOKEN`. A bad signature answers `403`.
+  - Each final `transcription-content` (its `TranscriptionData` JSON
+    `transcript`, `Track`, `SequenceId`, `Timestamp`) is stored in
+    `call_live_turns` on the call with that `CallSid`. A repeated callback is
+    ignored. Partial results, other events and unknown calls answer `200`.
+  - `transcription-error`, or a refused start, is only logged: the call goes
+    on and the page waits for the post-call transcript, as before.
+  - The page and the central show those turns while the call is on, ordered
+    by `Timestamp` across both tracks, none marked as the phrase. The
+    post-call transcript replaces them in the same card. The verdict, the PDF
+    and the seal read only `calls.transcript`.
 - **Live.** `GET /i/{token}/live` is a Server-Sent Events stream. It sends
   an `update` event at once and then one each time the case changes; the
   server re-reads the case every second. The event data is JSON:
@@ -561,6 +707,7 @@ default; then every route below answers `404`). Code:
   not in `ficha.json`:
   - Twilio's ringing and answer times (`call_progress`). The engine's
     optional `Progress` hook stores them while the report is on.
+  - The live turns of a call that is still on (`call_live_turns`, #143).
   - Retries (each `calls` row).
   - The WebRTC fallback, derived: no call connected, and the last one failed
     after the retry or on a non-+58 number.
@@ -582,9 +729,12 @@ default; then every route below answers `404`). Code:
   (`activo`, `en llamada`, `alerta` for a `duress` verdict, `cancelado` for
   an explicit cancellation or a `no_duress` verdict that notified nobody,
   `cerrado`). `GET /central/r/{incident_id}` follows one case: the stage
-  track, the call with the transcript as it is stored (also during the call),
-  the route and points, the timeline, `calls.ficha` (#106) when the column
-  exists, and the notified people per channel. Both stream through the same
+  track (its only timeline), the call with the transcript as it is stored
+  (also during the call), the route with each point's time, the call's
+  one-line situation under the name (`calls.ficha` → `situacion`, #106;
+  nothing when the call has none), and the notified people: a summary,
+  one row per person by role (relatives, then whoever asked for help) and
+  each channel's status in words. Both stream through the same
   live loop as `/i/{token}/live` (`/central/live`,
   `/central/r/{incident_id}/live`, and their `estado.json`). Access:
   `?key=<CENTRAL_KEY>` once, compared in constant time, sets an HttpOnly,
@@ -594,6 +744,28 @@ default; then every route below answers `404`). Code:
   the default); `?seguir=1` on the list opens the next new case by itself.
   Opening a case creates its report link if it has none, for the recording
   and the PDF.
+- **Trace.** Every step of an incident logs one line,
+  `trace incident=<id> step=<step> k=v …` (`internal/trace`): `alert_received`,
+  `call_requested`, `call_placed`, `call_failed`, `call_retry`, `call_outcome`,
+  `twilio_status`, `webhook_received`, `webhook_rejected`, `verdict`, `notify`
+  (per recipient), `notify_skipped`, `kapso_status`, `recording_stored` and
+  `sealed`. A webhook refused by its HMAC, and one for a call the server does
+  not know, log `level=ERROR` with a hint. No trace line carries the duress or
+  safe phrase, what was said, or a phone number. The verdict line's
+  `phrase_match_diag`, `phrase_turn` and `phrase_at_s` come from a display-only
+  key-word matcher, not from the detector. `GET /central/r/{incident_id}/traza`
+  (behind `CENTRAL_KEY`, linked as "Ver traza" from the detail) shows the same
+  case read back from the database, live:
+  - a summary of each step;
+  - the incident on each clock, and every call attempt with its
+    `conversation_id`, `call_sid` and Twilio statuses;
+  - whether the post-call webhook arrived. If it did not, it says so in red
+    and names `<PUBLIC_URL>/webhooks/elevenlabs` and the secret;
+  - the device's phrases, every turn with the ones holding the phrase
+    highlighted, the rules re-run on the stored transcript and the stored
+    verdict;
+  - the family messages with their Kapso statuses, the recording, the seal
+    and the timeline.
 - **Clocks.** Each timeline row says which clock its time comes from: the
   phone (`triggered_at`, `gps_points.recorded_at`), the server
   (`incidents.created_at`, `calls.requested_at`, `verdict_at`, `notified_at`,

@@ -3,6 +3,8 @@ package report
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -10,6 +12,7 @@ import (
 	"time"
 
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/trace"
 )
 
 // Defaults for the Closer fields left zero.
@@ -99,8 +102,9 @@ func (c *Closer) Wait() { c.wg.Wait() }
 // arrives does not stop the seal: the sealed document then has no
 // recording hash.
 func (c *Closer) Close(ctx context.Context, incidentID, conversationID string) {
-	if err := c.record(ctx, conversationID); err != nil {
+	if err := c.record(ctx, incidentID, conversationID); err != nil {
 		log.Printf("report: incident %s conversation %s: recording not stored: %v", incidentID, conversationID, err)
+		trace.Log(incidentID, "recording_stored", "ok", false, "conversation_id", conversationID, "error", err)
 	}
 	if c.Signer == nil {
 		return
@@ -108,13 +112,13 @@ func (c *Closer) Close(ctx context.Context, incidentID, conversationID string) {
 	c.awaitVerdict(ctx, incidentID, conversationID)
 	if _, err := c.seal(ctx, incidentID, conversationID); err != nil {
 		log.Printf("report: incident %s: not sealed: %v", incidentID, err)
+		trace.Log(incidentID, "sealed", "ok", false, "error", err)
 	}
 }
 
 // awaitVerdict polls until the call has its verdict and the incident its
-// family message, or VerdictWait passes, so the seal covers them when they
-// come in time. Today nothing stores a verdict for a call until #21 wires
-// the detector, so the seal waits the whole VerdictWait.
+// family message (or a no-duress verdict that needs none), or VerdictWait
+// passes, so the seal covers them when they come in time.
 func (c *Closer) awaitVerdict(ctx context.Context, incidentID, conversationID string) {
 	wait, every := c.VerdictWait, c.PollEvery
 	if wait <= 0 {
@@ -144,12 +148,9 @@ func (c *Closer) awaitVerdict(ctx context.Context, incidentID, conversationID st
 }
 
 func verdictAndNotice(rec Record, conversationID string) bool {
-	if rec.Incident.NotifiedAt == nil {
-		return false
-	}
 	for _, cl := range rec.Calls {
 		if cl.ConversationID == conversationID {
-			return cl.Verdict != ""
+			return cl.Verdict != "" && (rec.Incident.NotifiedAt != nil || familyNotNeeded(rec))
 		}
 	}
 	return false
@@ -204,6 +205,8 @@ func (c *Closer) seal(ctx context.Context, incidentID, conversationID string) (b
 	}
 	if stored {
 		log.Printf("report: incident %s: sealed (%d bytes, key %s)", incidentID, len(doc), Fingerprint(pub)[:19])
+		sum := sha256.Sum256(doc)
+		trace.Log(incidentID, "sealed", "ok", true, "bytes", len(doc), "sha256", hex.EncodeToString(sum[:])[:12], "key", Fingerprint(pub)[:19], "calls", len(rec.Calls))
 	}
 	return stored, nil
 }
@@ -299,7 +302,7 @@ func (c *Closer) now() time.Time {
 var errNoFetcher = errors.New("no ELEVENLABS_API_KEY to fetch it with")
 
 // record downloads and stores the recording unless it is already stored.
-func (c *Closer) record(ctx context.Context, conversationID string) error {
+func (c *Closer) record(ctx context.Context, incidentID, conversationID string) error {
 	if has, err := c.Store.HasRecording(ctx, conversationID); err != nil || has {
 		return err
 	}
@@ -318,6 +321,8 @@ func (c *Closer) record(ctx context.Context, conversationID string) error {
 		return err
 	}
 	log.Printf("report: conversation %s: recording stored (%d bytes, %s)", conversationID, len(audio), typ)
+	sum := sha256.Sum256(audio)
+	trace.Log(incidentID, "recording_stored", "ok", true, "conversation_id", conversationID, "bytes", len(audio), "sha256", hex.EncodeToString(sum[:])[:12], "type", typ)
 	return nil
 }
 

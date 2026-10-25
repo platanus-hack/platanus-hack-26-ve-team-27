@@ -166,7 +166,8 @@ data class RemoteConfig(
  * [incidentId] (a UUID), so a retried event is the same incident. [points]
  * holds at least one fix, oldest first; the last one's speed picks the
  * branch. [triggeredAt] is RFC 3339 UTC; produce it with
- * `java.time.Instant.now().toString()`.
+ * `java.time.Instant.now().toString()`. [deviceState] is the phone's
+ * permissions at the gesture (#125); null leaves it out.
  */
 @Serializable
 data class AlertEvent(
@@ -176,6 +177,7 @@ data class AlertEvent(
     @SerialName("triggered_at") val triggeredAt: String,
     val points: List<Point>,
     @SerialName("has_audio") val hasAudio: Boolean,
+    @SerialName("device_state") val deviceState: DeviceState? = null,
 ) {
     /** The newest fix, or null when there is none. */
     fun lastPoint(): Point? = points.lastOrNull()
@@ -183,6 +185,75 @@ data class AlertEvent(
     /** Picks the branch from the newest fix's speed. */
     fun branch(): Branch = chooseBranch(lastPoint()?.speedMps)
 }
+
+/**
+ * Permission names, the keys of [DeviceState.permissions] and the values of
+ * [PermissionEvent.permission] (#125). Mirrors Go's contract.Permission*
+ * names; change both sides together.
+ */
+object PermissionKeys {
+    /** Precise location. */
+    const val LOCATION_FINE = "location_fine"
+
+    /** Location "all the time". */
+    const val LOCATION_BACKGROUND = "location_background"
+    const val MICROPHONE = "microphone"
+
+    /** Read and write, to save "Mamá". */
+    const val CONTACTS = "contacts"
+
+    /** Send, for the offline emergency. */
+    const val SMS = "sms"
+
+    /** The app's notifications are on. */
+    const val NOTIFICATIONS = "notifications"
+
+    /** The volume gesture's accessibility service is on. */
+    const val ACCESSIBILITY_SERVICE = "accessibility_service"
+
+    /** Battery optimization is off for the app. */
+    const val BATTERY_UNRESTRICTED = "battery_unrestricted"
+
+    /** Android 14+ only. */
+    const val FULL_SCREEN_INTENT = "full_screen_intent"
+
+    /** Android 11+ only: the unused-app restrictions (hibernation) are off. */
+    const val HIBERNATION_EXEMPT = "hibernation_exempt"
+
+    /** Every name, in setup's order (#15): the order events at the same instant are sent in. */
+    val ALL: List<String> = listOf(
+        NOTIFICATIONS, LOCATION_FINE, LOCATION_BACKGROUND, MICROPHONE, CONTACTS, SMS,
+        BATTERY_UNRESTRICTED, FULL_SCREEN_INTENT, HIBERNATION_EXEMPT, ACCESSIBILITY_SERVICE,
+    )
+}
+
+/**
+ * What the phone's permissions were when the person triggered the alert
+ * (#125). [permissions] maps a [PermissionKeys] name to whether it was
+ * granted; one that does not apply to the phone (its Android version has no
+ * such thing) is left out. [capturedAt] is RFC 3339 UTC.
+ */
+@Serializable
+data class DeviceState(
+    @SerialName("captured_at") val capturedAt: String,
+    val permissions: Map<String, Boolean>,
+)
+
+/**
+ * Phone -> server, `POST /devices/{device_id}/permissions` (#125): when each
+ * permission was granted or lost, as the phone saw it. The server ignores a
+ * resent event.
+ */
+@Serializable
+data class PermissionEvents(val events: List<PermissionEvent>)
+
+/** One change of [permission] (a [PermissionKeys] name); [at] is RFC 3339 UTC, the phone clock. */
+@Serializable
+data class PermissionEvent(
+    val permission: String,
+    val granted: Boolean,
+    val at: String,
+)
 
 /**
  * Server -> phone, the reply to an [AlertEvent]. [speedMps] is the speed the
@@ -289,6 +360,7 @@ const val DYNAMIC_VAR_SAFE_PHRASE = "frase_segura"
  * [reason] are null when no call happened (immediate_alert, silent_tracker).
  * [incidentId] is the dedupe key: one message per incident. [triggeredAt] is
  * RFC 3339 UTC; produce it with `java.time.Instant.now().toString()`.
+ * [ficha] is the call's context (#106), null when the call has none.
  */
 @Serializable
 data class NotifierMessage(
@@ -300,4 +372,20 @@ data class NotifierMessage(
     val verdict: Verdict? = null,
     val reason: String? = null,
     @SerialName("triggered_at") val triggeredAt: String,
+    val ficha: CallContext? = null,
+)
+
+/**
+ * What an LLM took from a finished call's transcript (#106, `calls.ficha`).
+ * Each field is "no se sabe" when the call did not say it. [confianza] is
+ * "baja", "media" or "alta". Not the incident report's ficha.json (#76).
+ */
+@Serializable
+data class CallContext(
+    val lugar: String,
+    val personas: String,
+    val vehiculo: String,
+    val rumbo: String,
+    val situacion: String,
+    val confianza: String,
 )

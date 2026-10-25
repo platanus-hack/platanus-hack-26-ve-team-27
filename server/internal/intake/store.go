@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"database/sql"
+	"encoding/json"
 	"errors"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -90,10 +91,10 @@ func createIncident(ctx context.Context, pool *sql.DB, ev contract.AlertEvent, b
 	}
 
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO incidents (id, device_id, trigger, branch, speed_mps, has_audio, triggered_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO incidents (id, device_id, trigger, branch, speed_mps, has_audio, triggered_at, device_state)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
 		ON CONFLICT (id) DO NOTHING`,
-		ev.IncidentID, ev.DeviceID, string(ev.Trigger), string(branch), speed, ev.HasAudio, ev.TriggeredAt)
+		ev.IncidentID, ev.DeviceID, string(ev.Trigger), string(branch), speed, ev.HasAudio, ev.TriggeredAt, deviceStateJSON(ev.DeviceState))
 	if err != nil {
 		return resp, false, err
 	}
@@ -125,6 +126,19 @@ func createIncident(ctx context.Context, pool *sql.DB, ev contract.AlertEvent, b
 		return resp, false, err
 	}
 	return resp, created, tx.Commit()
+}
+
+// deviceStateJSON is the alert's device_state for incidents.device_state:
+// nil (NULL) when the alert had none or none of its permissions decoded.
+func deviceStateJSON(state *contract.DeviceState) any {
+	if state == nil || len(state.Permissions) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(state)
+	if err != nil {
+		return nil
+	}
+	return string(raw)
 }
 
 // addPoints appends points to the incident, which must belong to deviceID.
@@ -159,4 +173,33 @@ func insertPoints(ctx context.Context, db execer, incidentID string, points []co
 		}
 	}
 	return added, nil
+}
+
+// addPermissionEvents stores the device's permission events. A resent event
+// (same device, permission and at) is ignored. errUnknownDevice when the
+// device is not registered.
+func addPermissionEvents(ctx context.Context, pool *sql.DB, deviceID string, events []contract.PermissionEvent) error {
+	tx, err := pool.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var known bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM devices WHERE id = $1)`, deviceID).Scan(&known); err != nil {
+		return err
+	}
+	if !known {
+		return errUnknownDevice
+	}
+	for _, e := range events {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO device_permission_events (device_id, permission, granted, at)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (device_id, permission, at) DO NOTHING`,
+			deviceID, e.Permission, e.Granted, e.At); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

@@ -10,5 +10,13 @@
   },
   "verdict": "duress",
   "reason": "the user said the duress phrase",
-  "triggered_at": "2026-10-24T09:10:00.253Z"
+  "triggered_at": "2026-10-24T09:10:00.253Z",
+  "ficha": {
+    "lugar": "la autopista",
+    "personas": "dos panas",
+    "vehiculo": "un carro",
+    "rumbo": "no se sabe",
+    "situacion": "Va en un carro con dos panas por la autopista y dijo la frase de alerta.",
+    "confianza": "media"
+  }
 }

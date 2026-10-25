@@ -6,7 +6,10 @@
 // Changing a shape after the contract freeze needs the Tech lead's OK.
 package contract
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Branch is the server's decision for an incident, picked from the speed.
 type Branch string
@@ -128,14 +131,85 @@ type RemoteConfig struct {
 // AlertEvent is phone -> server when the person triggers an alert. The phone
 // generates IncidentID (a UUID), so a retried event is the same incident.
 // Points holds at least one fix, oldest first; the last one's speed picks
-// the branch.
+// the branch. DeviceState is the phone's permissions at the gesture (#125),
+// nil from an app that sends none.
 type AlertEvent struct {
-	IncidentID  string    `json:"incident_id"`
-	DeviceID    string    `json:"device_id"`
-	Trigger     Trigger   `json:"trigger"`
-	TriggeredAt time.Time `json:"triggered_at"`
-	Points      []Point   `json:"points"`
-	HasAudio    bool      `json:"has_audio"`
+	IncidentID  string       `json:"incident_id"`
+	DeviceID    string       `json:"device_id"`
+	Trigger     Trigger      `json:"trigger"`
+	TriggeredAt time.Time    `json:"triggered_at"`
+	Points      []Point      `json:"points"`
+	HasAudio    bool         `json:"has_audio"`
+	DeviceState *DeviceState `json:"device_state,omitempty"`
+}
+
+// Permission names, the keys of DeviceState.Permissions and the values of
+// PermissionEvent.Permission (#125). Kotlin mirrors them in
+// com.team27.mama.contract.PermissionKeys.
+const (
+	PermissionLocationFine         = "location_fine"         // precise location
+	PermissionLocationBackground   = "location_background"   // location "all the time"
+	PermissionMicrophone           = "microphone"            // record audio
+	PermissionContacts             = "contacts"              // read and write, to save "Mamá"
+	PermissionSMS                  = "sms"                   // send, for the offline emergency
+	PermissionNotifications        = "notifications"         // the app's notifications are on
+	PermissionAccessibilityService = "accessibility_service" // the volume gesture's service is on
+	PermissionBatteryUnrestricted  = "battery_unrestricted"  // battery optimization is off for the app
+	PermissionFullScreenIntent     = "full_screen_intent"    // Android 14+ only
+	PermissionHibernationExempt    = "hibernation_exempt"    // Android 11+ only: unused-app restrictions are off
+)
+
+// DeviceState is what the phone's permissions were when the person
+// triggered the alert (#125). Permissions maps a Permission* name to whether
+// it was granted; a permission that does not apply to the phone (its Android
+// version has no such thing) is left out. The server stores it with the
+// incident and never rejects an alert because of it: see UnmarshalJSON.
+type DeviceState struct {
+	CapturedAt  time.Time       `json:"captured_at,omitzero"` // phone clock; zero only when the phone sent a malformed one
+	Permissions map[string]bool `json:"permissions"`
+}
+
+// UnmarshalJSON never fails, because an alert must never be rejected over a
+// diagnostic: unknown fields are ignored, a permission that is null or not a
+// boolean is dropped, and a missing or malformed captured_at stays zero (and
+// is left out when encoded). A device_state that is not an object at all
+// decodes to an empty one.
+func (s *DeviceState) UnmarshalJSON(raw []byte) error {
+	*s = DeviceState{}
+	var loose struct {
+		CapturedAt  json.RawMessage            `json:"captured_at"`
+		Permissions map[string]json.RawMessage `json:"permissions"`
+	}
+	if json.Unmarshal(raw, &loose) != nil {
+		return nil
+	}
+	_ = json.Unmarshal(loose.CapturedAt, &s.CapturedAt)
+	for name, value := range loose.Permissions {
+		var granted *bool
+		if json.Unmarshal(value, &granted) == nil && granted != nil {
+			if s.Permissions == nil {
+				s.Permissions = make(map[string]bool, len(loose.Permissions))
+			}
+			s.Permissions[name] = *granted
+		}
+	}
+	return nil
+}
+
+// PermissionEvents is phone -> server, POST /devices/{device_id}/permissions
+// (#125): when each permission was granted or lost, as the phone saw it. The
+// phone sends the whole list at the end of first-run setup, then only what
+// changed, when the app opens or an alert is triggered.
+type PermissionEvents struct {
+	Events []PermissionEvent `json:"events"`
+}
+
+// PermissionEvent is one change. At is the phone clock; a resent event
+// (same device, Permission and At) is a no-op on the server.
+type PermissionEvent struct {
+	Permission string    `json:"permission"` // a Permission* name
+	Granted    bool      `json:"granted"`
+	At         time.Time `json:"at"`
 }
 
 // LastPoint returns the newest fix, or nil when there is none.
@@ -238,7 +312,8 @@ func (w CallWebhook) IncidentID() string {
 // Verdict and Reason are empty when no call happened (immediate_alert,
 // silent_tracker). IncidentID is the dedupe key: one message per incident.
 // Reporter is the reporting device's own phone_number; the notifier writes to
-// it only with NOTIFY_SELF (#102, demo only).
+// it only with NOTIFY_SELF (#102, demo only). Ficha is left out when the call
+// has none (no_duress, no call, or the extraction failed).
 type NotifierMessage struct {
 	IncidentID  string    `json:"incident_id"`
 	To          []string  `json:"to"`                 // E.164 family numbers
@@ -248,4 +323,30 @@ type NotifierMessage struct {
 	Verdict     Verdict   `json:"verdict,omitempty"`
 	Reason      string    `json:"reason,omitempty"`
 	TriggeredAt time.Time `json:"triggered_at"`
+	// Ficha is the context of the call behind the verdict (calls.ficha,
+	// #106), when one was extracted. Only the WhatsApp text shows it.
+	Ficha *CallContext `json:"ficha,omitempty"`
 }
+
+// CallContext is what an LLM took from a finished call's transcript (#106),
+// stored in calls.ficha. It is not the incident report's ficha.json (#76).
+// Every field is CallContextUnknown when the call did not say it; the
+// extraction never invents one.
+type CallContext struct {
+	Lugar     string `json:"lugar"`     // where the person said they are
+	Personas  string `json:"personas"`  // who is with them
+	Vehiculo  string `json:"vehiculo"`  // the vehicle they are in
+	Rumbo     string `json:"rumbo"`     // where they are heading
+	Situacion string `json:"situacion"` // one sentence: what seems to be happening
+	Confianza string `json:"confianza"` // ConfianzaBaja, ConfianzaMedia or ConfianzaAlta
+}
+
+// CallContextUnknown is a CallContext field the call did not say.
+const CallContextUnknown = "no se sabe"
+
+// CallContext.Confianza values.
+const (
+	ConfianzaBaja  = "baja"
+	ConfianzaMedia = "media"
+	ConfianzaAlta  = "alta"
+)

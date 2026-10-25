@@ -105,6 +105,7 @@
     body.setAttribute("data-state", s.state);
     if (s.live) { body.setAttribute("data-open", ""); } else { body.removeAttribute("data-open"); }
     afterUpdate();
+    document.dispatchEvent(new CustomEvent("ficha:update")); // route-map.js redraws the map
   }
 
   function startLive() {
@@ -204,6 +205,10 @@
         scroller._seen = true;
       }
     }
+    // A live transcript (#143) follows its newest phrase where it scrolls.
+    Array.prototype.forEach.call(document.querySelectorAll(".turns[data-provisional]"), function (t) {
+      t.scrollTop = t.scrollHeight;
+    });
     initPlayers();
     initMarks();
   }
