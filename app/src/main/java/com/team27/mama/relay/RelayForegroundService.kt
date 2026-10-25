@@ -77,7 +77,7 @@ class RelayForegroundService : Service() {
         return START_NOT_STICKY
     }
 
-    /** The opt-in as this process sees it; false with the offline emergency flag off. */
+    /** The relay switch as this process sees it; false with the offline emergency flag off. */
     private fun relayEnabled(): Boolean = (application as? MamaApp)?.graph?.relaySettings?.enabled?.value == true
 
     private fun startForegroundOrFalse(notification: Notification, type: Int): Boolean = try {

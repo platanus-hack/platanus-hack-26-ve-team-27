@@ -139,7 +139,7 @@ class AppGraph(
         )
     }
 
-    /** Opt-in switch for the relay (MeshController, #60's settings screen). Null with the flag off. */
+    /** Switch for the relay, on by default (MeshController, #60's settings screen). Null with the flag off. */
     val relaySettings: RelaySettings? by lazy { if (offlineEmergency) RelaySettings(app) else null }
 
     /**

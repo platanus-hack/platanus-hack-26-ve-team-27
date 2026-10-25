@@ -2,7 +2,7 @@ package com.team27.mama.relay
 
 import kotlinx.coroutines.flow.StateFlow
 
-/** What the settings screen needs from the relay: the opt-in switch and the counter. */
+/** What the settings screen needs from the relay: the on/off switch and the counter. */
 interface RelayControls {
     val enabled: StateFlow<Boolean>
     val relayedCount: StateFlow<Int>

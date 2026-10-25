@@ -85,7 +85,7 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/trigger_widget" />
         </receiver>
-        <!-- Opt-in BLE relay (#60). Nothing starts it with the flag off; no boot receiver. -->
+        <!-- BLE relay (#60), on by default once the mesh permissions are granted. Nothing starts it with the flag off; no boot receiver. -->
         <service
             android:name=".relay.RelayForegroundService"
             android:exported="false"
