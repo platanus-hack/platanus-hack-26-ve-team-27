@@ -60,4 +60,4 @@ Route evidence: the writer trigger fires (4+ non-trivial files across trigger, u
 - T4 done: `app/UI_RULES.md` Home entry.
 - Route: one delegated writer, as planned. Verification: `scripts/build.sh` green; UI_RULES self-check grep prints nothing.
 - Not done: no on-device run (no phone in this environment).
-- T5 done: a cancel now blocks adopt until progress is seen idle (a stale Sending/Active no longer revives the cancelled incident), and adopt() sets sawStarted/sawActive to match what it adopts.
+- T5 done (`ce1eb48`): a cancel now blocks adopt until progress is seen idle (a stale Sending/Active no longer revives the cancelled incident), and adopt() sets sawStarted/sawActive to match what it adopts.
