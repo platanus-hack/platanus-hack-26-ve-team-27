@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/twiliosig"
 )
 
 // Test-only credentials and numbers; +1500555xxxx are Twilio's magic test
@@ -70,22 +72,7 @@ func twilioRequest(path string, form url.Values, sig string) *http.Request {
 }
 
 func sign(token, fullURL string, form url.Values) string {
-	return base64.StdEncoding.EncodeToString(twilioSignature(token, fullURL, form))
-}
-
-// The example from Twilio's "Webhooks security" docs.
-func TestTwilioSignatureMatchesDocsExample(t *testing.T) {
-	params := url.Values{
-		"CallSid": {"CA1234567890ABCDE"},
-		"Caller":  {"+12349013030"},
-		"Digits":  {"1234"},
-		"From":    {"+12349013030"},
-		"To":      {"+18005551212"},
-	}
-	got := sign("12345", "https://mycompany.com/myapp.php?foo=1&bar=2", params)
-	if got != "0/KCTR6DLpKmkAf8muzZqo1nDgQ=" {
-		t.Fatalf("signature = %q, want Twilio's 0/KCTR6DLpKmkAf8muzZqo1nDgQ=", got)
-	}
+	return base64.StdEncoding.EncodeToString(twiliosig.Sign(token, fullURL, form))
 }
 
 func TestTwilioParsesSignedSampleWebhook(t *testing.T) {

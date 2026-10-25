@@ -117,6 +117,8 @@ type CaseRow struct {
 	Sealed     bool
 	New        bool // reached the server less than newCase ago
 	Live       bool // still followed live (activo or en llamada)
+	Alarm      bool // a duress verdict: the row is the red alarm (#143)
+	AlarmPulse bool // Alarm on a case with news in the last followSeal: it pulses
 }
 
 // newCase is how long a case keeps its "Nuevo" tag in the list.
@@ -139,7 +141,9 @@ func caseRow(c CaseItem, now time.Time) CaseRow {
 		Sealed:     c.SealedAt != nil,
 		New:        !now.IsZero() && now.Sub(c.CreatedAt) < newCase && now.Sub(c.CreatedAt) >= -time.Minute,
 		Live:       state == CaseActive || state == CaseCalling,
+		Alarm:      state == CaseAlert,
 	}
+	r.AlarmPulse = r.Alarm && !now.IsZero() && now.Sub(c.LastAt) < followSeal
 	r.Initials = initials(r.Name)
 	r.Line, r.LineSince = caseLine(c, state)
 	if p := c.Last; p != nil {
@@ -391,6 +395,7 @@ func centralRoute(points []Point) *Route {
 			x, y, anchor, bx = place(false, true)
 		}
 		placed = append(placed, bx)
+		r.Map[i].Label = d.at
 		byIndex[i] = RouteLabel{
 			Key: "lbl-" + strconv.Itoa(i+1) + "-" + f(x) + "-" + f(y) + "-" + anchor, X: f(x), Y: f(y),
 			Anchor: anchor, Text: d.at, Newest: i == n-1,

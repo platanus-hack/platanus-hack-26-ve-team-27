@@ -6,7 +6,9 @@
 // - the rows sliding in on load;
 // - the transcript, timeline and points following their newest entry;
 // - ?seguir=1 on the list: opens a new case by itself (the presenter is on
-//   stage holding the phone).
+//   stage holding the phone);
+// - the alarm sound (#143): a short siren when an alarm fires on screen,
+//   with a mute toggle remembered on this screen.
 (function () {
   "use strict";
 
@@ -97,9 +99,89 @@
     go();
   }
 
+  // ------------------------------------------------------------ alarm sound (#143)
+
+  // A short siren when an alarm fires while the screen is open: the detail's
+  // chip turning red, or a list row turning into an alarm. Browsers allow
+  // sound only after the viewer touched the page, so it stays quiet until
+  // then; it never plays over a recording that is playing, nor once muted.
+  var SOUND = "mama-central-alarma";
+  var audio = null, touched = false, seen = {};
+
+  function soundOn() { try { return localStorage.getItem(SOUND) !== "off"; } catch (e) { return true; } }
+  function setSound(on) {
+    try { if (on) { localStorage.removeItem(SOUND); } else { localStorage.setItem(SOUND, "off"); } } catch (e) { /* storage blocked: this view only */ }
+    Array.prototype.forEach.call(document.querySelectorAll("[data-alarm-sound]"), function (b) {
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.setAttribute("aria-label", on ? "Silenciar la alarma" : "Activar el sonido de la alarma");
+    });
+    soundState = on;
+  }
+  var soundState = soundOn();
+
+  // alarms are the red alarms on screen, by key.
+  function alarms() {
+    var now = {};
+    var chip = document.querySelector("[data-alarm-level]");
+    var level = chip && chip.getAttribute("data-alarm-level");
+    if (level === "heard" || level === "confirmed") { now.caso = true; }
+    Array.prototype.forEach.call(document.querySelectorAll("[data-alarm]"), function (r) {
+      now[r.getAttribute("data-alarm")] = true;
+    });
+    return now;
+  }
+
+  function recordingPlays() {
+    return Array.prototype.some.call(document.querySelectorAll("audio"), function (a) { return !a.paused; });
+  }
+
+  // siren plays three falling two-tone beeps, about a second and a half.
+  function siren() {
+    if (!soundState || !touched || recordingPlays()) { return; }
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) { return; }
+    try {
+      audio = audio || new Ctx();
+      if (audio.resume) { audio.resume(); }
+      var t = audio.currentTime + 0.05;
+      for (var i = 0; i < 3; i++) {
+        [[988, 0], [740, 0.22]].forEach(function (n) {
+          var o = audio.createOscillator(), g = audio.createGain();
+          o.type = "square";
+          o.frequency.value = n[0];
+          var at = t + i * 0.5 + n[1];
+          g.gain.setValueAtTime(0.0001, at);
+          g.gain.exponentialRampToValueAtTime(0.06, at + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, at + 0.2);
+          o.connect(g).connect(audio.destination);
+          o.start(at);
+          o.stop(at + 0.21);
+        });
+      }
+    } catch (e) { /* no sound: the chip still shows */ }
+  }
+
+  function watchAlarms() {
+    seen = alarms(); // what was already on screen when it opened makes no sound
+    document.addEventListener("ficha:update", function () {
+      var now = alarms(), fired = false;
+      Object.keys(now).forEach(function (k) { if (!seen[k]) { fired = true; } seen[k] = true; });
+      if (fired) { siren(); }
+    });
+    var touch = function () { touched = true; };
+    document.addEventListener("pointerdown", touch, { once: true, capture: true });
+    document.addEventListener("keydown", touch, { once: true, capture: true });
+    setSound(soundState);
+    document.addEventListener("click", function (ev) {
+      if (!ev.target.closest || !ev.target.closest("[data-alarm-sound]")) { return; }
+      setSound(!soundState);
+    });
+  }
+
   function start() {
     wall();
     setInterval(wall, 1000);
+    watchAlarms();
     var list = document.querySelector('[data-live="c-list"]');
     if (list) {
       staggerRows();

@@ -10,7 +10,8 @@
  * COLOR TOKENS MIRROR app/src/main/java/com/team27/mama/ui/theme/Theme.kt,
  * like ficha.css (same exception as the launcher icon in app/UI_RULES.md).
  * Change them together. Red is for errors only: an alert is the brand's
- * chartreuse, the loudest color it has.
+ * chartreuse, the loudest color it has. The one exception is the duress
+ * alarm (--alarm*, #143): its chip, frame and list row are red.
  */
 
 /* MamaDarkColors (the logo: chartreuse on charcoal) */
@@ -41,6 +42,14 @@
   --surface-highest: #393A35;     /* NightHighest */
   --glow: rgba(239, 254, 0, 0.30);
   --alert-wash: rgba(239, 254, 0, 0.07);
+  --warn: #FFC84A;                /* page-only warning amber, as in ficha.css */
+  --warn-dot: #FFC84A;
+  --on-warn: #181918;
+  --warn-container: #4A3800;
+  --on-warn-container: #FFEBB8;
+  --alarm: #E5243B;
+  --on-alarm: #FFFFFF;
+  --alarm-glow: rgba(255, 59, 72, 0.5);
 }
 
 /* MamaLightColors */
@@ -71,6 +80,14 @@
   --surface-highest: #E4E4DA;     /* PaperHighest */
   --glow: rgba(74, 84, 0, 0.28);
   --alert-wash: rgba(74, 84, 0, 0.07);
+  --warn: #7A5700;
+  --warn-dot: #F2B200;
+  --on-warn: #181918;
+  --warn-container: #FFEBB8;
+  --on-warn-container: #3D2B00;
+  --alarm: #C8102E;
+  --on-alarm: #FFFFFF;
+  --alarm-glow: rgba(200, 16, 46, 0.45);
 }
 
 /* ---------------------------------------------------------------- state colors
@@ -177,6 +194,10 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--primary); outli
 .c-row::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--st); transition: background-color .6s; }
 .c-row:hover { background: var(--surface-container); transform: translateX(3px); }
 .c-row-alerta { border-color: var(--primary); background: linear-gradient(90deg, var(--alert-wash), transparent 60%), var(--surface-low); }
+.c-row-alarm { --st: var(--alarm); border-color: var(--alarm); background: linear-gradient(90deg, var(--alarm-glow), transparent 55%), var(--surface-low); }
+.c-row-alarm .c-what { color: var(--alarm); }
+.c-row-alarm .c-state { background: var(--alarm); border-color: var(--alarm); color: var(--on-alarm); box-shadow: none; animation: none; }
+.c-row-alarm.pulse { animation: alarm-beat 1.1s ease-in-out infinite; }
 .c-row-cancelado .c-name, .c-row-cerrado .c-name { color: var(--on-surface-variant); }
 .c-row-cerrado::before { opacity: .45; }
 .c-row-new { box-shadow: 0 0 0 2px var(--glow); }
@@ -343,6 +364,19 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
   .c-hero .mama { width: 60px; height: 60px; }
 }
 
+/* ---------------------------------------------------------------- phone preparation (#125)
+ * Under the track: each permission's first grant, then later changes, marked. */
+
+.c-prep:empty { display: none; }
+.c-prep { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 0 var(--gutter) 12px; }
+.c-prep-title { flex: none; font-size: 12px; line-height: 18px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--on-surface-variant); }
+.c-prep-steps { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 0; }
+.c-prep-step { display: inline-flex; align-items: baseline; gap: 6px; font-size: 14px; line-height: 20px; white-space: nowrap; }
+.c-prep-step + .c-prep-step::before { content: "→"; margin: 0 8px; color: var(--outline); }
+.c-prep-time { font-variant-numeric: tabular-nums; color: var(--on-surface-variant); font-size: 13px; }
+.c-prep-step.later .c-prep-label { padding: 0 8px; border-radius: 999px; background: var(--primary-container); color: var(--on-primary-container); font-weight: 500; }
+.c-prep-step.lost .c-prep-label { background: var(--warn-container); color: var(--on-warn-container); }
+
 /* ---------------------------------------------------------------- one screen (projector, laptop) */
 
 @media (min-width: 1024px) {
@@ -370,6 +404,7 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
   .c-case-page .node-dot { width: 32px; height: 32px; }
   .c-case-page .node-time { font-size: 14px; }
   .c-case-page .node-label { font-size: 15px; line-height: 20px; }
+  .c-case-page .c-prep { padding: 0 16px 10px; }
 
   .c-grid {
     display: grid; margin: 0; gap: 14px; min-height: 0;
@@ -382,7 +417,8 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
   .c-grid .panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .c-grid .panel-body { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; }
   .c-place .panel-body { flex: 1 1 auto; overflow: hidden; min-height: 0; }
-  .c-place .route { flex: 1 1 auto; min-height: 0; aspect-ratio: auto; height: 100%; }
+  .c-place .route-box { flex: 1 1 auto; min-height: 0; }
+  .c-place .route { position: absolute; inset: 0; height: 100%; aspect-ratio: auto; }
   .c-place .maps-btn { min-height: 36px; font-size: 13px; }
   .c-place .route-sum { font-size: 13px; line-height: 18px; }
   .panel-call .call-card { flex: 1; min-height: 0; }
@@ -484,3 +520,10 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
   .tr-turns .tr-who { grid-column: 2; }
   .tr-turns .tr-text, .tr-turns .tr-tag { grid-column: 1 / -1; }
 }
+
+/* ---------------------------------------------------------------- the alarm (#143) */
+
+.c-sound .i-off, .c-sound[aria-pressed="false"] .i-on { display: none; }
+.c-sound[aria-pressed="false"] .i-off { display: block; }
+.c-sound[aria-pressed="false"] { color: var(--on-surface-variant); }
+.c-hero-text .title-row { gap: 4px 12px; }

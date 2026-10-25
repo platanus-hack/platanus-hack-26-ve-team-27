@@ -87,12 +87,35 @@ class ContractRoundTripTest {
 
     @Test fun notifierMessage() = assertRoundTrip("notifier_message.json", NotifierMessage.serializer())
 
+    @Test fun permissionEvents() = assertRoundTrip("permission_events.json", PermissionEvents.serializer())
+
     @Test
     fun everySampleHasACase() {
         val files = testdataDir.listFiles { f -> f.isFile && f.name.endsWith(".json") }.orEmpty()
-        if (files.size != 8) {
-            fail("testdata has ${files.size} samples, ContractRoundTripTest covers 8: add the new one here")
+        if (files.size != 9) {
+            fail("testdata has ${files.size} samples, ContractRoundTripTest covers 9: add the new one here")
         }
+    }
+
+    /** An alert without the snapshot (an app before #125) leaves device_state out, never null. */
+    @Test
+    fun alertEventWithoutDeviceStateLeavesItOut() {
+        val event = ContractJson.decodeFromString(AlertEvent.serializer(), File(testdataDir, "alert_event.json").readText())
+        assertEquals(9, event.deviceState?.permissions?.size)
+        val older = ContractJson.encodeToString(AlertEvent.serializer(), event.copy(deviceState = null))
+        assertTrue("device_state sent: $older", "device_state" !in (Json.parseToJsonElement(older) as JsonObject).keys)
+    }
+
+    /** Mirrors Go's contract.Permission* names, which the server stores and the report reads. */
+    @Test
+    fun permissionNames() {
+        assertEquals(
+            listOf(
+                "notifications", "location_fine", "location_background", "microphone", "contacts", "sms",
+                "battery_unrestricted", "full_screen_intent", "hibernation_exempt", "accessibility_service",
+            ),
+            PermissionKeys.ALL,
+        )
     }
 
     /** Mirrors Go's TestDeviceRegistrationSampleSignatureVerifies and TestRegistrationSignedMessage. */

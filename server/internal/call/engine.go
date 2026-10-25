@@ -15,6 +15,9 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/trace"
 )
 
+// transcribeTimeout bounds the request that starts the live transcription.
+const transcribeTimeout = 5 * time.Second
+
 // placeTimeout bounds the outbound-call request. The phone must ring within
 // 15 s of the alert; the spike measured 2.3–6.2 s from request to ringing.
 const placeTimeout = 15 * time.Second
@@ -104,6 +107,13 @@ type Engine struct {
 	// report shows when the phone rang and was answered (#76). It runs in
 	// the engine's goroutine, so it must be quick.
 	Progress func(ctx context.Context, callID int64, twilioStatus string, at time.Time)
+	// Transcriber, when set with TranscriptionURL, starts the real-time
+	// transcription of a call when Twilio says it was answered: Twilio posts
+	// each phrase to TranscriptionURL and the report shows the conversation
+	// while it happens (#143). The post-call transcript stays the one the
+	// verdict, the PDF and the seal read. It needs Status to see the answer.
+	Transcriber      Transcriber
+	TranscriptionURL string
 	// Limit, when set, caps the calls placed per number and in total,
 	// retries included. A call over it is not placed and opens no fallback:
 	// there is no auth on /incidents, and the fallback page is public too.
@@ -370,6 +380,9 @@ func (e *Engine) await(ctx context.Context, incidentID string, callID int64, pla
 					t.ringing = e.now()
 					log.Printf("call: incident %s call %d: twilio %s %d ms after the alert", incidentID, callID, status, t.ringing.Sub(t.start).Milliseconds())
 				}
+				if status == TwilioInProgress {
+					e.transcribe(ctx, incidentID, callID, placed.CallSID)
+				}
 				if status != TwilioRinging {
 					return true
 				}
@@ -382,6 +395,23 @@ func (e *Engine) await(ctx context.Context, incidentID string, callID int64, pla
 			}
 		}
 	}
+}
+
+// transcribe starts the live transcription of an answered call, when it is
+// on. A failure only logs: the call goes on, and the report gets the
+// conversation from the post-call webhook, as it did before #143.
+func (e *Engine) transcribe(ctx context.Context, incidentID string, callID int64, callSID string) {
+	if e.Transcriber == nil || e.TranscriptionURL == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, transcribeTimeout)
+	defer cancel()
+	if err := e.Transcriber.Transcribe(ctx, callSID, e.TranscriptionURL); err != nil {
+		log.Printf("call: incident %s call %d: live transcription not started: %v", incidentID, callID, err)
+		trace.Log(incidentID, "live_transcription", "level", "WARN", "call", callID, "started", false, "error", err)
+		return
+	}
+	trace.Log(incidentID, "live_transcription", "call", callID, "started", true)
 }
 
 // unanswered reports whether a Twilio status means the call never

@@ -30,6 +30,22 @@ type Record struct {
 	// time span overlaps the incident's: linked by device and time only,
 	// since the schema has no link. Shown, never sealed.
 	Emergencies []Emergency
+	// DeviceState is the phone's permissions at the gesture (#125,
+	// incidents.device_state); nil when the alert carried none. Not shown
+	// yet, never sealed.
+	DeviceState *contract.DeviceState
+	// PermissionEvents is how the device's permissions were granted and
+	// lost (#125, device_permission_events), oldest first: the newest
+	// maxPermissionEvents. Not shown yet, never sealed.
+	PermissionEvents []PermissionEvent
+}
+
+// PermissionEvent is one device_permission_events row (#125).
+type PermissionEvent struct {
+	Permission string // a contract.Permission* name
+	Granted    bool
+	At         time.Time // phone clock
+	ReceivedAt time.Time // server clock
 }
 
 // Incident is the incidents row.
@@ -72,8 +88,13 @@ type Call struct {
 	ConversationID string // "" until ElevenLabs answered the outbound request
 	Status         string // a calls.status value
 	Transcript     []contract.TranscriptTurn
-	DurationSecs   *int      // from the post-call webhook
-	RequestedAt    time.Time // server clock
+	// LiveTurns is what Twilio's real-time transcription heard while the
+	// call lasted (#143, call_live_turns), in the order it was said, with
+	// TimeInCallSecs counted from PickedUpAt. The page shows them until the
+	// post-call webhook stores Transcript; they are never sealed.
+	LiveTurns    []contract.TranscriptTurn
+	DurationSecs *int      // from the post-call webhook
+	RequestedAt  time.Time // server clock
 	// EndedAt is start + duration from the webhook (ElevenLabs' clock), or
 	// the server clock when the server marked the call failed (then
 	// DurationSecs is nil).

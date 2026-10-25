@@ -58,13 +58,20 @@ var staticTypes = map[string]string{
 	".txt":  "text/plain; charset=utf-8",
 }
 
-// contentSecurityPolicy allows only this server: opening a report makes no
-// request to anyone else (no fonts, maps or scripts from third parties).
-// connect-src 'self' is the live stream and the recording the waveform is
-// drawn from; blob: is that same recording, handed to the player. Links the
-// reader taps (Abrir en Maps) are navigations, not requests.
-const contentSecurityPolicy = "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; " +
+// contentSecurityPolicy allows only this server, plus the route map's tile
+// images (MapTileHosts): no fonts, scripts or styles from third parties, and
+// the reader's browser asks the tile server only for the map's squares
+// around the route. data: in img-src is the 1x1 GIF Leaflet points a tile
+// at to cancel its download (no request). connect-src 'self' is the live
+// stream and the recording the waveform is drawn from; blob: is that same
+// recording, handed to the player. Links the reader taps (Abrir en Maps) are
+// navigations, not requests.
+const contentSecurityPolicy = "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self' data: " + MapTileHosts + "; " +
 	"script-src 'self'; media-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
+// MapTileHosts serves the route map's basemap (CARTO, OpenStreetMap data;
+// static/route-map.js): images only.
+const MapTileHosts = "https://*.basemaps.cartocdn.com"
 
 // Source is what Handler reads. DBStore is the real one.
 type Source interface {
@@ -83,6 +90,7 @@ type Handler struct {
 	closer  *Closer
 	demo    *Demo
 	kapso   *KapsoWebhook
+	twilio  *TranscriptionWebhook
 	central *Central
 
 	// Live stream timing; the defaults when zero (tests shorten them).
@@ -101,6 +109,13 @@ func NewHandler(src Source, opts Options) *Handler {
 // WithKapso mounts POST /webhooks/kapso (KapsoWebhook).
 func (h *Handler) WithKapso(k *KapsoWebhook) *Handler {
 	h.kapso = k
+	return h
+}
+
+// WithTranscription mounts POST /webhooks/twilio/transcription
+// (TranscriptionWebhook, #143).
+func (h *Handler) WithTranscription(t *TranscriptionWebhook) *Handler {
+	h.twilio = t
 	return h
 }
 
@@ -125,7 +140,7 @@ func (h *Handler) RecoverWith(c *Closer) *Handler {
 
 // Register mounts GET /i/{token}, its recording, the sealed document and
 // signature, the static files, and the extras mounted with WithDemo,
-// WithKapso and WithCentral.
+// WithKapso, WithTranscription and WithCentral.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+PagePrefix+"{token}", h.page)
 	mux.HandleFunc("GET "+PagePrefix+"{token}/audio.mp3", h.audio)
@@ -139,6 +154,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	}
 	if h.kapso != nil {
 		mux.Handle("POST /webhooks/kapso", h.kapso)
+	}
+	if h.twilio != nil {
+		mux.Handle("POST "+TranscriptionPath, h.twilio)
 	}
 	h.registerCentral(mux)
 	mux.HandleFunc("GET "+StaticPrefix+"{file}", serveStatic)

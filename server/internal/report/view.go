@@ -102,6 +102,7 @@ type Page struct {
 	Timeline    []Event
 	Points      []PointRow
 	Route       *Route
+	MapKey      string // the route map's tiles key (route-map.js); "" leaves the drawing alone
 	Calls       []CallView
 	NoCall      string // why there was no call, for the call section
 	MultiCall   bool
@@ -133,6 +134,7 @@ type Page struct {
 	Family         []FamilyChip
 	FamilyNote     string
 	PDFURL         string
+	Alarm          *AlarmView // the duress alarm across the top; nil for none
 }
 
 // PointRow is one row of the locations table.
@@ -163,9 +165,12 @@ type CallView struct {
 	Failed    bool
 	Verdict   string // "" until judged
 	Turns     []TurnView
-	Audio     *AudioView // nil: "Audio no disponible"
-	NoAudio   string     // why there is no audio
-	More      bool       // the collapsed transcript hides turns
+	// Provisional: Turns are what Twilio heard while the call is on (#143),
+	// until the post-call transcript replaces them.
+	Provisional bool
+	Audio       *AudioView // nil: "Audio no disponible"
+	NoAudio     string     // why there is no audio
+	More        bool       // the collapsed transcript hides turns
 }
 
 // TurnView is one transcript turn.
@@ -177,6 +182,7 @@ type TurnView struct {
 	Offset  string  // "0:04"
 	At      string  // time of day on ElevenLabs' clock; "" when the start is unknown
 	Phrase  bool    // the turn that says the duress phrase
+	Alarm   bool    // Phrase, while the page's alarm is the red one
 	Keep    bool    // shown while the transcript is collapsed on a phone
 }
 
@@ -213,6 +219,7 @@ type Options struct {
 	CanSeal bool   // the server has a signing key
 	Channel string // the family message channel: "WhatsApp" or "SMS"
 	BaseURL string // the server's public URL, for the PDF's links; blank gives paths
+	MapKey  string // CARTO_BASEMAPS_KEY, for the route map's tiles; blank draws the route with no map
 	// Now is the server time of the render; zero skips the checks that need
 	// it (a call left "in progress" long ago is not shown as live).
 	Now time.Time
@@ -235,6 +242,7 @@ func Build(rec Record, opts Options) Page {
 		Timeline:  Timeline(rec, opts),
 		Points:    pointRows(rec.Points),
 		Route:     route(rec.Points),
+		MapKey:    opts.MapKey,
 		MultiCall: len(rec.Calls) > 1,
 	}
 	p.Verdict, p.VerdictKind = headline(rec)
@@ -251,6 +259,9 @@ func Build(rec Record, opts Options) Page {
 	p.TriggerISO = iso(rec.Incident.TriggeredAt)
 	p.HasCallBranch = rec.Incident.Branch == contract.BranchCall
 	for i, c := range rec.Calls {
+		if rec.Seal != nil {
+			c.LiveTurns = nil // a sealed page shows only what the seal covers
+		}
 		v := callView(i+1, c, rec.Device, opts.Token)
 		if v.Active && (opts.Now.IsZero() || opts.Now.Sub(c.RequestedAt) < staleCall) && rec.Seal == nil {
 			p.CallActive, p.CallPhase, p.CallSince = true, v.Phase, v.Since
@@ -293,12 +304,14 @@ func Build(rec Record, opts Options) Page {
 		pt := rec.Points[n-1]
 		p.RouteLast, p.RouteLastClock, p.RouteMaps = iso(pt.ReceivedAt), clock(pt.RecordedAt), MapsURL(pt.Lat, pt.Lng)
 	}
-	if !p.CallActive {
-		for i := len(p.Calls) - 1; i >= 0; i-- {
-			if c := p.Calls[i]; len(c.Turns) > 0 || c.Audio != nil {
-				p.Call = &p.Calls[i]
-				break
-			}
+	for i := len(p.Calls) - 1; i >= 0; i-- {
+		c := p.Calls[i]
+		if p.CallActive && !c.Active {
+			continue // while a call is on, only its live turns (#143)
+		}
+		if len(c.Turns) > 0 || c.Audio != nil {
+			p.Call = &p.Calls[i]
+			break
 		}
 	}
 	switch {
@@ -319,6 +332,15 @@ func Build(rec Record, opts Options) Page {
 		p.FamilyNote = familyNote(rec, opts.Channel, p.Live)
 	}
 	p.PDFURL = PDFPath(opts.Token)
+	// The alarm reads the live turns even on a sealed page: a phrase heard
+	// live and never confirmed says so, rather than vanishing (#143).
+	if p.Alarm = alarmView(rec, p.Live); p.Alarm != nil && p.Alarm.Red() {
+		for i := range p.Calls {
+			for j := range p.Calls[i].Turns {
+				p.Calls[i].Turns[j].Alarm = p.Calls[i].Turns[j].Phrase
+			}
+		}
+	}
 	return p
 }
 
@@ -493,8 +515,14 @@ func callView(n int, c Call, dev Device, token string) CallView {
 		v.Verdict = verdictLine(c.Verdict, c.VerdictReason)
 	}
 	answered, known := c.AnsweredAt()
-	phrase := phraseTurns(c.Transcript, dev.DuressPhrase)
-	for j, t := range c.Transcript {
+	turns, phrase := c.Transcript, phraseTurns(c.Transcript, dev.DuressPhrase)
+	if len(turns) == 0 && c.Status != "done" && len(c.LiveTurns) > 0 {
+		// The call is still on (#143): what Twilio heard so far, with the
+		// turn that says the phrase marked for the alarm. Only the post-call
+		// transcript is judged.
+		turns, phrase, v.Provisional = c.LiveTurns, phraseTurns(c.LiveTurns, dev.DuressPhrase), true
+	}
+	for j, t := range turns {
 		tv := TurnView{
 			Agent:   t.Role == duress.RoleAgent,
 			Speaker: "Tu familiar",
@@ -512,10 +540,10 @@ func callView(n int, c Call, dev Device, token string) CallView {
 		v.Turns = append(v.Turns, tv)
 	}
 	// Collapsed on a phone, the transcript keeps the phrase turn, or the
-	// first two turns when none says it.
+	// first two turns when none says it. A live one keeps every turn.
 	kept := 0
 	for i := range v.Turns {
-		if v.Turns[i].Phrase {
+		if v.Turns[i].Phrase || v.Provisional {
 			v.Turns[i].Keep = true
 			kept++
 		}
@@ -538,6 +566,9 @@ func callView(n int, c Call, dev Device, token string) CallView {
 		}
 	} else {
 		v.NoAudio = noAudioReason(c)
+	}
+	if v.Provisional {
+		v.NoAudio = "En vivo: al colgar llegan la grabación y la transcripción definitiva."
 	}
 	return v
 }
@@ -664,21 +695,42 @@ func pointRows(points []Point) []PointRow {
 }
 
 // MapsURL opens the point in Google Maps. It is a link the reader chooses
-// to follow; the page itself never loads a map.
+// to follow; the page itself never loads Google's map.
 func MapsURL(lat, lng float64) string {
 	return fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%.6f,%.6f", lat, lng)
 }
 
 // Route is the path drawn in SVG from the points, without map tiles: one
 // segment per pair of points and one dot per point, each keyed so the live
-// page animates only what is new.
+// page animates only what is new. Map carries the same points on their real
+// coordinates for the map route-map.js lays over the drawing; the drawing is
+// what shows without JS, until the map's tiles load and when they cannot.
 type Route struct {
 	Segments   []RouteSegment
 	Dots       []RouteDot
 	Labels     []RouteLabel // the points' times; the central's route only
+	Map        []MapPoint
 	Width      int
 	Height     int
 	DistanceKM string
+}
+
+// MapPoint is one point as route-map.js draws it on the map.
+type MapPoint struct {
+	Lat   float64  `json:"lat"`
+	Lng   float64  `json:"lng"`
+	Acc   *float64 `json:"acc,omitempty"`   // meters, the newest point's circle
+	Title string   `json:"title"`           // the dot's tooltip, as on the drawing
+	Label string   `json:"label,omitempty"` // the time written next to it; the central's route only
+}
+
+// MapJSON is Map as the route box's data-points.
+func (r *Route) MapJSON() string {
+	b, err := json.Marshal(r.Map)
+	if err != nil {
+		return "[]" // a NaN coordinate: the drawing stays, with no map
+	}
+	return string(b)
 }
 
 // RouteSegment is the line between two consecutive points.
@@ -754,14 +806,24 @@ func routeIn(points []Point, w, h, pad float64) *Route {
 			// drawing, every segment is new and draws itself again.
 			r.Segments = append(r.Segments, RouteSegment{Key: "seg-" + n + "-" + x + "-" + y + "-" + px + "-" + py, X1: px, Y1: py, X2: x, Y2: y})
 		}
+		title := clock(points[i].RecordedAt) + " · " + accuracy(points[i].AccuracyM) + " · " + movement(points[i].SpeedMPS)
 		r.Dots = append(r.Dots, RouteDot{
 			Key: "dot-" + n + "-" + x + "-" + y, X: x, Y: y, MapsURL: MapsURL(points[i].Lat, points[i].Lng),
-			Title: clock(points[i].RecordedAt) + " · " + accuracy(points[i].AccuracyM) + " · " + movement(points[i].SpeedMPS),
-			First: i == 0, Newest: i == len(xy)-1, x: fx, y: fy, at: clock(points[i].RecordedAt),
+			Title: title, First: i == 0, Newest: i == len(xy)-1, x: fx, y: fy, at: clock(points[i].RecordedAt),
 		})
+		r.Map = append(r.Map, MapPoint{Lat: points[i].Lat, Lng: points[i].Lng, Acc: mapAccuracy(points[i].AccuracyM), Title: title})
 		px, py = x, y
 	}
 	return r
+}
+
+// mapAccuracy is the accuracy circle's radius, nil when the phone sent none
+// or one the map cannot draw.
+func mapAccuracy(m *float64) *float64 {
+	if m == nil || !(*m > 0) || math.IsInf(*m, 0) {
+		return nil
+	}
+	return m
 }
 
 // distance is the path length (haversine): "15 m" under a kilometer, else

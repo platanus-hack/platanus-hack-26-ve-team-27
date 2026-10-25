@@ -84,7 +84,7 @@ class RegistrationClient(baseUrl: String) {
 
         // The server's caps name both limits ("must be at most 150 characters and 20 words").
         private const val PHRASE_LENGTH =
-            "Usa una frase de ${SetupForm.MIN_PHRASE_WORDS} a ${SetupForm.MAX_PHRASE_WORDS} palabras y ${SetupForm.MAX_PHRASE_CHARS} letras o menos."
+            "Usa una frase más corta: de ${SetupForm.MAX_PHRASE_WORDS} palabras y ${SetupForm.MAX_PHRASE_CHARS} letras o menos."
 
         /** The `error` of a `{"error": "..."}` body, or "" when the body is anything else. */
         private fun serverError(body: String): String = try {

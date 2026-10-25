@@ -99,6 +99,19 @@ func (rt *Routes) SetProgress(f func(ctx context.Context, callID int64, twilioSt
 	}
 }
 
+// SetTranscription turns on the live transcription of answered calls
+// (#143): Twilio posts each phrase to callbackURL. It does nothing without a
+// database, without the Twilio account (the engine then cannot see the
+// answer either) or with a blank callbackURL.
+func (rt *Routes) SetTranscription(callbackURL string) {
+	if rt.engine == nil || callbackURL == "" {
+		return
+	}
+	if twilio, ok := rt.engine.Status.(*TwilioStatus); ok {
+		rt.engine.Transcriber, rt.engine.TranscriptionURL = twilio, callbackURL
+	}
+}
+
 // Hooks runs each post-call hook in order, skipping nil ones, so main can
 // list them in one place: the duress verdict and the family alert (#21)
 // before the incident report (#76), which seals what they stored. It returns
