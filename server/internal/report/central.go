@@ -39,9 +39,10 @@ var CentralSections = []string{"c-counts", "c-list"}
 
 // CentralCaseSections are the central detail's live sections: the family
 // page's status, track, call and route (with the points' times), and the
-// central's own header (with the call's one-line summary) and notified
-// people. The horizontal track is its only timeline.
-var CentralCaseSections = []string{"status", "c-head", "track", "call", "route", "c-family"}
+// central's own header (with the call's one-line summary), the phone's
+// preparation strip (#125) and notified people. The horizontal track is its
+// only timeline.
+var CentralCaseSections = []string{"status", "c-head", "track", "c-prep", "call", "route", "c-family"}
 
 // Central is the central dashboard, mounted by Handler.WithCentral.
 type Central struct {
@@ -246,8 +247,11 @@ type centralCase struct {
 	Situation    string
 	Notified     NotifiedView
 	NotifiedNote string // the notified panel's line when nobody was
-	at           time.Time
-	follow       bool // the detail's stream stays open (see centralCaseSnapshot)
+	// Prep is the "Preparación del teléfono" strip (#125); nil when the
+	// device sent no permission events. The family page does not show it.
+	Prep   []PrepStep
+	at     time.Time
+	follow bool // the detail's stream stays open (see centralCaseSnapshot)
 }
 
 // The central's route drawing: a little taller than the family page's
@@ -260,21 +264,10 @@ const (
 // buildCentralCase turns the record into the detail page. token is the
 // case's report link, for its recording and PDF.
 func buildCentralCase(rec Record, x CaseExtras, opts Options) centralCase {
-	page := Build(rec, opts)
-	// The family page shows the transcript once the call ends; the central
-	// shows it while it happens, as soon as turns are stored (#97 appends
-	// them to calls.transcript during the call).
-	if page.Call == nil && page.CallActive {
-		for i := len(page.Calls) - 1; i >= 0; i-- {
-			if len(page.Calls[i].Turns) > 0 {
-				page.Call = &page.Calls[i]
-				break
-			}
-		}
-	}
+	page := Build(rec, opts) // its Call shows the turns while the call is on too (#143)
 	page.Route = centralRoute(rec.Points)
 	item := caseItemOf(rec, x)
-	d := centralCase{Page: page, Case: caseRow(item, opts.Now), at: opts.Now}
+	d := centralCase{Page: page, Case: caseRow(item, opts.Now), Prep: prepSteps(rec), at: opts.Now}
 	for i := len(rec.Calls) - 1; i >= 0; i-- { // the newest call's summary
 		if c := rec.Calls[i].Context; c != nil && c.Situacion != "" {
 			d.Situation = c.Situacion

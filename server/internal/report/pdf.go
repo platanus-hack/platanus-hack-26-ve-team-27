@@ -37,6 +37,7 @@ type pdfReport struct {
 	Facts       [][2]string
 	Timeline    []pdfEvent
 	Points      []pdfPoint
+	Phone       *pdfPhone // the phone's permissions (#125); nil when it sent none
 	Calls       []pdfCall
 	Contexts    []pdfContext // the calls' contexts (#106); none without a ficha
 	Family      []pdfFamily
@@ -72,6 +73,14 @@ type pdfTurn struct {
 }
 
 type pdfFamily struct{ Recipient, Status, Time, Error string }
+
+// pdfPhone is "Preparación del teléfono" (#125): the permissions at the
+// gesture and how they were granted. Read from the live record: it is not
+// part of the seal.
+type pdfPhone struct {
+	Ready *PhoneReady
+	Prep  []PrepStep
+}
 
 // PDFOptions are the PDF settings that do not come from the record.
 type PDFOptions struct {
@@ -125,6 +134,9 @@ func buildPDF(rec Record, opts PDFOptions) (pdfReport, error) {
 			N: strconv.Itoa(i + 1), Time: clock(p.RecordedAt), LatLng: fmt.Sprintf("%.5f, %.5f", p.Lat, p.Lng),
 			Accuracy: accuracy(p.AccuracyM), Speed: movement(p.SpeedMPS), Maps: MapsURL(p.Lat, p.Lng),
 		})
+	}
+	if ready, prep := phoneReady(rec), prepSteps(rec); ready != nil || len(prep) > 0 {
+		r.Phone = &pdfPhone{Ready: ready, Prep: prep}
 	}
 	for i, c := range src.Calls {
 		r.Calls = append(r.Calls, pdfCallOf(i+1, len(src.Calls), c, src.Device))
@@ -480,6 +492,46 @@ func renderPDF(r pdfReport) ([]byte, error) {
 		for _, p := range r.Points {
 			row([]string{p.N, p.Time, p.LatLng, p.Accuracy, p.Speed, "Abrir en Maps"}, ws, []string{"", "I", "", "", "", "I"}, 9, p.Maps)
 		}
+	}
+
+	if ph := r.Phone; ph != nil {
+		heading("Preparación del teléfono")
+		if rd := ph.Ready; rd != nil {
+			color(pdfInk)
+			pdf.SetFont("Lexend", "B", 9.5)
+			line := "Al pedir ayuda (" + rd.Time + ", reloj del teléfono): " + strings.TrimSuffix(rd.Summary, " ✓") + " permisos."
+			if rd.Missing != "" {
+				line += " Falta: " + rd.Missing + "."
+			}
+			pdf.MultiCell(textW, 5, line, "", "L", false)
+			pdf.Ln(1)
+			kv := make([][2]string, 0, len(rd.Chips))
+			for _, c := range rd.Chips {
+				v := "sí"
+				if !c.OK {
+					v = "no"
+				}
+				kv = append(kv, [2]string{permissionTexts[c.Name].On, v})
+			}
+			facts(kv)
+		}
+		if len(ph.Prep) > 0 {
+			pdf.Ln(1)
+			color(pdfGraphite)
+			row([]string{"Hora (VET)", "Cómo se preparó"}, []float64{22, textW - 22}, []string{"B", "B"}, 8.5, "")
+			color(pdfInk)
+			for _, s := range ph.Prep {
+				txt := s.Label
+				if s.Later {
+					txt += " (cambio posterior)"
+				}
+				row([]string{s.Time, txt}, []float64{22, textW - 22}, []string{"I", ""}, 9, "")
+			}
+		}
+		pdf.Ln(1)
+		color(pdfGraphite)
+		pdf.SetFont("Lexend", "", 8)
+		pdf.MultiCell(textW, 4, "Lo informó el teléfono con su propio reloj; no forma parte del sello.", "", "L", false)
 	}
 
 	for _, c := range r.Calls {

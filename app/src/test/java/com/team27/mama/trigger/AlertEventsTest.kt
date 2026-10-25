@@ -3,7 +3,9 @@ package com.team27.mama.trigger
 import com.team27.mama.contract.AlertEvent
 import com.team27.mama.contract.ContractJson
 import com.team27.mama.contract.IncidentCancel
+import com.team27.mama.contract.DeviceState
 import com.team27.mama.contract.LocationUpdate
+import com.team27.mama.contract.PermissionKeys
 import com.team27.mama.contract.Trigger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -51,6 +53,16 @@ class AlertEventsTest {
         val unknown = body(Trigger.VOLUME_PATTERN, speedMps = null)
         assertFalse(unknown.contains("speed_mps"))
         assertTrue(body(Trigger.VOLUME_PATTERN, speedMps = 2.5f).contains("\"speed_mps\":2.5"))
+    }
+
+    /** The permission snapshot (#125) goes in the body when there is one, and is left out otherwise. */
+    @Test
+    fun theDeviceStateRidesAlongOnlyWhenThereIsOne() {
+        assertFalse(body(Trigger.VOLUME_PATTERN, null).contains("device_state"))
+        val state = DeviceState("2025-10-24T09:00:00.251Z", mapOf(PermissionKeys.SMS to true, PermissionKeys.MICROPHONE to false))
+        val point = AlertEvents.point(10.4961, -66.8531, 12.5f, null, 1_761_296_400_000)
+        val event = AlertEvents.alertEvent("i-1", "d-1", Trigger.VOLUME_PATTERN, 1_761_296_400_253, listOf(point), state)
+        assertEquals(state, ContractJson.decodeFromString(AlertEvent.serializer(), AlertEvents.alertBody(event)).deviceState)
     }
 
     @Test

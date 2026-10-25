@@ -453,9 +453,8 @@ func TestCentralSituationArrivesLive(t *testing.T) {
 	}
 }
 
-// While the call is on, the detail shows the turns stored so far (#97
-// appends them live), the phrase marked as soon as it is said; the family
-// page keeps them for the end of the call.
+// While the call is on, the detail shows the turns stored so far, the
+// phrase marked as soon as it is said, and so does the family page (#143).
 func TestCentralCaseShowsTurnsDuringTheCall(t *testing.T) {
 	rec := openRecord()
 	c := &rec.Calls[0]
@@ -479,8 +478,8 @@ func TestCentralCaseShowsTurnsDuringTheCall(t *testing.T) {
 	if strings.Contains(s.Sections["c-head"], "c-situation-line") || s.End || s.State != CaseCalling {
 		t.Errorf("snapshot: %+v", s)
 	}
-	if fam := Build(rec, opts); fam.Call != nil {
-		t.Error("the family page now shows the turns during the call")
+	if fam := Build(rec, opts); fam.Call == nil || len(fam.Call.Turns) != 4 {
+		t.Errorf("the family page during the call: %+v", fam.Call)
 	}
 }
 

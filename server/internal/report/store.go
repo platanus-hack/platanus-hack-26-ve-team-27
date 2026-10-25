@@ -130,14 +130,15 @@ func (s DBStore) Load(ctx context.Context, incidentID string) (Record, error) {
 	var speed sql.NullFloat64
 	var notified sql.NullTime
 	var trigger, branch string
+	var deviceState []byte
 	err = tx.QueryRowContext(ctx, `
 		SELECT i.id, i.device_id, i.trigger, i.branch, i.speed_mps, i.triggered_at, i.created_at, i.notified_at,
 		       d.phone_number, cardinality(d.family_numbers), d.duress_phrase,
-		       COALESCE(to_jsonb(d) ->> 'user_name', '')
+		       COALESCE(to_jsonb(d) ->> 'user_name', ''), i.device_state
 		FROM incidents i JOIN devices d ON d.id = i.device_id
 		WHERE i.id = $1`, incidentID).
 		Scan(&inc.ID, &inc.DeviceID, &trigger, &branch, &speed, &inc.TriggeredAt, &inc.CreatedAt, &notified,
-			&rec.Device.PhoneNumber, &rec.Device.FamilyNumbers, &rec.Device.DuressPhrase, &rec.Device.UserName)
+			&rec.Device.PhoneNumber, &rec.Device.FamilyNumbers, &rec.Device.DuressPhrase, &rec.Device.UserName, &deviceState)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Record{}, ErrUnknownIncident
 	}
@@ -147,11 +148,15 @@ func (s DBStore) Load(ctx context.Context, incidentID string) (Record, error) {
 	inc.Trigger, inc.Branch = contract.Trigger(trigger), contract.Branch(branch)
 	inc.SpeedMPS = nullFloat(speed)
 	inc.NotifiedAt = nullTime(notified)
+	rec.DeviceState = parseDeviceState(deviceState)
 
 	if rec.Points, err = loadPoints(ctx, tx, incidentID); err != nil {
 		return Record{}, err
 	}
 	if rec.Calls, err = loadCalls(ctx, tx, incidentID); err != nil {
+		return Record{}, err
+	}
+	if err = loadLiveTurns(ctx, tx, incidentID, rec.Calls); err != nil {
 		return Record{}, err
 	}
 	if rec.Seal, err = loadSeal(ctx, tx, incidentID); err != nil {
@@ -164,7 +169,51 @@ func (s DBStore) Load(ctx context.Context, incidentID string) (Record, error) {
 	if rec.Emergencies, err = loadEmergencies(ctx, tx, inc.DeviceID, from.Add(-emergencySlack), to.Add(emergencySlack)); err != nil {
 		return Record{}, err
 	}
+	if rec.PermissionEvents, err = loadPermissionEvents(ctx, tx, inc.DeviceID); err != nil {
+		return Record{}, err
+	}
 	return rec, tx.Commit()
+}
+
+// parseDeviceState decodes incidents.device_state; nil when NULL or empty.
+// The intake stored it from contract.DeviceState, whose decoding never fails.
+func parseDeviceState(raw []byte) *contract.DeviceState {
+	if len(raw) == 0 {
+		return nil
+	}
+	var state contract.DeviceState
+	if err := json.Unmarshal(raw, &state); err != nil || len(state.Permissions) == 0 {
+		return nil
+	}
+	return &state
+}
+
+// maxPermissionEvents bounds the permission events a record loads. The
+// phone sends a handful per device (one per permission at setup, then
+// changes), but the route has no auth.
+const maxPermissionEvents = 200
+
+// loadPermissionEvents reads the device's newest maxPermissionEvents
+// permission events, oldest first; nil when it has none.
+func loadPermissionEvents(ctx context.Context, tx *sql.Tx, deviceID string) ([]PermissionEvent, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT permission, granted, at, received_at FROM (
+			SELECT permission, granted, at, received_at FROM device_permission_events
+			WHERE device_id = $1 ORDER BY at DESC, permission DESC LIMIT $2
+		) newest ORDER BY at, permission`, deviceID, maxPermissionEvents)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PermissionEvent
+	for rows.Next() {
+		var e PermissionEvent
+		if err := rows.Scan(&e.Permission, &e.Granted, &e.At, &e.ReceivedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 // emergencySlack widens the incident's time span when linking offline
@@ -267,6 +316,23 @@ func (s DBStore) SaveProgress(ctx context.Context, callID int64, twilioStatus st
 	return err
 }
 
+// SaveLiveTurn stores one final phrase Twilio's real-time transcription
+// heard on the call with callSID (#143). It reports whether it stored it: a
+// repeated callback (same track and SequenceId) and an unknown callSID store
+// nothing.
+func (s DBStore) SaveLiveTurn(ctx context.Context, callSID string, t LiveTurn) (bool, error) {
+	res, err := s.pool.ExecContext(ctx, `
+		INSERT INTO call_live_turns (call_id, track, sequence_id, message, said_at)
+		SELECT id, $2, $3, $4, $5 FROM calls WHERE call_sid = $1 ORDER BY id DESC LIMIT 1
+		ON CONFLICT (call_id, track, sequence_id) DO NOTHING`,
+		callSID, t.Track, t.SequenceID, t.Message, t.SaidAt)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 // NewestIncident is the most recently received incident; ErrUnknownIncident
 // when there is none.
 func (s DBStore) NewestIncident(ctx context.Context, after time.Time) (string, error) {
@@ -354,6 +420,37 @@ func loadCalls(ctx context.Context, tx *sql.Tx, incidentID string) ([]Call, erro
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// loadLiveTurns fills LiveTurns (#143) of the calls with no post-call
+// transcript yet, ordered by Twilio's Timestamp across both tracks
+// (SequenceId orders one track only), counted from when Twilio said the call
+// was answered.
+func loadLiveTurns(ctx context.Context, tx *sql.Tx, incidentID string, calls []Call) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT t.call_id, t.track, t.message, t.said_at
+		FROM call_live_turns t JOIN calls c ON c.id = t.call_id
+		WHERE c.incident_id = $1 AND c.transcript IS NULL
+		ORDER BY t.call_id, t.said_at, t.track, t.sequence_id`, incidentID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	byID := make(map[int64]*Call, len(calls))
+	for i := range calls {
+		byID[calls[i].ID] = &calls[i]
+	}
+	for rows.Next() {
+		var id int64
+		var t LiveTurn
+		if err := rows.Scan(&id, &t.Track, &t.Message, &t.SaidAt); err != nil {
+			return err
+		}
+		if c := byID[id]; c != nil {
+			c.LiveTurns = append(c.LiveTurns, t.transcriptTurn(c.liveStart()))
+		}
+	}
+	return rows.Err()
 }
 
 func loadSeal(ctx context.Context, tx *sql.Tx, incidentID string) (*Seal, error) {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"net"
 	"net/http"
 	"slices"
@@ -145,5 +146,41 @@ func TestCentralNeedsItsKey(t *testing.T) {
 	off := config.LoadFrom(func(k string) string { return map[string]string{"CENTRAL_KEY": "k"}[k] })
 	if h, _ := newReports(off, nil, nil); h != nil {
 		t.Error("the report is off, yet its handler (and the central) exists")
+	}
+}
+
+// #143: the live transcription is off unless LIVE_TRANSCRIPTION_ENABLED, the
+// report, its database, the Twilio account and a public origin are all set;
+// TWILIO_WEBHOOK_BASE_URL wins over PUBLIC_URL.
+func TestTranscriptionURLNeedsEverything(t *testing.T) {
+	all := map[string]string{
+		"LIVE_TRANSCRIPTION_ENABLED": "true", "INCIDENT_REPORT_ENABLED": "true",
+		"TWILIO_ACCOUNT_SID": "AC1", "TWILIO_AUTH_TOKEN": "t", "PUBLIC_URL": "https://mama.example/",
+	}
+	cfg := func(drop string, extra map[string]string) config.Config {
+		return config.LoadFrom(func(k string) string {
+			if v, ok := extra[k]; ok {
+				return v
+			}
+			if k == drop {
+				return ""
+			}
+			return all[k]
+		})
+	}
+	pool := &sql.DB{} // never queried: only checked for nil
+	if got := transcriptionURL(cfg("", nil), pool); got != "https://mama.example/webhooks/twilio/transcription" {
+		t.Errorf("all set: %q", got)
+	}
+	if got := transcriptionURL(cfg("", map[string]string{"TWILIO_WEBHOOK_BASE_URL": "https://hooks.example"}), pool); got != "https://hooks.example/webhooks/twilio/transcription" {
+		t.Errorf("with TWILIO_WEBHOOK_BASE_URL: %q", got)
+	}
+	for _, drop := range []string{"LIVE_TRANSCRIPTION_ENABLED", "INCIDENT_REPORT_ENABLED", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "PUBLIC_URL"} {
+		if got := transcriptionURL(cfg(drop, nil), pool); got != "" {
+			t.Errorf("without %s: %q, want off", drop, got)
+		}
+	}
+	if got := transcriptionURL(cfg("", nil), nil); got != "" {
+		t.Errorf("without a database: %q, want off", got)
 	}
 }

@@ -20,6 +20,8 @@
 //	POST /incidents/{incident_id}/cancel   204 cancelled (also when it already was); 400 bad body
 //	                                       or path id != body incident_id; 403 incident belongs
 //	                                       to another device; 404 unknown incident
+//	POST /devices/{device_id}/permissions  204 stored (resent events ignored); 400 bad body;
+//	                                       422 device not registered
 //
 // Every route answers 503 when the server has no database, and 500 with no
 // detail when a query fails. Errors are {"error": "..."}.
@@ -46,9 +48,10 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/trace"
 )
 
-// maxBodyBytes bounds a request body. The app's alert, with its one fix, is
-// under 400 bytes and a registration under 2 KiB; 16 KiB still holds
-// maxPoints fixes indented. At 1 MiB one body held some 17,000 short fixes.
+// maxBodyBytes bounds a request body. The app's alert, with its one fix and
+// its permission snapshot, is under 1 KiB and a registration under 2 KiB;
+// 16 KiB still holds maxPoints fixes indented. At 1 MiB one body held some
+// 17,000 short fixes.
 const maxBodyBytes = 16 << 10
 
 // maxPoints bounds the fixes of one request. The app sends one per request:
@@ -115,6 +118,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /incidents", h.handleAlert)
 	mux.HandleFunc("POST /incidents/{incident_id}/points", h.handlePoints)
 	mux.HandleFunc("POST /incidents/{incident_id}/cancel", h.handleCancel)
+	mux.HandleFunc("POST /devices/{device_id}/permissions", h.handlePermissions)
 }
 
 func (h *Handler) handleDevice(w http.ResponseWriter, r *http.Request) {
@@ -177,7 +181,7 @@ func (h *Handler) handleAlert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	trace.Log(ev.IncidentID, "alert_received", "trigger", string(ev.Trigger), "branch", string(branch), "speed_mps", speed,
-		"points", len(ev.Points), "has_audio", ev.HasAudio, "new", created)
+		"points", len(ev.Points), "has_audio", ev.HasAudio, "permissions", grantedCount(ev.DeviceState), "new", created)
 	status := http.StatusOK
 	if created {
 		status = http.StatusCreated
@@ -271,6 +275,32 @@ func (h *Handler) handleCancel(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handlePermissions stores when the device's permissions were granted or
+// lost (#125). The phone resends what the server has not confirmed, so a
+// repeated event is ignored.
+func (h *Handler) handlePermissions(w http.ResponseWriter, r *http.Request) {
+	if !h.ready(w) {
+		return
+	}
+	var body contract.PermissionEvents
+	if !decode(w, r, &body) {
+		return
+	}
+	if err := validatePermissionEvents(body.Events); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	switch err := addPermissionEvents(r.Context(), h.pool, r.PathValue("device_id"), body.Events); {
+	case errors.Is(err, errUnknownDevice):
+		writeError(w, http.StatusUnprocessableEntity, "device not registered; send POST /devices first")
+		return
+	case err != nil:
+		internalError(w, "add permission events", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handoff gives a new incident to the call engine (BranchCall) or the
 // notifier (the other two) without blocking the response.
 func (h *Handler) handoff(ctx context.Context, inc Incident) {
@@ -295,6 +325,21 @@ func (h *Handler) ready(w http.ResponseWriter) bool {
 		return false
 	}
 	return true
+}
+
+// grantedCount is "granted/total" of the alert's device_state for the trace,
+// "" when it has none.
+func grantedCount(state *contract.DeviceState) string {
+	if state == nil || len(state.Permissions) == 0 {
+		return ""
+	}
+	granted := 0
+	for _, ok := range state.Permissions {
+		if ok {
+			granted++
+		}
+	}
+	return fmt.Sprintf("%d/%d", granted, len(state.Permissions))
 }
 
 // branchSpeed is the speed the branch is picked from, nil when unknown
@@ -495,6 +540,33 @@ func validatePoints(points []contract.Point) error {
 			return fmt.Errorf("points[%d]: lat/lng out of range", i)
 		case p.RecordedAt.IsZero():
 			return fmt.Errorf("points[%d]: recorded_at is required", i)
+		}
+	}
+	return nil
+}
+
+// maxPermissionEvents bounds the events of one request. The phone tracks 10
+// permissions; first-run setup sends at most one event each, and later
+// requests only what changed. Each event is a row and there is no auth.
+const maxPermissionEvents = 50
+
+// permissionName is a contract.Permission* name: snake_case, short. Names
+// the server does not know yet (a newer app) are stored, not refused.
+var permissionName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
+
+func validatePermissionEvents(events []contract.PermissionEvent) error {
+	if len(events) == 0 {
+		return errors.New("events needs at least one event")
+	}
+	if len(events) > maxPermissionEvents {
+		return fmt.Errorf("events has %d entries; send at most %d per request", len(events), maxPermissionEvents)
+	}
+	for i, e := range events {
+		switch {
+		case !permissionName.MatchString(e.Permission):
+			return fmt.Errorf("events[%d]: permission must be a snake_case name of at most 40 characters", i)
+		case e.At.IsZero():
+			return fmt.Errorf("events[%d]: at is required", i)
 		}
 	}
 	return nil

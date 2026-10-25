@@ -17,10 +17,13 @@
 <meta name="robots" content="noindex, nofollow, noarchive">
 <meta name="referrer" content="no-referrer">
 <link rel="icon" href="{{static "mama_mark.webp"}}" type="image/webp">
+<link rel="stylesheet" href="{{static "leaflet.css"}}">
 <link rel="stylesheet" href="{{static "ficha.css"}}">
 <link rel="stylesheet" href="{{static "central.css"}}">
 <script src="{{static "ficha.js"}}" defer></script>
 <script src="{{static "central.js"}}" defer></script>
+<script src="{{static "leaflet.js"}}" defer></script>
+<script src="{{static "route-map.js"}}" defer></script>
 {{end}}
 
 {{define "central-theme"}}<button type="button" class="c-theme" data-theme-toggle aria-label="Cambiar el tema"><svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.3 2a10 10 0 1 0 9.7 12.4 8 8 0 0 1-9.7-12.4Z"/></svg><svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm0-5a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm0 17a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM3 11h2a1 1 0 1 1 0 2H3a1 1 0 1 1 0-2Zm16 0h2a1 1 0 1 1 0 2h-2a1 1 0 1 1 0-2ZM5.6 4.2l1.4 1.4a1 1 0 0 1-1.4 1.4L4.2 5.6a1 1 0 0 1 1.4-1.4Zm12.8 12.8 1.4 1.4a1 1 0 0 1-1.4 1.4l-1.4-1.4a1 1 0 0 1 1.4-1.4Zm1.4-12.8a1 1 0 0 1 0 1.4l-1.4 1.4a1 1 0 1 1-1.4-1.4l1.4-1.4a1 1 0 0 1 1.4 0ZM7 17a1 1 0 0 1 0 1.4l-1.4 1.4a1 1 0 0 1-1.4-1.4L5.6 17A1 1 0 0 1 7 17Z"/></svg></button>{{end}}
@@ -91,7 +94,7 @@
 {{template "central-meta"}}
 <title>{{if .Case.Name}}{{.Case.Name}}{{else}}Reporte {{.Case.Number}}{{end}} · Central · MAMÁ</title>
 </head>
-<body class="central c-case-page" data-state="{{.Case.State}}" data-live-url="/central/r/{{.Case.ID}}/live" data-json-url="/central/r/{{.Case.ID}}/estado.json" data-open>
+<body class="central c-case-page" data-state="{{.Case.State}}" data-live-url="/central/r/{{.Case.ID}}/live" data-json-url="/central/r/{{.Case.ID}}/estado.json" data-open{{with .MapKey}} data-map-key="{{.}}"{{end}}>
 <div class="c-app">
 <header class="c-top">
   <div class="c-brand">
@@ -116,6 +119,7 @@
       <ol class="track" data-live="track">{{template "sec-track" .}}</ol>
     </div>
   </div>
+  <div class="c-prep" data-live="c-prep">{{template "sec-c-prep" .}}</div>
 </section>
 
 <main class="c-grid">
@@ -151,6 +155,19 @@
   {{- if .Live}}<span class="clock-label">desde el gesto</span><span class="big-clock ticker" data-since="{{.TriggerISO}}" data-format="clock">—</span>
   {{- else if .Elapsed}}<span class="clock-label">duró</span><span class="big-clock">{{.Elapsed}}</span>{{end -}}
 </div>
+{{- end}}
+
+{{/* How the phone was set up (#125): each permission's first grant, then
+  any later change, marked. Empty when the device sent none. */}}
+{{define "sec-c-prep" -}}
+{{if .Prep -}}
+<p data-key="prep-title" class="c-prep-title">Preparación del teléfono</p>
+<ol data-key="prep-steps" data-live-children class="c-prep-steps">
+{{- range .Prep}}
+  <li data-key="{{.Key}}" data-reveal class="c-prep-step{{if .Later}} later{{end}}{{if .Lost}} lost{{end}}"><span class="c-prep-label">{{if .Lost}}✗ {{else if .Later}}✓ {{end}}{{.Label}}</span> <span class="c-prep-time">{{.Time}}</span></li>
+{{- end}}
+</ol>
+{{- end}}
 {{- end}}
 
 {{define "sec-c-family" -}}

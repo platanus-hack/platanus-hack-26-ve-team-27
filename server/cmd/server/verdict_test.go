@@ -70,6 +70,43 @@ func TestVerdictHookStoresVerdictAndAlerts(t *testing.T) {
 	}
 }
 
+// #143: the verdict judges the post-call transcript only. A live phrase
+// Twilio heard (call_live_turns) never reaches the detector.
+func TestVerdictHookIgnoresLiveTurns(t *testing.T) {
+	pool := dbtest.Fresh(t)
+	if _, err := db.Migrate(context.Background(), pool, migrations.FS); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	prev := runVerdict
+	runVerdict = func(f func()) { f() }
+	t.Cleanup(func() { runVerdict = prev })
+
+	const inc = "00000000-0000-4000-8000-000000000003"
+	mustExec(t, pool, `INSERT INTO devices (id, phone_number, family_numbers, duress_phrase)
+		VALUES ('dev-1', '+584141234567', '{+584241112233}', 'dile a la tía Carmen que llego tarde')`)
+	mustExec(t, pool, `INSERT INTO incidents (id, device_id, trigger, branch, speed_mps, triggered_at)
+		VALUES ($1, 'dev-1', 'volume_pattern', 'call', 1.2, now())`, inc)
+	mustExec(t, pool, `INSERT INTO calls (incident_id, conversation_id, call_sid, status) VALUES ($1, 'conv_live', 'CAlive', 'done')`, inc)
+	mustExec(t, pool, `INSERT INTO call_live_turns (call_id, track, sequence_id, message, said_at)
+		SELECT id, 'inbound_track', 1, 'Oye, dile a la tía Carmen que llego tarde.', now() FROM calls WHERE call_sid = 'CAlive'`)
+
+	notifier := &recordNotifier{}
+	verdictHook(config.Config{}, pool, notifier)(context.Background(), call.Finished{
+		IncidentID: inc, ConversationID: "conv_live", Status: "done",
+		Transcript: []contract.TranscriptTurn{
+			{Role: "agent", Message: "¿Aló? Mi amor, ¿dónde estás?", TimeInCallSecs: 0},
+			{Role: "user", Message: "Todo bien, mami, ya voy llegando a la casa.", TimeInCallSecs: 4},
+		},
+	})
+	var stored string
+	if err := pool.QueryRow(`SELECT verdict FROM calls WHERE conversation_id = 'conv_live'`).Scan(&stored); err != nil || stored != string(contract.VerdictNoDuress) {
+		t.Fatalf("stored verdict = %q (err %v), want no_duress", stored, err)
+	}
+	if len(notifier.got) != 0 {
+		t.Fatalf("notified = %+v, want nobody", notifier.got)
+	}
+}
+
 // A failed call, or one without a conversation, runs no detector and alerts
 // nobody from this hook.
 func TestVerdictHookSkipsFailedCalls(t *testing.T) {

@@ -65,8 +65,10 @@ func checkPrivacyHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
 		t.Errorf("privacy headers: Referrer-Policy=%q X-Robots-Tag=%q Cache-Control=%q",
 			h.Get("Referrer-Policy"), h.Get("X-Robots-Tag"), h.Get("Cache-Control"))
 	}
-	if csp := h.Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") || strings.Contains(csp, "http") {
-		t.Errorf("CSP = %q, want only 'self'", csp)
+	// Only the map's tile images may come from elsewhere
+	// (TestCSPAllowsOnlyTheMapTiles).
+	if csp := h.Get("Content-Security-Policy"); csp != contentSecurityPolicy || !strings.Contains(csp, "default-src 'none'") {
+		t.Errorf("CSP = %q, want contentSecurityPolicy", csp)
 	}
 }
 
@@ -138,10 +140,11 @@ func TestStoreFailureIs500WithoutDetails(t *testing.T) {
 
 var urlAttr = regexp.MustCompile(`(?:src|href|action|poster|data)="([^"]*)"`)
 
-// Opening a report makes no request outside this server: every src and
-// href on the page is a path on this origin, except the "Abrir en Maps"
-// links (navigations the reader chooses, never loaded by the page), and the
-// CSS and JS load nothing either.
+// Opening a report makes no request outside this server but the map's
+// tiles: every src and href on the page is a path on this origin, except the
+// "Abrir en Maps" links (navigations the reader chooses, never loaded by the
+// page), and the page's own CSS and JS load nothing either. route-map.js
+// asks the tile server alone (TestRouteMapRequestsOnlyTiles).
 func TestPageMakesNoThirdPartyRequest(t *testing.T) {
 	body := serve(t, fakeSource{testToken: sealedRecord()}, "/i/"+testToken).Body.String()
 	for _, m := range urlAttr.FindAllStringSubmatch(body, -1) {
@@ -245,6 +248,22 @@ func TestEveryPoseIsEmbedded(t *testing.T) {
 	for _, pose := range []string{"escuchando", "llamando", "lista"} {
 		if _, err := fs.ReadFile(staticFS, "static/mama_"+pose+".webp"); err != nil {
 			t.Errorf("pose %s: %v", pose, err)
+		}
+	}
+}
+
+// The ficha and the central of one case often sit in two tabs: ficha.js
+// plays one recording at a time, pausing the others on the page and, over a
+// BroadcastChannel, in the reader's other tabs of this server. A headless
+// check of two tabs is in the PR; this keeps the guard from being dropped.
+func TestFichaJSPlaysOneRecordingAtATime(t *testing.T) {
+	b, err := fs.ReadFile(staticFS, "static/ficha.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`new BroadcastChannel("mama-audio")`, `document.addEventListener("play", function (ev) {`, "pauseOthers(ev.target)", "pauseOthers(null)"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("ficha.js lacks %q", want)
 		}
 	}
 }

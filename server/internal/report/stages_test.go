@@ -142,3 +142,43 @@ func TestRecordingOnItsWay(t *testing.T) {
 		t.Errorf("closed = %q", got)
 	}
 }
+
+// A no-duress verdict sends nothing: the family step is passed rather than
+// waited for, the panel says why, and the seal does not wait for a message.
+func TestNoDuressNeedsNoFamilyMessage(t *testing.T) {
+	rec := openRecord()
+	rec.Calls[0].Verdict = contract.VerdictNoDuress
+	rec.Incident.NotifiedAt = nil
+	st := Stages(rec, "WhatsApp", true)
+	want := "trigger=done server=done called=done rang=skipped answered=done ended=done verdict=done family=skipped sealed=current"
+	if got := stageStates(st); got != want {
+		t.Fatalf("stages = %s\nwant      %s", got, want)
+	}
+	if st[7].Label != "Familia sin aviso" || st[7].Sub != "no hizo falta" {
+		t.Errorf("family step = %+v", st[7])
+	}
+	if got := familyNote(rec, "WhatsApp", true); got != "No hizo falta avisar a la familia: no hubo coacción." {
+		t.Errorf("family note = %q", got)
+	}
+	if !verdictAndNotice(rec, rec.Calls[0].ConversationID) {
+		t.Error("the seal waits for a family message that never comes")
+	}
+}
+
+// Before the verdict the panel says the family is told once there is one;
+// after a duress verdict, that it is being told, and the seal waits for it.
+func TestFamilyNoteFollowsTheVerdict(t *testing.T) {
+	rec := openRecord()
+	rec.Incident.NotifiedAt = nil
+	rec.Calls[0].Verdict, rec.Calls[0].VerdictAt = "", nil
+	if got := familyNote(rec, "WhatsApp", true); got != "Se avisa a la familia apenas haya veredicto." {
+		t.Errorf("before the verdict: %q", got)
+	}
+	rec.Calls[0].Verdict = contract.VerdictDuress
+	if got := familyNote(rec, "WhatsApp", true); got != "Avisando a la familia…" {
+		t.Errorf("after a duress verdict: %q", got)
+	}
+	if verdictAndNotice(rec, rec.Calls[0].ConversationID) {
+		t.Error("a duress verdict let the seal go before the family message")
+	}
+}
