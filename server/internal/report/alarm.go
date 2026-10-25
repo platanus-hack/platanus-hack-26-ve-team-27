@@ -19,6 +19,7 @@ const (
 	AlarmConfirmed = "confirmed" // the verdict is duress
 	AlarmUnclear   = "unclear"   // the verdict is unclear: the family is told anyway
 	AlarmCleared   = "cleared"   // heard while the call was on, then the verdict said no duress
+	AlarmCancelled = "cancelled" // the person called the alert off: no red, whatever the verdict
 )
 
 // AlarmView is the alarm chip beside the person's name in the header: a
@@ -85,6 +86,9 @@ func firstMarked(turns []contract.TranscriptTurn, phrase string) (int, bool) {
 func alarmView(rec Record, live bool) *AlarmView {
 	h, said := phraseHeard(rec)
 	_, kind := headline(rec)
+	if c := rec.Incident.CancelledAt; c != nil {
+		return cancelledAlarm(*c, contract.Verdict(kind))
+	}
 	when := ""
 	if said {
 		when = "a los " + offset(h.secs) + " de la llamada"
@@ -140,6 +144,20 @@ func alarmView(rec Record, live bool) *AlarmView {
 	}
 	a.Pulse = a.Red() && live
 	return &a
+}
+
+// cancelledAlarm is the chip of a case the person called off from the phone
+// (#146): neutral, never red, so no flash or siren. A duress or unclear
+// verdict stays as data in the tooltip and the call panel.
+func cancelledAlarm(at time.Time, v contract.Verdict) *AlarmView {
+	hint := "La persona canceló la alerta desde el teléfono a las " + clock(at) + "."
+	switch v {
+	case contract.VerdictDuress:
+		hint += " La llamada había dado coacción."
+	case contract.VerdictUnclear:
+		hint += " El veredicto de la llamada no estaba claro."
+	}
+	return &AlarmView{Level: AlarmCancelled, Chip: "Cancelada por la persona", Sub: clock(at), Hint: hint}
 }
 
 // verdictReason is the Spanish reason of the newest call with verdict v, or

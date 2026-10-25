@@ -58,6 +58,9 @@ type Incident struct {
 	TriggeredAt time.Time  // phone clock
 	CreatedAt   time.Time  // server clock: the alert reached the server
 	NotifiedAt  *time.Time // server clock: the family message was claimed, before sending
+	// CancelledAt is when the person called the alert off from the phone
+	// (#146); nil when they did not.
+	CancelledAt *time.Time
 }
 
 // Device is what the report needs from the devices row.

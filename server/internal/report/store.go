@@ -128,17 +128,18 @@ func (s DBStore) Load(ctx context.Context, incidentID string) (Record, error) {
 	var rec Record
 	inc := &rec.Incident
 	var speed sql.NullFloat64
-	var notified sql.NullTime
+	var notified, cancelled sql.NullTime
 	var trigger, branch string
 	var deviceState []byte
 	err = tx.QueryRowContext(ctx, `
 		SELECT i.id, i.device_id, i.trigger, i.branch, i.speed_mps, i.triggered_at, i.created_at, i.notified_at,
 		       d.phone_number, cardinality(d.family_numbers), d.duress_phrase,
-		       COALESCE(to_jsonb(d) ->> 'user_name', ''), i.device_state
+		       COALESCE(to_jsonb(d) ->> 'user_name', ''), i.device_state,
+		       (to_jsonb(i) ->> 'cancelled_at')::timestamptz
 		FROM incidents i JOIN devices d ON d.id = i.device_id
 		WHERE i.id = $1`, incidentID).
 		Scan(&inc.ID, &inc.DeviceID, &trigger, &branch, &speed, &inc.TriggeredAt, &inc.CreatedAt, &notified,
-			&rec.Device.PhoneNumber, &rec.Device.FamilyNumbers, &rec.Device.DuressPhrase, &rec.Device.UserName, &deviceState)
+			&rec.Device.PhoneNumber, &rec.Device.FamilyNumbers, &rec.Device.DuressPhrase, &rec.Device.UserName, &deviceState, &cancelled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Record{}, ErrUnknownIncident
 	}
@@ -148,6 +149,7 @@ func (s DBStore) Load(ctx context.Context, incidentID string) (Record, error) {
 	inc.Trigger, inc.Branch = contract.Trigger(trigger), contract.Branch(branch)
 	inc.SpeedMPS = nullFloat(speed)
 	inc.NotifiedAt = nullTime(notified)
+	inc.CancelledAt = nullTime(cancelled)
 	rec.DeviceState = parseDeviceState(deviceState)
 
 	if rec.Points, err = loadPoints(ctx, tx, incidentID); err != nil {

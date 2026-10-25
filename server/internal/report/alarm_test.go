@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"html"
+	"io/fs"
 	"reflect"
 	"strings"
 	"testing"
@@ -226,5 +227,82 @@ func TestCentralShowsTheAlarm(t *testing.T) {
 	item.Verdict = contract.VerdictUnclear
 	if r := caseRow(item, now); r.Alarm {
 		t.Error("an unclear row is the red alarm")
+	}
+}
+
+// A case the person called off from the phone (#146) is never the red
+// alarm, whatever the verdict: a neutral chip with when they cancelled, the
+// verdict node and the phrase turn plain, no frame, no pulse. The verdict
+// stays as data in the tooltip.
+func TestCancelledCaseStepsTheAlarmDown(t *testing.T) {
+	rec := openRecord()
+	cancelled := at("2026-10-24T13:11:05Z")
+	rec.Incident.CancelledAt = &cancelled
+	opts := Options{Token: testToken, CanSeal: true, Now: at("2026-10-24T13:11:10Z")}
+	p := Build(rec, opts)
+	want := &AlarmView{Level: AlarmCancelled, Chip: "Cancelada por la persona", Sub: "09:11:05",
+		Hint: "La persona canceló la alerta desde el teléfono a las 09:11:05. La llamada había dado coacción."}
+	if !reflect.DeepEqual(p.Alarm, want) {
+		t.Fatalf("alarm = %+v\nwant  %+v", p.Alarm, want)
+	}
+	if p.Alarm.Red() {
+		t.Error("a cancelled case is the red alarm")
+	}
+	if v := p.Stages[6]; v.Key != "stage-verdict" || v.Alarm || v.Sub != "Coacción" {
+		t.Errorf("verdict node %+v: want the verdict, not the alarm", v)
+	}
+	if !p.Call.Turns[3].Phrase || p.Call.Turns[3].Alarm {
+		t.Errorf("phrase turn %+v: want marked, not red", p.Call.Turns[3])
+	}
+	s, err := RenderSections(rec, opts, FamilySections)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := s.Sections["header"]
+	for _, w := range []string{`data-alarm-level="cancelled"`, "Cancelada por la persona", `role="status"`} {
+		if !strings.Contains(head, w) {
+			t.Errorf("header lacks %q:\n%s", w, head)
+		}
+	}
+	for _, bad := range []string{"alarm-frame", " pulse", `role="alert"`} {
+		if strings.Contains(head, bad) {
+			t.Errorf("header has %q:\n%s", bad, head)
+		}
+	}
+
+	// The central's row for it is no red alarm either.
+	item := CaseItem{ID: testIncidentID, Branch: contract.BranchCall, Cancelled: true, Verdict: contract.VerdictDuress,
+		TriggeredAt: cancelled, CreatedAt: cancelled, LastAt: cancelled}
+	if r := caseRow(item, cancelled.Add(time.Minute)); r.Alarm || r.AlarmPulse || r.State != CaseCancelled {
+		t.Errorf("cancelled row = %+v", r)
+	}
+}
+
+// The central detail on a phone clamps the call summary to three lines with
+// a "Ver más" that opens it (ficha.js keeps the open state on <body>).
+func TestCentralSummaryCanOpen(t *testing.T) {
+	rec := openRecord()
+	rec.Calls[0].Context = &CallContext{Situacion: "Dijo la frase de alerta en medio de una conversación normal."}
+	opts := Options{Token: testToken, Channel: "WhatsApp", CanSeal: true, Now: at("2026-10-24T13:11:10Z")}
+	d := buildCentralCase(rec, CaseExtras{}, opts)
+	s, err := centralCaseSnapshot(d, opts.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := s.Sections["c-head"]
+	for _, w := range []string{`class="c-situation-line" data-summary`, `data-summary-toggle hidden`} {
+		if !strings.Contains(head, w) {
+			t.Errorf("central header lacks %q:\n%s", w, head)
+		}
+	}
+	b, err := fs.ReadFile(staticFS, "static/ficha.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(b)
+	for _, w := range []string{`[data-summary-toggle]`, `data-summary-open`} {
+		if !strings.Contains(js, w) {
+			t.Errorf("ficha.js lacks %q", w)
+		}
 	}
 }

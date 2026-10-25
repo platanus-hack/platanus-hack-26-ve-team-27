@@ -178,7 +178,20 @@
   // afterUpdate fills the track's line up to the last step that happened,
   // half way into the step the case waits for, and brings that step into
   // view on a phone, where the track scrolls sideways.
+  // summary shows "Ver más" under the central's call summary when a phone
+  // clamps it to three lines (central.css), and "Ver menos" once open. The
+  // open state lives on <body>, which the live updates leave alone.
+  function summary() {
+    var p = document.querySelector("[data-summary]"), b = document.querySelector("[data-summary-toggle]");
+    if (!p || !b) { return; }
+    var open = body.hasAttribute("data-summary-open");
+    b.hidden = !open && p.scrollHeight <= p.clientHeight + 1;
+    b.textContent = open ? "Ver menos" : "Ver más";
+    b.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
   function afterUpdate() {
+    summary();
     var track = document.querySelector('[data-live="track"]');
     var fill = document.querySelector("[data-track-fill]");
     var scroller = document.querySelector("[data-track-scroll]");
@@ -238,6 +251,11 @@
       return;
     }
     if (ev.target.closest("[data-expand]")) { body.setAttribute("data-expanded", ""); return; }
+    if (ev.target.closest("[data-summary-toggle]")) {
+      if (body.hasAttribute("data-summary-open")) { body.removeAttribute("data-summary-open"); } else { body.setAttribute("data-summary-open", ""); }
+      summary();
+      return;
+    }
     var el = ev.target.closest("[data-seek]");
     if (!el) { return; }
     var audio = audioOf(el.getAttribute("data-call"));

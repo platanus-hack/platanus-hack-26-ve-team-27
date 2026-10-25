@@ -354,14 +354,52 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
   .c-place .route { aspect-ratio: 16 / 10; }
 }
 @media (max-width: 599px) {
+  .c-app { padding-bottom: calc(var(--s-xl) + env(safe-area-inset-bottom)); }
   .c-back span, .pdf-text { display: none; }
   .c-case-page .wordmark > span { display: none; }
   .c-top-right { gap: 6px; }
   .c-back { padding: 0 10px; }
   .c-counts { grid-template-columns: repeat(5, minmax(84px, 1fr)); }
   .c-name { font-size: 18px; }
-  .c-name-big { font-size: 24px; line-height: 30px; }
-  .c-hero .mama { width: 60px; height: 60px; }
+  .c-row .c-state { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 14px; padding: 4px 12px 4px 10px; }
+
+  /* the case's toolbar: one line of 44px round buttons, the state chip small */
+  .c-case-page .c-top { gap: 6px; }
+  .c-case-page .c-brand { flex: none; }
+  .c-case-page .c-brand .wordmark { display: none; }
+  .c-case-page .c-back { width: 44px; padding: 0; justify-content: center; margin: 0; }
+  .c-case-page .c-top-right { flex: 1; min-width: 0; justify-content: flex-end; gap: 4px; }
+  .c-case-page .c-top-right .status { min-width: 0; margin-right: auto; }
+  .c-case-page .c-top-right .chip { padding: 3px 8px; font-size: 11px; letter-spacing: .04em; }
+  .c-case-page .c-top-right .pdf-btn { width: 44px; padding: 0; flex: none; }
+  .c-case-page .c-top-right .c-theme { flex: none; }
+
+  /* the hero, stacked: who and in what state, then the summary */
+  .c-hero {
+    display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 6px 10px;
+    grid-template-areas: "eyebrow eyebrow eyebrow" "mama name name" "alarm alarm alarm" "sub sub clock" "summary summary summary" "more more more";
+    padding: 4px 0 8px;
+  }
+  .c-hero .c-hero-text, .c-hero .title-row { display: contents; }
+  .c-hero .mama { grid-area: mama; width: 40px; height: 40px; }
+  .c-eyebrow { grid-area: eyebrow; gap: 4px 8px; min-width: 0; }
+  .c-eyebrow .c-state { font-size: 13px; line-height: 18px; padding: 4px 12px 4px 10px; }
+  .c-when { font-size: 13px; line-height: 18px; }
+  .c-name-big { grid-area: name; margin-top: 0; font-size: 24px; line-height: 30px; }
+  .c-hero .alarm-wrap { grid-area: alarm; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+  .c-sub { grid-area: sub; margin-top: 0; font-size: 14px; line-height: 20px; gap: 0 10px; min-width: 0; }
+  .c-hero .head-clock { grid-area: clock; flex-direction: row; align-items: baseline; gap: 4px; align-self: end; }
+  .c-hero .clock-label { font-size: 12px; }
+  .c-hero .big-clock { font-size: 16px; line-height: 20px; }
+  .c-situation-line {
+    grid-area: summary; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+    margin-top: 2px; padding: 0 12px 0 10px; font-size: 15px; line-height: 21px;
+    /* the vertical room is a transparent border, outside the clamp's clip, so
+       no fourth line peeks through the padding */
+    border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+  }
+  body[data-summary-open] .c-situation-line { display: block; -webkit-line-clamp: unset; }
+
 }
 
 /* ---------------------------------------------------------------- phone preparation (#125)
@@ -465,6 +503,8 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
   .c-trace-page .c-app { height: auto; display: block; }
 }
 .c-trace-link { padding: 0 14px; font-weight: 500; }
+.c-trace-link svg { display: none; }
+.c-summary-more { display: none; }
 .tr { display: flex; flex-direction: column; gap: 14px; padding-bottom: 32px; }
 .tr-block { background: var(--surface-low); border-radius: var(--r-l); padding: 14px 18px 16px; }
 .tr-block h2 { font-weight: 500; font-size: 13px; line-height: 18px; letter-spacing: .4px; color: var(--primary); text-transform: uppercase; margin-bottom: 8px; }
@@ -527,3 +567,27 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
 .c-sound[aria-pressed="false"] .i-off { display: block; }
 .c-sound[aria-pressed="false"] { color: var(--on-surface-variant); }
 .c-hero-text .title-row { gap: 4px 12px; }
+/* a cancelled case: the state chip and the line under the name already say
+   so, and the alarm chip would only repeat it */
+.c-hero .alarm-cancelled, .c-hero .alarm-cancelled + .alarm-sub { display: none; }
+
+/* phones, after the base rules above that they override */
+@media (max-width: 599px) {
+  .c-trace-link svg { display: block; }
+  .c-trace-link .trace-text { display: none; }
+  .c-summary-more {
+    grid-area: more; justify-self: start; display: inline-flex; align-items: center; min-height: 32px; padding: 0 2px;
+    border: 0; background: none; color: var(--primary); font: inherit; font-weight: 700; font-size: 14px; cursor: pointer;
+  }
+  .c-summary-more[hidden] { display: none; }
+  /* how the phone was set up: one scrolling line of chips */
+  .c-prep { display: block; }
+  .c-prep-title { margin-bottom: 6px; }
+  .c-prep-steps { flex-wrap: nowrap; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter) 2px; }
+  .c-prep-steps::-webkit-scrollbar { display: none; }
+  .c-prep-step { flex: none; align-items: center; padding: 4px 10px; border-radius: 999px; background: var(--surface-low); font-size: 13px; line-height: 18px; }
+  .c-prep-step + .c-prep-step::before { content: none; }
+  .c-prep-step.later .c-prep-label { padding: 0; background: none; color: var(--primary); }
+  .c-prep-step.lost .c-prep-label { color: var(--warn); }
+  .c-prep-time { font-size: 12px; }
+}

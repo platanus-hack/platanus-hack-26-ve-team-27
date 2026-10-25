@@ -312,3 +312,17 @@ func TestLoadReadsUserName(t *testing.T) {
 		t.Errorf("Build UserName = %q", p.UserName)
 	}
 }
+
+// Load reads when the person cancelled the alert from the phone (#146).
+func TestLoadReadsTheCancellation(t *testing.T) {
+	pool := newDB(t)
+	s := NewDBStore(pool)
+	if rec, err := s.Load(context.Background(), testIncidentID); err != nil || rec.Incident.CancelledAt != nil {
+		t.Fatalf("uncancelled: %v %v", rec.Incident.CancelledAt, err)
+	}
+	exec(t, pool, `UPDATE incidents SET cancelled_at = '2026-10-24T13:11:05Z'`)
+	rec, err := s.Load(context.Background(), testIncidentID)
+	if err != nil || rec.Incident.CancelledAt == nil || !rec.Incident.CancelledAt.Equal(at("2026-10-24T13:11:05Z")) {
+		t.Fatalf("cancelled: %v %v", rec.Incident.CancelledAt, err)
+	}
+}
