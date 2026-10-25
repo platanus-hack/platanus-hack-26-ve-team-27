@@ -1,17 +1,15 @@
 package sms
 
 import (
-	"crypto/hmac"
-	"crypto/sha1"
-	"encoding/base64"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
+
+	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/twiliosig"
 )
 
 // Twilio is the InboundSMSProvider for Twilio's Messaging webhook: a form
@@ -54,11 +52,11 @@ func (t *Twilio) Parse(r *http.Request) (InboundSMS, error) {
 		// A body that does not parse cannot be verified, so it is unsigned.
 		return InboundSMS{}, fmt.Errorf("%w: body is not a form", ErrSignature)
 	}
-	got, err := base64.StdEncoding.DecodeString(r.Header.Get("X-Twilio-Signature"))
-	if err != nil || len(got) == 0 {
-		return InboundSMS{}, fmt.Errorf("%w: missing or malformed X-Twilio-Signature", ErrSignature)
+	sig := r.Header.Get(twiliosig.Header)
+	if sig == "" {
+		return InboundSMS{}, fmt.Errorf("%w: missing X-Twilio-Signature", ErrSignature)
 	}
-	if !hmac.Equal(got, twilioSignature(t.authToken, t.baseURL+r.URL.RequestURI(), params)) {
+	if !twiliosig.Valid(t.authToken, t.baseURL+r.URL.RequestURI(), params, sig) {
 		return InboundSMS{}, ErrSignature
 	}
 	in := InboundSMS{From: params.Get("From"), Body: params.Get("Body")}
@@ -66,30 +64,6 @@ func (t *Twilio) Parse(r *http.Request) (InboundSMS, error) {
 		return InboundSMS{}, fmt.Errorf("%w: From and Body are required", ErrFormat)
 	}
 	return in, nil
-}
-
-// twilioSignature is HMAC-SHA1 over the full URL followed by every POST param
-// as name+value, names sorted; a repeated name contributes its distinct values
-// sorted, as Twilio's own validators (twilio-python, twilio-node) compute it.
-func twilioSignature(authToken, fullURL string, params url.Values) []byte {
-	var b strings.Builder
-	b.WriteString(fullURL)
-	names := make([]string, 0, len(params))
-	for name := range params {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	for _, name := range names {
-		values := slices.Clone(params[name])
-		slices.Sort(values)
-		for _, v := range slices.Compact(values) {
-			b.WriteString(name)
-			b.WriteString(v)
-		}
-	}
-	mac := hmac.New(sha1.New, []byte(authToken))
-	mac.Write([]byte(b.String()))
-	return mac.Sum(nil)
 }
 
 // Reply answers with TwiML: one <Message> to the sender, or an empty

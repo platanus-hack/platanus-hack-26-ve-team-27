@@ -307,3 +307,14 @@ func TestNotifySelfIsOffUnlessTrueOr1(t *testing.T) {
 		t.Errorf("String() = %s, want NOTIFY_SELF=true", s)
 	}
 }
+
+func TestLiveTranscriptionIsOffUnlessTrueOr1(t *testing.T) {
+	for v, want := range map[string]bool{"": false, "yes": false, "0": false, "true": true, "1": true} {
+		if got := LoadFrom(envFrom(map[string]string{"LIVE_TRANSCRIPTION_ENABLED": v})).Report.LiveTranscription; got != want {
+			t.Errorf("LIVE_TRANSCRIPTION_ENABLED=%q: %v, want %v", v, got, want)
+		}
+	}
+	if s := LoadFrom(envFrom(map[string]string{"LIVE_TRANSCRIPTION_ENABLED": "1"})).String(); !strings.Contains(s, "LIVE_TRANSCRIPTION_ENABLED=true") {
+		t.Errorf("String() = %s, want LIVE_TRANSCRIPTION_ENABLED=true", s)
+	}
+}

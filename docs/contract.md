@@ -504,7 +504,8 @@ Oct 24); `0006_notify_deliveries.sql` adds `notify_deliveries` (#76); `0007_devi
 `0008_offline_incidents.sql` adds `offline` to the `incidents.trigger` check (#59);
 `0009_call_ficha.sql` adds `ficha` (JSONB) to `calls` (#106);
 `0010_device_permissions.sql` adds `device_state` (JSONB) to `incidents` and the
-`device_permission_events` table (#125). The
+`device_permission_events` table (#125); `0011_call_live_turns.sql` adds
+`call_live_turns` (#143). The
 server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
@@ -521,6 +522,7 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 | `call_recordings` | `call_id` | a call's recording: `content_type`, `audio` (bytes), `sha256`, `stored_at` (#76) |
 | `incident_seals` | `incident_id` | the seal: `sealed_at`, `document` (exact bytes of `ficha.json`), `signature`, `public_key` (#76) |
 | `call_progress` | `call_id` | what the call engine saw polling Twilio: last `twilio_status`, `ringing_at`, `answered_at` (server clock, #76) |
+| `call_live_turns` | `(call_id, track, sequence_id)` | what Twilio's real-time transcription heard while the call lasted (#143): `track` (`inbound_track` = the person called, `outbound_track` = "Mamá"), `message`, `said_at` (Twilio's `Timestamp`), `received_at`. Provisional: shown until `calls.transcript` arrives, never judged, never sealed |
 | `notify_deliveries` | identity; unique `message_id` | each family message the notifier sent: masked `recipient`, `channel`, provider `message_id` (Kapso wamid), `status` (`accepted`, `failed`, `sent`, `delivered`, `read`), `error`, `sent_at`, `delivered_at`, `read_at` (#76) |
 | `device_permission_events` | `(device_id, permission, at)` | when each permission of a device was granted or lost: `granted`, `at` (phone clock), `received_at` (#125) |
 | `schema_migrations` | `version` | applied migration files |
@@ -662,6 +664,25 @@ default; then every route below answers `404`). Code:
     the secret the route is not mounted.
   - Statuses only move forward, and a failure never overrides "read".
   - Other events and unknown message ids answer `200`.
+- **The conversation while it happens (#143).** With
+  `LIVE_TRANSCRIPTION_ENABLED=true`, the Twilio account and a public origin
+  (`TWILIO_WEBHOOK_BASE_URL`, else `PUBLIC_URL`), the call engine starts
+  Twilio's real-time transcription when Twilio says the call was answered:
+  `POST /2010-04-01/Accounts/{sid}/Calls/{CallSid}/Transcriptions.json` with
+  `Track=both_tracks`, `LanguageCode=es-US`, final results only.
+  - Twilio posts each event to `POST /webhooks/twilio/transcription`, a form
+    signed in `X-Twilio-Signature` over that exact URL with
+    `TWILIO_AUTH_TOKEN`. A bad signature answers `403`.
+  - Each final `transcription-content` (its `TranscriptionData` JSON
+    `transcript`, `Track`, `SequenceId`, `Timestamp`) is stored in
+    `call_live_turns` on the call with that `CallSid`. A repeated callback is
+    ignored. Partial results, other events and unknown calls answer `200`.
+  - `transcription-error`, or a refused start, is only logged: the call goes
+    on and the page waits for the post-call transcript, as before.
+  - The page and the central show those turns while the call is on, ordered
+    by `Timestamp` across both tracks, none marked as the phrase. The
+    post-call transcript replaces them in the same card. The verdict, the PDF
+    and the seal read only `calls.transcript`.
 - **Live.** `GET /i/{token}/live` is a Server-Sent Events stream. It sends
   an `update` event at once and then one each time the case changes; the
   server re-reads the case every second. The event data is JSON:
@@ -686,6 +707,7 @@ default; then every route below answers `404`). Code:
   not in `ficha.json`:
   - Twilio's ringing and answer times (`call_progress`). The engine's
     optional `Progress` hook stores them while the report is on.
+  - The live turns of a call that is still on (`call_live_turns`, #143).
   - Retries (each `calls` row).
   - The WebRTC fallback, derived: no call connected, and the last one failed
     after the retry or on a non-+58 number.

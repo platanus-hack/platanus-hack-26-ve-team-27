@@ -156,6 +156,9 @@ func (s DBStore) Load(ctx context.Context, incidentID string) (Record, error) {
 	if rec.Calls, err = loadCalls(ctx, tx, incidentID); err != nil {
 		return Record{}, err
 	}
+	if err = loadLiveTurns(ctx, tx, incidentID, rec.Calls); err != nil {
+		return Record{}, err
+	}
 	if rec.Seal, err = loadSeal(ctx, tx, incidentID); err != nil {
 		return Record{}, err
 	}
@@ -313,6 +316,23 @@ func (s DBStore) SaveProgress(ctx context.Context, callID int64, twilioStatus st
 	return err
 }
 
+// SaveLiveTurn stores one final phrase Twilio's real-time transcription
+// heard on the call with callSID (#143). It reports whether it stored it: a
+// repeated callback (same track and SequenceId) and an unknown callSID store
+// nothing.
+func (s DBStore) SaveLiveTurn(ctx context.Context, callSID string, t LiveTurn) (bool, error) {
+	res, err := s.pool.ExecContext(ctx, `
+		INSERT INTO call_live_turns (call_id, track, sequence_id, message, said_at)
+		SELECT id, $2, $3, $4, $5 FROM calls WHERE call_sid = $1 ORDER BY id DESC LIMIT 1
+		ON CONFLICT (call_id, track, sequence_id) DO NOTHING`,
+		callSID, t.Track, t.SequenceID, t.Message, t.SaidAt)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 // NewestIncident is the most recently received incident; ErrUnknownIncident
 // when there is none.
 func (s DBStore) NewestIncident(ctx context.Context, after time.Time) (string, error) {
@@ -400,6 +420,37 @@ func loadCalls(ctx context.Context, tx *sql.Tx, incidentID string) ([]Call, erro
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// loadLiveTurns fills LiveTurns (#143) of the calls with no post-call
+// transcript yet, ordered by Twilio's Timestamp across both tracks
+// (SequenceId orders one track only), counted from when Twilio said the call
+// was answered.
+func loadLiveTurns(ctx context.Context, tx *sql.Tx, incidentID string, calls []Call) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT t.call_id, t.track, t.message, t.said_at
+		FROM call_live_turns t JOIN calls c ON c.id = t.call_id
+		WHERE c.incident_id = $1 AND c.transcript IS NULL
+		ORDER BY t.call_id, t.said_at, t.track, t.sequence_id`, incidentID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	byID := make(map[int64]*Call, len(calls))
+	for i := range calls {
+		byID[calls[i].ID] = &calls[i]
+	}
+	for rows.Next() {
+		var id int64
+		var t LiveTurn
+		if err := rows.Scan(&id, &t.Track, &t.Message, &t.SaidAt); err != nil {
+			return err
+		}
+		if c := byID[id]; c != nil {
+			c.LiveTurns = append(c.LiveTurns, t.transcriptTurn(c.liveStart()))
+		}
+	}
+	return rows.Err()
 }
 
 func loadSeal(ctx context.Context, tx *sql.Tx, incidentID string) (*Seal, error) {
