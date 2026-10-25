@@ -46,6 +46,13 @@
   --surface-high: #EAEAE0;        /* PaperHigh */
   --surface-highest: #E4E4DA;     /* PaperHighest */
   --glow: rgba(74, 84, 0, 0.28);  /* primary, translucent */
+  /* Warning amber, page-only (#125): the app has no warning state, so
+     Theme.kt has no such color. Never red: a missing permission is not an error. */
+  --warn: #7A5700;                /* text on paper */
+  --warn-dot: #F2B200;
+  --on-warn: #181918;
+  --warn-container: #FFEBB8;
+  --on-warn-container: #3D2B00;
 
   /* MamaShapes and MamaSpacing */
   --r-s: 12px; --r-m: 16px; --r-l: 24px;
@@ -82,6 +89,11 @@
     --surface-high: #2E2F2B;        /* NightHigh */
     --surface-highest: #393A35;     /* NightHighest */
     --glow: rgba(239, 254, 0, 0.30);
+    --warn: #FFC84A;
+    --warn-dot: #FFC84A;
+    --on-warn: #181918;
+    --warn-container: #4A3800;
+    --on-warn-container: #FFEBB8;
   }
 }
 
@@ -203,6 +215,36 @@ body[data-open] .mama { animation: float 5s ease-in-out infinite; }
 .node-current .node-dot::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 3px solid var(--primary); animation: ping 1.4s var(--ease) infinite; }
 .node-current .node-time { color: var(--primary); font-weight: 700; }
 .node[data-stage="stage-verdict"].node-done .node-sub { color: var(--primary); font-weight: 700; font-size: 13px; }
+
+/* "Teléfono listo" (#125): a tap opens the permissions, in a popover. */
+.node-btn {
+  display: flex; flex-direction: column; align-items: center; width: 100%; min-height: 44px;
+  padding: 0; border: 0; background: none; cursor: pointer; border-radius: var(--r-s); text-align: center;
+}
+.node-btn:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.node-btn .node-sub { text-decoration: underline dotted; text-underline-offset: 3px; }
+.node-warn .node-dot { background: var(--warn-dot); border-color: var(--warn-dot); color: var(--on-warn); }
+.node-warn .node-sub { color: var(--warn); font-weight: 700; }
+.ready-pop { display: none; }
+.ready-pop:popover-open {
+  display: block; width: min(92vw, 400px); max-height: min(80vh, 560px); overflow: auto;
+  margin: auto; padding: var(--s-m) var(--s-m) var(--s-s); border: 1px solid var(--outline-variant); border-radius: var(--r-l);
+  background: var(--surface-high); color: var(--on-background); box-shadow: 0 18px 48px rgba(0, 0, 0, .35); text-align: left;
+}
+.ready-pop::backdrop { background: rgba(0, 0, 0, .35); }
+.ready-title { font-weight: 700; font-size: 18px; line-height: 24px; }
+.ready-when { color: var(--on-surface-variant); font-size: 13px; line-height: 18px; margin-top: 2px; }
+.ready-warn { margin-top: 10px; padding: 8px 12px; border-radius: var(--r-s); background: var(--warn-container); color: var(--on-warn-container); font-weight: 500; font-size: 14px; line-height: 20px; }
+.ready-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.perm {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 12px 4px 10px; border-radius: 999px;
+  font-size: 14px; line-height: 18px; font-weight: 500;
+}
+.perm-mark { font-weight: 700; }
+.perm-ok { background: var(--primary-container); color: var(--on-primary-container); }
+.perm-missing { background: var(--warn-container); color: var(--on-warn-container); }
+.perm-off { background: var(--surface-highest); color: var(--on-surface-variant); }
+.ready-close { display: block; margin: 12px 0 0 auto; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; background: none; color: var(--primary); font-weight: 500; cursor: pointer; }
 
 /* ---------------------------------------------------------------- panels */
 
