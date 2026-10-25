@@ -190,9 +190,10 @@ main() {
   # Nothing secret inside.
   local bad passwords=()
   bad="$(unzip -Z1 "$apk" | check_apk_entries)" || die "the APK contains signing material or env files:"$'\n'"$bad"
-  # A read loop, not mapfile: macOS ships bash 3.2, which has no mapfile.
+  # A read loop, not mapfile: macOS ships bash 3.2, which has no mapfile. The -n test keeps a
+  # last line with no trailing newline (GNU sed passes one through from keystore.properties).
   local line
-  while IFS= read -r line; do passwords+=("$line"); done < <(signing_passwords)
+  while IFS= read -r line || [[ -n "$line" ]]; do passwords+=("$line"); done < <(signing_passwords)
   bad="$(check_apk_contents "$work/apk" ${passwords[@]+"${passwords[@]}"})" ||
     die "the APK contains a key-shaped string or a signing password in:"$'\n'"$bad"
 
