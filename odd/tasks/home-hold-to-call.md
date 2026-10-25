@@ -41,6 +41,7 @@ Add a home screen to the app, based on variant A of the throwaway prototype (art
 - [x] T2 Pure home model (hold → phases, failure timeout, min processing time), with tests. Route: delegated writer.
 - [x] T3 `HomeScreen` with the animations, `Route.Home`, start-destination and Setup "Continuar" wiring, `@Preview`. Route: delegated writer.
 - [x] T4 Docs: `app/UI_RULES.md` gets a Home entry. Record commits here. Route: delegated writer.
+- [x] T5 Fix the two advisory review findings, with tests. (1) `R3-cancel-readopt`: Cancelled must not re-adopt the cancelled incident while progress is still Sending or Active. (2) `R3-stale-sawActive-on-adopt`: `adopt()` must reset `sawStarted`/`sawActive`. Reason: (1) breaks the acceptance line "Fue sin querer ... then returns to idle". Route: delegated writer.
 
 Route evidence: the writer trigger fires (4+ non-trivial files across trigger, ui and navigation), so all four tasks go to one bounded writer.
 
@@ -59,3 +60,4 @@ Route evidence: the writer trigger fires (4+ non-trivial files across trigger, u
 - T4 done: `app/UI_RULES.md` Home entry.
 - Route: one delegated writer, as planned. Verification: `scripts/build.sh` green; UI_RULES self-check grep prints nothing.
 - Not done: no on-device run (no phone in this environment).
+- T5 done: a cancel now blocks adopt until progress is seen idle (a stale Sending/Active no longer revives the cancelled incident), and adopt() sets sawStarted/sawActive to match what it adopts.

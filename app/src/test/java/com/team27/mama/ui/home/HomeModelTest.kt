@@ -212,6 +212,31 @@ class HomeModelTest {
     }
 
     @Test
+    fun aCancelledIncidentIsNotAdoptedAgainWhileTheServiceIsStillWindingDown() {
+        hold()
+        advance(300, TriggerProgress.Sending)
+        model.cancel(now)
+        advance(HomeModel.CANCELLED_MS, TriggerProgress.Sending)
+        advance(500, TriggerProgress.Active)
+        assertEquals(HomePhase.Idle, phase)
+        advance(500, TriggerProgress.Idle)
+        advance(500, TriggerProgress.Sending)
+        assertEquals(HomePhase.Processing, phase)
+    }
+
+    @Test
+    fun anAdoptedIncidentDoesNotInheritTheActiveFlagOfAnEarlierOne() {
+        hold()
+        advance(HomeModel.MIN_PROCESSING_MS, TriggerProgress.Active)
+        advance(500, TriggerProgress.Idle)
+        advance(100, TriggerProgress.Sending)
+        assertEquals(HomePhase.Processing, phase)
+        advance(HomeModel.MIN_PROCESSING_MS, TriggerProgress.Idle)
+        assertEquals(HomePhase.Failed, phase)
+        assertEquals(HomeFailure.NotDelivered, model.state.failure)
+    }
+
+    @Test
     fun formatsTheElapsedTimeAsMinutesAndSeconds() {
         assertEquals("00:00", HomeModel.formatElapsed(0))
         assertEquals("00:59", HomeModel.formatElapsed(59))

@@ -49,6 +49,9 @@ class HomeModel(private val requestTrigger: () -> Unit) {
     private var sawStarted = false
     private var sawActive = false
 
+    /** Set by a cancel: the service may still report the cancelled incident, so do not adopt it until it reports idle. */
+    private var cancelled = false
+
     /** The finger went down on the portrait. */
     fun pressStart(nowMs: Long) {
         if (state.phase != HomePhase.Idle) return
@@ -71,6 +74,7 @@ class HomeModel(private val requestTrigger: () -> Unit) {
     fun cancel(nowMs: Long) {
         if (state.phase != HomePhase.Processing && state.phase != HomePhase.Listening) return
         endedAt = nowMs
+        cancelled = true
         state = state.copy(phase = HomePhase.Cancelled, armProgress = 0f, listeningSeconds = 0)
     }
 
@@ -80,7 +84,10 @@ class HomeModel(private val requestTrigger: () -> Unit) {
         if (progress == TriggerProgress.Active) sawActive = true
         state = state.copy(progress = progress)
         when (state.phase) {
-            HomePhase.Idle -> adopt(nowMs, progress)
+            HomePhase.Idle -> when {
+                cancelled -> if (progress == TriggerProgress.Idle) cancelled = false
+                else -> adopt(nowMs, progress)
+            }
             HomePhase.Arming -> {
                 val fraction = ((nowMs - armedAt).toFloat() / HOLD_MS).coerceIn(0f, 1f)
                 if (fraction >= 1f) request(nowMs) else state = state.copy(armProgress = fraction)
@@ -107,10 +114,14 @@ class HomeModel(private val requestTrigger: () -> Unit) {
             TriggerProgress.Idle -> Unit
             TriggerProgress.Sending -> {
                 requestedAt = nowMs
+                sawStarted = true
+                sawActive = false
                 state = state.copy(phase = HomePhase.Processing, armProgress = 1f)
             }
             TriggerProgress.Active -> {
                 listeningAt = nowMs
+                sawStarted = true
+                sawActive = true
                 state = state.copy(phase = HomePhase.Listening, armProgress = 1f, listeningSeconds = 0)
             }
         }
@@ -118,6 +129,7 @@ class HomeModel(private val requestTrigger: () -> Unit) {
 
     private fun request(nowMs: Long) {
         requestedAt = nowMs
+        cancelled = false
         sawStarted = false
         sawActive = false
         state = state.copy(phase = HomePhase.Processing, armProgress = 1f, listeningSeconds = 0, failure = null)
