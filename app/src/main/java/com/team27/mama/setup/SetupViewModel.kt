@@ -180,8 +180,13 @@ class SetupViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun saveMamaContact(): SetupTask {
-        val number = PhoneNumbers.normalize(BuildConfig.TWILIO_NUMBER)
-            ?: return failed("Esta versión de la app no trae el número de Mamá. Pide una versión nueva al equipo.")
+        // A build without -Pmama.twilioNumber (debug only: release builds require it) has no number
+        // to save. Setup goes on like a skipped permission: the call still works, as an unknown number.
+        val number = PhoneNumbers.normalize(BuildConfig.TWILIO_NUMBER) ?: run {
+            Log.w(TAG, "no Twilio number in this build; skipping the Mamá contact")
+            _state.update { it.copy(mamaInContacts = false) }
+            return SetupTask(TaskStatus.DONE)
+        }
         if (!hasPermission(Manifest.permission.WRITE_CONTACTS) || !hasPermission(Manifest.permission.READ_CONTACTS)) {
             // "Seguir sin este permiso" promised setup goes on: the call still works, as an unknown number.
             if (_state.value.permissions.statusOf(SetupStep.CONTACTS) == StepStatus.SKIPPED) {

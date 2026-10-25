@@ -44,6 +44,20 @@ class OfflineFallbackTest {
     }
 
     @Test
+    fun noNetworkAtAllSkipsTheOnlineAlertOnlyWithTheFlag() {
+        assertTrue(OfflineFallback.skipsOnlineAlert(ChannelOverride.AUTO, emergencyEnabled = true, hasNetwork = false))
+        assertFalse(OfflineFallback.skipsOnlineAlert(ChannelOverride.AUTO, emergencyEnabled = true, hasNetwork = true))
+        assertFalse(OfflineFallback.skipsOnlineAlert(ChannelOverride.AUTO, emergencyEnabled = false, hasNetwork = false))
+    }
+
+    @Test
+    fun withTheFlagTheFirstFailedAlertGoesOfflineWithoutRetries() {
+        val retries = listOf(1_000L, 2_000L)
+        assertEquals(emptyList<Long>(), OfflineFallback.alertRetryDelaysMs(emergencyEnabled = true, retries))
+        assertEquals(retries, OfflineFallback.alertRetryDelaysMs(emergencyEnabled = false, retries))
+    }
+
+    @Test
     fun holdsWhileDeliveringAndReleasesOnAck() = runTest {
         val controls = FakeControls(EmergencyPhase.SEARCHING_NEARBY)
         var released = false

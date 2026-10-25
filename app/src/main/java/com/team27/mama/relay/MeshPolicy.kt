@@ -6,6 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 enum class MeshMode { OFF, APP_ONLY, SERVICE }
@@ -22,6 +23,11 @@ fun EmergencyPhase.keepsMeshOn(): Boolean = this != EmergencyPhase.IDLE && this 
 /**
  * Applies [meshMode] on every emission of any input (no distinctUntilChanged), so a service start
  * refused in the background is retried on the next app open. The service call comes first.
+ *
+ * [bluetoothOn] follows the radio: the gateway keeps reporting itself running after Bluetooth goes
+ * off (airplane mode does that), and its old scan and GATT server are dead when it comes back. So
+ * the gateway stops while the radio is off and starts again when it is on (MeshGateway.isRunning).
+ * The service is left alone: it keeps the relay's process alive in between.
  */
 class MeshController(
     private val appVisible: Flow<Boolean>,
@@ -33,10 +39,12 @@ class MeshController(
     private val stopService: () -> Unit,
     private val scope: CoroutineScope,
     private val onError: (String) -> Unit = {},
+    private val bluetoothOn: Flow<Boolean> = flowOf(true),
 ) {
     fun start() {
         scope.launch {
-            combine(appVisible, relayEnabled, emergencyActive, ::meshMode).collect { mode ->
+            combine(combine(appVisible, relayEnabled, emergencyActive, ::meshMode), bluetoothOn, ::Pair).collect { (mode, radioOn) ->
+                val gateway = if (radioOn) "startGateway" to startGateway else "stopGateway" to stopGateway
                 when (mode) {
                     MeshMode.OFF -> {
                         guarded("stopService", stopService)
@@ -44,11 +52,11 @@ class MeshController(
                     }
                     MeshMode.APP_ONLY -> {
                         guarded("stopService", stopService)
-                        guarded("startGateway", startGateway)
+                        guarded(gateway.first, gateway.second)
                     }
                     MeshMode.SERVICE -> {
                         guarded("startService", startService)
-                        guarded("startGateway", startGateway)
+                        guarded(gateway.first, gateway.second)
                     }
                 }
             }
