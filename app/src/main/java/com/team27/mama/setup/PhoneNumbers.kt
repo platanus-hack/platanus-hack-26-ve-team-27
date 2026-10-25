@@ -46,6 +46,12 @@ object PhoneNumbers {
         return "+$VENEZUELA ${national.take(3)} ${national.substring(3, 6)} ${national.substring(6)}"
     }
 
+    /**
+     * A number picked from the contacts app, as the form shows it: grouped when it is callable,
+     * as stored otherwise, so the form's own validation explains what is wrong with it.
+     */
+    fun fromContact(stored: String): String = normalize(stored)?.let(::display) ?: stored.trim()
+
     /** True when [a] and [b] are the same number, ignoring formatting. */
     fun sameNumber(a: String, b: String): Boolean {
         val left = normalize(a) ?: a.filter(Char::isDigit)

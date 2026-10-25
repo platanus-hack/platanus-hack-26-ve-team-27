@@ -1,8 +1,15 @@
 package com.team27.mama.ui.screens
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
+import android.net.Uri
+import android.provider.ContactsContract
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -20,6 +27,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -466,6 +475,18 @@ private fun FormPhase(state: SetupUiState, mamaNumber: String?, actions: SetupAc
         error = errors?.ownNumber,
     )
 
+    // The contacts app fills the family number the person asked it for.
+    val context = LocalContext.current
+    var pickingIndex by rememberSaveable { mutableStateOf<Int?>(null) }
+    val contactPicker = rememberLauncherForActivityResult(PickPhoneNumber()) { uri ->
+        val index = pickingIndex
+        pickingIndex = null
+        val stored = uri?.let(context::readPhoneNumber) ?: return@rememberLauncherForActivityResult
+        if (index == null || index >= form.familyNumbers.size) return@rememberLauncherForActivityResult
+        val picked = PhoneNumbers.fromContact(stored)
+        actions.onFormChange(form.copy(familyNumbers = form.familyNumbers.toMutableList().also { it[index] = picked }))
+    }
+
     SectionLabel("Tu familia")
     GroupCard {
         Column(
@@ -491,6 +512,17 @@ private fun FormPhase(state: SetupUiState, mamaNumber: String?, actions: SetupAc
                             modifier = Modifier.padding(top = MamaSpacing.s),
                         ) { Text("Quitar") }
                     }
+                }
+                TextButton(
+                    onClick = {
+                        pickingIndex = index
+                        // No contacts app on the phone: typing the number stays the way.
+                        try { contactPicker.launch(Unit) } catch (e: ActivityNotFoundException) { pickingIndex = null }
+                    },
+                ) {
+                    Icon(painterResource(R.drawable.ic_contacts), contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(MamaSpacing.s))
+                    Text("Elegir de mis contactos")
                 }
             }
             if (form.familyNumbers.size < SetupForm.MAX_FAMILY_NUMBERS) {
@@ -633,6 +665,27 @@ private fun PhoneField(
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
     )
+}
+
+/**
+ * Opens the contacts app on phone numbers only. The app gets read access to the one number the
+ * person picks, so this needs no contacts permission.
+ */
+private class PickPhoneNumber : ActivityResultContract<Unit, Uri?>() {
+    override fun createIntent(context: Context, input: Unit): Intent =
+        Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI)
+
+    override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
+        intent?.data.takeIf { resultCode == Activity.RESULT_OK }
+}
+
+/** The number stored at a picked phone [uri], or null when it cannot be read. */
+private fun Context.readPhoneNumber(uri: Uri): String? = try {
+    contentResolver.query(uri, arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) cursor.getString(0)?.takeIf { it.isNotBlank() } else null
+    }
+} catch (e: SecurityException) {
+    null
 }
 
 @Composable
