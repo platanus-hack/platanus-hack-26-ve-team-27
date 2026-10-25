@@ -494,18 +494,6 @@ class EmergencyLifecycleTest {
         }
         runTest {
             with(EmergencyTestKit()) {
-                httpAcksEverything()
-                val o = orchestrator()
-                o.declare()
-                runCurrent()
-                assertEquals(EmergencyPhase.NOTIFIED, o.state.value.phase)
-                assertFalse(o.declare())
-                runCurrent()
-                assertEquals(1, http.posted.size)
-            }
-        }
-        runTest {
-            with(EmergencyTestKit()) {
                 val o = orchestrator()
                 o.cancel()
                 runCurrent()
@@ -515,6 +503,33 @@ class EmergencyLifecycleTest {
                 assertTrue(sms.sent.isEmpty())
                 assertTrue(o.declare())
             }
+        }
+    }
+
+    /**
+     * A delivered emergency stays NOTIFIED until the person cancels it. A trigger then is a new
+     * alert, never dropped: it starts a new emergency with a new id that goes out on its own.
+     */
+    @Test
+    fun declareAfterNotifiedStartsANewEmergency() = runTest {
+        with(EmergencyTestKit()) {
+            online = true
+            http.behaviour = { text -> decodeSms(text).let { httpAck(it.emergencyId, it.seq) } }
+            val o = orchestrator(newEmergencyId = newIds())
+            o.declare()
+            runCurrent()
+            assertEquals(EmergencyPhase.NOTIFIED, o.state.value.phase)
+            assertEquals(42L, o.state.value.emergencyId)
+            assertTrue(o.declare())
+            runCurrent()
+            assertEquals(listOf(42L, 43L), http.posted.map { decodeSms(it).emergencyId })
+            assertEquals(EmergencyPhase.NOTIFIED, o.state.value.phase)
+            assertEquals(43L, o.state.value.emergencyId)
+            // The new emergency is the one a cancel reaches.
+            o.cancel()
+            runCurrent()
+            assertEquals(Kind.CANCEL, decodeSms(http.posted.last()).kind)
+            assertEquals(43L, decodeSms(http.posted.last()).emergencyId)
         }
     }
 

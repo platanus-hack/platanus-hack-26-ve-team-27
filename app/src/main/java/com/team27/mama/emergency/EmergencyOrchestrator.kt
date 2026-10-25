@@ -57,10 +57,10 @@ object EmergencyTiming {
  * may be called from any thread: a short [lock] guards only `declared` and their phase
  * compare-and-set.
  *
- * [declare] is refused only while an emergency is still alerting. During CANCELLING it starts a
- * new emergency with a new id: the server applies a cancel only to its own emergency_id, so a
- * real trigger right after a false alarm is never dropped. The old cancel stops when the new
- * emergency begins, and the old session can no longer touch the state.
+ * [declare] is refused only while an emergency is still being delivered. During NOTIFIED or
+ * CANCELLING it starts a new emergency with a new id: the server applies a cancel only to its own
+ * emergency_id, so a real trigger after a delivered alert or a false alarm is never dropped. The
+ * old session stops when the new emergency begins and can no longer touch the state.
  *
  * [onError] receives every failure the emergency survives (a port that threw, a refused HTTP
  * reply, an HTTP timeout): a short tag such as `http: HTTP 422`, never location, frame bytes,
@@ -101,10 +101,11 @@ class EmergencyOrchestrator(
         val fix = orElse("fix", null) { location.lastKnown() }
         val next = synchronized(lock) {
             // A CANCELLING emergency gives way: offline its cancel can take CANCEL_WINDOW_MS to end.
+            // So does a NOTIFIED one: it was delivered, and a new trigger is a new alert.
             val before = mutableState.getAndUpdate {
-                if (it.phase.isCancellable) it else EmergencyState(phase = EmergencyPhase.SENDING, emergencyId = id)
+                if (it.phase.isAlerting) it else EmergencyState(phase = EmergencyPhase.SENDING, emergencyId = id)
             }
-            if (before.phase.isCancellable) return false
+            if (before.phase.isAlerting) return false
             Session(id, override, config, fix).also { declared = it }
         }
         scope.launch { next.begin() }
@@ -406,6 +407,9 @@ class EmergencyOrchestrator(
 
         /** An emergency that a cancel can still stop. */
         val EmergencyPhase.isCancellable: Boolean get() = isActive && this != EmergencyPhase.CANCELLING
+
+        /** An emergency still being delivered: [declare] is refused only then. */
+        val EmergencyPhase.isAlerting: Boolean get() = this in FALLBACK_PHASES
 
         /** The failure's type, or the status of an HTTP reply; never its message, which may carry data. */
         fun describe(e: Throwable): String =
