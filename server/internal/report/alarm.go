@@ -6,10 +6,10 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
 )
 
-// The duress alarm (#143): the moment the person says the duress phrase, the
-// family page and the central detail turn into an alarm, before any verdict;
-// then the verdict confirms it, softens it (unclear) or steps it down (no
-// duress). It only changes what the page shows: the verdict, the family
+// The duress alarm (#143): the moment the person says the duress phrase, a
+// red chip beside the person's name on the family page and the central
+// detail says so, before any verdict; then the verdict confirms it, softens
+// it (unclear) or steps it down (no duress). It only changes what the page shows: the verdict, the family
 // message, the PDF and the seal still come from the post-call transcript.
 // The phrase itself never reaches the page: only that it was said, and when.
 
@@ -21,13 +21,14 @@ const (
 	AlarmCleared   = "cleared"   // heard while the call was on, then the verdict said no duress
 )
 
-// AlarmView is the alarm banner across the top of the page.
+// AlarmView is the alarm chip beside the person's name in the header: a
+// short text, a smaller second line, and the whole sentence as a tooltip.
 type AlarmView struct {
-	Level  string
-	Title  string // "¡Dijo la frase de alerta!", "Coacción confirmada"…
-	Detail string // when the phrase was said, or why
-	Status string // the family's side: "Familia avisada 22:56:23", "Confirmando…"; "" for none
-	Pulse  bool   // strong motion: a red alarm on a case still followed live
+	Level string
+	Chip  string // "Frase de alerta · 0:14", "Coacción confirmada"…
+	Sub   string // the smaller line: "23:10:50 · confirmando…", "Familia avisada 23:14:57"
+	Hint  string // the tooltip: what happened, in one sentence
+	Pulse bool   // a red alarm on a case still followed live: it pulses, with a frame around the screen
 }
 
 // Red reports whether the alarm is the red one: the phrase heard, or the
@@ -84,44 +85,58 @@ func firstMarked(turns []contract.TranscriptTurn, phrase string) (int, bool) {
 func alarmView(rec Record, live bool) *AlarmView {
 	h, said := phraseHeard(rec)
 	_, kind := headline(rec)
+	when := ""
+	if said {
+		when = "a los " + offset(h.secs) + " de la llamada"
+		if !h.at.IsZero() {
+			when += " (" + clock(h.at) + ")"
+		}
+	}
+	family := ""
+	switch {
+	case rec.Incident.NotifiedAt != nil:
+		family = "Familia avisada " + clock(*rec.Incident.NotifiedAt)
+	case live:
+		family = "Avisando a la familia…"
+	}
 	var a AlarmView
 	switch contract.Verdict(kind) {
 	case contract.VerdictDuress:
-		a = AlarmView{Level: AlarmConfirmed, Title: "Coacción confirmada"}
+		a = AlarmView{Level: AlarmConfirmed, Chip: "Coacción confirmada", Sub: family, Hint: "Coacción confirmada por la transcripción final"}
 	case contract.VerdictUnclear:
-		a = AlarmView{Level: AlarmUnclear, Title: "Posible coacción: no está claro"}
+		a = AlarmView{Level: AlarmUnclear, Chip: "Posible coacción", Sub: family, Hint: "El veredicto no está claro: igual se avisa a la familia"}
 	case contract.VerdictNoDuress:
 		if !said {
 			return nil
 		}
-		return &AlarmView{Level: AlarmCleared, Title: "La frase en vivo no se confirmó",
-			Detail: "La transcripción final de la llamada dice: sin coacción."}
+		return &AlarmView{Level: AlarmCleared, Chip: "Frase no confirmada", Sub: "la transcripción final dice sin coacción",
+			Hint: "En vivo se oyó la frase de alerta " + when + ", pero la transcripción final dice sin coacción."}
 	default:
 		if !said || rec.Incident.Branch != contract.BranchCall {
 			return nil
 		}
-		a = AlarmView{Level: AlarmHeard, Title: "¡Dijo la frase de alerta!"}
+		a = AlarmView{Level: AlarmHeard, Chip: "Frase de alerta · " + offset(h.secs), Hint: "Dijo la frase de alerta"}
+		sub := "sin confirmar"
+		if live {
+			sub = "confirmando…"
+		}
+		if !h.at.IsZero() {
+			sub = clock(h.at) + " · " + sub
+		}
+		a.Sub = sub
 	}
 	switch {
 	case said:
-		a.Detail = "A los " + offset(h.secs) + " de la llamada"
-		if !h.at.IsZero() {
-			a.Detail += " · " + clock(h.at)
+		a.Hint += " " + when + "."
+	default:
+		if r := verdictReason(rec, contract.Verdict(kind)); r != "" {
+			a.Hint += ". " + r
+		} else {
+			a.Hint += "."
 		}
-	case a.Level == AlarmConfirmed:
-		a.Detail = verdictReason(rec, contract.VerdictDuress)
-	case a.Level == AlarmUnclear:
-		a.Detail = verdictReason(rec, contract.VerdictUnclear)
 	}
-	switch {
-	case a.Level == AlarmHeard && live:
-		a.Status = "Confirmando…"
-	case a.Level == AlarmHeard:
-		a.Status = "Sin confirmar"
-	case rec.Incident.NotifiedAt != nil:
-		a.Status = "Familia avisada " + clock(*rec.Incident.NotifiedAt)
-	case live:
-		a.Status = "Avisando a la familia…"
+	if family != "" && a.Level != AlarmHeard {
+		a.Hint += " " + family + "."
 	}
 	a.Pulse = a.Red() && live
 	return &a

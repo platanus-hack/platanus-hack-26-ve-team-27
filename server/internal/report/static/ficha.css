@@ -186,56 +186,44 @@ body[data-open] .mama { animation: float 5s ease-in-out infinite; }
 .big-clock { font-weight: 700; font-size: 22px; line-height: 28px; font-variant-numeric: tabular-nums; }
 
 /* ---------------------------------------------------------------- the alarm (#143)
- * Red from the moment the phrase is heard; it pulses (banner, bell, a frame
- * around the screen) only while the case is live, then stays a still red
- * banner. Amber for an unclear verdict; a calm note when it steps down. */
+ * A chip beside the name, the height of the state chips: red from the
+ * moment the phrase is heard, amber for an unclear verdict, quiet when it
+ * steps down. While the case is live it pulses, and a thin frame breathes
+ * around the screen. */
 
-@keyframes alarm-in {
-  0% { opacity: 0; transform: scale(.94); }
-  25% { opacity: 1; transform: scale(1.02); filter: brightness(1.7); }
-  45% { filter: brightness(1); }
-  65% { filter: brightness(1.5); }
-  100% { transform: none; filter: none; }
-}
-@keyframes alarm-beat { 0%, 100% { box-shadow: 0 6px 24px var(--alarm-glow), 0 0 0 0 var(--alarm-glow); } 50% { box-shadow: 0 6px 24px var(--alarm-glow), 0 0 0 10px transparent; } }
-@keyframes alarm-ring { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(14deg); } 30% { transform: rotate(-12deg); } 45% { transform: rotate(8deg); } 60% { transform: rotate(-4deg); } 75% { transform: none; } }
-@keyframes alarm-frame { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@keyframes alarm-in { 0% { opacity: 0; transform: scale(.8); } 40% { opacity: 1; transform: scale(1.08); filter: brightness(1.5); } 100% { transform: none; filter: none; } }
+@keyframes alarm-beat { 0%, 100% { box-shadow: 0 0 0 0 var(--alarm-glow); } 50% { box-shadow: 0 0 0 6px transparent; } }
+@keyframes alarm-ring { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(16deg); } 30% { transform: rotate(-14deg); } 45% { transform: rotate(8deg); } 60% { transform: none; } }
+@keyframes alarm-frame { 0%, 100% { opacity: .55; } 50% { opacity: .15; } }
 
-.alarm-box { display: none; }
-body[data-alarm] .alarm-box { display: block; } /* ficha.js keeps data-alarm on <body> in step with the section */
-.alarm {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px;
-  margin: 2px 0 10px; padding: 12px 16px; border-radius: var(--r-l);
+.title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.title-row > h1 { min-width: 0; }
+.alarm-chip {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  padding: 4px 12px 4px 8px; border-radius: 999px;
   background: var(--alarm); color: var(--on-alarm);
-  box-shadow: 0 6px 24px var(--alarm-glow);
+  font-weight: 700; font-size: 14px; line-height: 20px; white-space: nowrap; cursor: default;
 }
-.alarm-icon { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .2); font-weight: 700; font-size: 24px; }
-.alarm-icon svg { width: 26px; height: 26px; }
-.alarm-text { flex: 1 1 12em; min-width: 0; display: flex; flex-direction: column; }
-.alarm-title { font-weight: 700; font-size: 20px; line-height: 26px; letter-spacing: .02em; text-transform: uppercase; overflow-wrap: anywhere; }
-.alarm-detail { font-size: 14px; line-height: 20px; opacity: .92; }
-.alarm-status { flex: none; padding: 4px 14px; border-radius: 999px; background: rgba(0, 0, 0, .24); font-weight: 700; font-size: 14px; line-height: 22px; white-space: nowrap; }
-.alarm.pulse { animation: alarm-beat 1.1s ease-in-out infinite; }
-.alarm.pulse .alarm-icon { animation: alarm-ring 1.4s ease-in-out infinite; }
-.alarm.reveal { animation: alarm-in .9s var(--ease) both; }
-.alarm-unclear { background: var(--warn-container); color: var(--on-warn-container); box-shadow: none; }
-.alarm-unclear .alarm-icon { background: var(--warn-dot); color: var(--on-warn); }
-.alarm-unclear .alarm-title { text-transform: none; }
-.alarm-unclear .alarm-status { background: rgba(0, 0, 0, .08); }
-.alarm-cleared { background: var(--surface-container); color: var(--on-background); box-shadow: none; }
-.alarm-cleared .alarm-icon { background: var(--surface-highest); color: var(--primary); }
-.alarm-cleared .alarm-title { text-transform: none; font-size: 17px; line-height: 24px; }
-.alarm-cleared .alarm-detail { color: var(--on-surface-variant); opacity: 1; }
+.alarm-icon { display: grid; place-items: center; width: 18px; height: 18px; }
+.alarm-icon svg { width: 18px; height: 18px; }
+.alarm-sub { flex: none; font-size: 13px; line-height: 18px; font-weight: 500; color: var(--alarm); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.alarm-chip.pulse { animation: alarm-beat 1.2s ease-in-out infinite; }
+.alarm-chip.pulse .alarm-icon { animation: alarm-ring 1.6s ease-in-out infinite; }
+.alarm-chip.reveal { animation: alarm-in .7s var(--ease) both; }
+.alarm-unclear { background: var(--warn-container); color: var(--on-warn-container); }
+.alarm-unclear + .alarm-sub { color: var(--warn); }
+.alarm-cleared { background: var(--surface-high); color: var(--on-surface-variant); font-weight: 500; }
+.alarm-cleared + .alarm-sub { color: var(--on-surface-variant); }
 .alarm-frame {
   position: fixed; inset: 0; z-index: 40; pointer-events: none;
-  box-shadow: inset 0 0 0 5px var(--alarm), inset 0 0 110px 12px var(--alarm-glow);
-  animation: alarm-frame 1.1s ease-in-out infinite;
+  box-shadow: inset 0 0 0 2px var(--alarm), inset 0 0 48px var(--alarm-glow);
+  opacity: .55; animation: alarm-frame 1.6s ease-in-out infinite;
 }
 .node.node-alarm .node-dot { background: var(--alarm); border-color: var(--alarm); color: var(--on-alarm); box-shadow: 0 0 0 4px var(--alarm-glow); }
 .node.node-alarm .node-sub { color: var(--alarm); font-weight: 700; }
 .turn.phrase.alarm { background: var(--alarm); color: var(--on-alarm); border-color: var(--alarm); box-shadow: 0 0 0 4px var(--alarm-glow); animation: none; }
 .turn.phrase.alarm .phrase-tag { background: var(--on-alarm); color: var(--alarm); }
-body[data-open] .turn.phrase.alarm { animation: alarm-beat 1.1s ease-in-out infinite; }
+body[data-open] .turn.phrase.alarm { animation: alarm-beat 1.2s ease-in-out infinite; }
 
 /* ---------------------------------------------------------------- track */
 
@@ -425,11 +413,8 @@ body[data-expanded] .more { display: none; }
     display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); row-gap: 10px;
     padding: 0 32px 24px;
   }
-  body[data-alarm] .app { grid-template-rows: auto auto auto auto minmax(0, 1fr); }
-  .alarm { margin: 0; padding: 10px 18px; }
-  .alarm-title { font-size: 24px; line-height: 30px; }
-  .alarm-detail { font-size: 15px; }
-  .alarm-status { font-size: 16px; padding: 6px 16px; }
+  .alarm-chip { font-size: 15px; padding: 5px 14px 5px 10px; }
+  .alarm-sub { font-size: 14px; }
   .top { min-height: 60px; }
   .wordmark { font-size: 22px; }
   .mark { width: 32px; height: 32px; }
@@ -557,6 +542,6 @@ code { font-family: inherit; font-size: 13px; background: var(--surface-high); p
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
-  .alarm-frame { opacity: .8; }
+  .alarm-frame { opacity: .45; }
   .seg { stroke-dashoffset: 0; }
 }

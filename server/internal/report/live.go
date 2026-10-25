@@ -29,7 +29,7 @@ const (
 // FamilySections are the sections of the family page GET /i/{token}, each
 // rendered by the "sec-<name>" template into its [data-live="<name>"]
 // container, and what GET /i/{token}/live streams.
-var FamilySections = []string{"status", "header", "alarm", "track", "call", "route", "family"}
+var FamilySections = []string{"status", "header", "track", "call", "route", "family"}
 
 // BlockSections are sections the family page does not show, for other pages
 // that mount the same live data, such as the central dashboard (#99):

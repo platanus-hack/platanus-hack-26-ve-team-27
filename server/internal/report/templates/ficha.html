@@ -56,7 +56,7 @@
 </html>{{end}}
 
 {{define "page"}}{{template "head"}}
-<body data-state="{{.State}}" data-live-url="/i/{{.Token}}/live" data-json-url="/i/{{.Token}}/estado.json"{{if .Live}} data-open{{end}}{{with .MapKey}} data-map-key="{{.}}"{{end}}{{with .Alarm}} data-alarm="{{.Level}}"{{end}}>
+<body data-state="{{.State}}" data-live-url="/i/{{.Token}}/live" data-json-url="/i/{{.Token}}/estado.json"{{if .Live}} data-open{{end}}{{with .MapKey}} data-map-key="{{.}}"{{end}}>
 <div class="app">
 <header class="top">
   {{template "wordmark"}}
@@ -67,8 +67,6 @@
 </header>
 
 <section class="head" aria-label="Estado del caso" data-live="header">{{template "sec-header" .}}</section>
-
-<div class="alarm-box" data-live="alarm">{{template "sec-alarm" .}}</div>
 
 <section class="track-box" aria-label="Línea de tiempo">
   <div class="track-scroll" data-track-scroll>
@@ -108,7 +106,10 @@
 {{define "sec-header" -}}
 <img data-key="art-{{.Character}}" data-reveal class="mama" src="{{static (print "mama_" .Character ".webp")}}" alt="" width="80" height="80">
 <div data-key="head-text" data-live-children class="head-text">
+  <div data-key="title-row" data-live-children class="title-row">
   <h1 data-key="title-{{.TitleKind}}-{{.Title}}" data-reveal class="title title-{{.TitleKind}}">{{.Title}}</h1>
+  {{- template "alarm-chip" .}}
+  </div>
   <p data-key="when-{{.UserName}}" class="when">{{if .UserName}}{{.UserName}} pidió ayuda{{else}}Pidió ayuda{{end}} · {{.TriggeredShort}}</p>
 </div>
 <div data-key="clock-{{.Live}}-{{.Elapsed}}" class="head-clock">
@@ -155,22 +156,22 @@
 </div>
 {{- end}}
 
-{{/* The duress alarm (#143): red from the moment the phrase is heard, until
-  the verdict confirms it; amber for an unclear verdict; a calm note when the
-  verdict steps a live alarm down. The banner keeps its key across updates
-  (data-live-children), so it reveals once and only its lines change. The
-  frame around the screen pulses while the case is live. */}}
-{{define "sec-alarm" -}}
+{{/* The duress alarm (#143): a chip beside the name, red from the moment the
+  phrase is heard until the verdict confirms it, amber for an unclear
+  verdict, quiet when the verdict steps a live alarm down. Its key keeps it
+  across updates (data-live-children), so it reveals once and only its text
+  changes. While the case is live a thin frame pulses around the screen. */}}
+{{define "alarm-chip" -}}
 {{with .Alarm -}}
-<div data-key="alarm-{{.Level}}" data-live-children data-reveal data-alarm-level="{{.Level}}" class="alarm alarm-{{.Level}}{{if .Pulse}} pulse{{end}}" role="alert">
-  <span data-key="icon" class="alarm-icon" aria-hidden="true">{{if .Red}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a1 1 0 0 1 1 1v1.07A7 7 0 0 1 19 11v4.59l1.7 1.7A1 1 0 0 1 20 19H4a1 1 0 0 1-.7-1.71L5 15.59V11a7 7 0 0 1 6-6.93V3a1 1 0 0 1 1-1Zm-2.24 18h4.48a2.5 2.5 0 0 1-4.48 0Z"/></svg>{{else if eq .Level "unclear"}}!{{else}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9.5 16.6 5.4 12.5 4 13.9l5.5 5.5L20 8.9l-1.4-1.4z"/></svg>{{end}}</span>
-  <span data-key="text-{{.Title}}-{{.Detail}}" class="alarm-text"><span class="alarm-title">{{.Title}}</span>{{if .Detail}}<span class="alarm-detail">{{.Detail}}</span>{{end}}</span>
-  {{- if .Status}}
-  <span data-key="status-{{.Status}}" data-reveal class="alarm-status">{{.Status}}</span>
-  {{- end}}
-</div>
+<span data-key="alarm-{{.Level}}" data-live-children data-reveal data-alarm-level="{{.Level}}" class="alarm-chip alarm-{{.Level}}{{if .Pulse}} pulse{{end}}" role="alert" title="{{.Hint}}">
+  <span data-key="icon" class="alarm-icon" aria-hidden="true">{{if or .Red (eq .Level "unclear")}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a1 1 0 0 1 1 1v1.07A7 7 0 0 1 19 11v4.59l1.7 1.7A1 1 0 0 1 20 19H4a1 1 0 0 1-.7-1.71L5 15.59V11a7 7 0 0 1 6-6.93V3a1 1 0 0 1 1-1Zm-2.24 18h4.48a2.5 2.5 0 0 1-4.48 0Z"/></svg>{{else}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9.5 16.6 5.4 12.5 4 13.9l5.5 5.5L20 8.9l-1.4-1.4z"/></svg>{{end}}</span>
+  <span data-key="chip-{{.Chip}}" class="alarm-chip-text">{{.Chip}}</span>
+</span>
+{{- with .Sub}}
+<span data-key="alarm-sub-{{.}}" class="alarm-sub">{{.}}</span>
+{{- end}}
 {{- if .Pulse}}
-<div data-key="alarm-frame" class="alarm-frame" aria-hidden="true"></div>
+<span data-key="alarm-frame" class="alarm-frame" aria-hidden="true"></span>
 {{- end}}
 {{- end}}
 {{- end}}

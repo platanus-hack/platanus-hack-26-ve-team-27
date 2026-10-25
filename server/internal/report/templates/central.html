@@ -98,7 +98,7 @@
 {{template "central-meta"}}
 <title>{{if .Case.Name}}{{.Case.Name}}{{else}}Reporte {{.Case.Number}}{{end}} · Central · MAMÁ</title>
 </head>
-<body class="central c-case-page" data-state="{{.Case.State}}" data-live-url="/central/r/{{.Case.ID}}/live" data-json-url="/central/r/{{.Case.ID}}/estado.json" data-open{{with .MapKey}} data-map-key="{{.}}"{{end}}{{with .Alarm}} data-alarm="{{.Level}}"{{end}}>
+<body class="central c-case-page" data-state="{{.Case.State}}" data-live-url="/central/r/{{.Case.ID}}/live" data-json-url="/central/r/{{.Case.ID}}/estado.json" data-open{{with .MapKey}} data-map-key="{{.}}"{{end}}>
 <div class="c-app">
 <header class="c-top">
   <div class="c-brand">
@@ -116,8 +116,6 @@
 </header>
 
 <section class="c-hero" aria-label="Quién y en qué estado" data-live="c-head">{{template "sec-c-head" .}}</section>
-
-<div class="alarm-box" data-live="alarm">{{template "sec-alarm" .}}</div>
 
 <section class="track-box" aria-label="Etapas del caso">
   <div class="track-scroll" data-track-scroll>
@@ -152,7 +150,10 @@
 <img data-key="art-{{.Character}}" data-reveal class="mama" src="{{static (print "mama_" .Character ".webp")}}" alt="" width="80" height="80">
 <div data-key="c-head-text" data-live-children class="c-hero-text">
   <p data-key="eyebrow-{{.Case.State}}-{{.TriggeredShort}}" class="c-eyebrow"><span data-reveal class="c-state c-state-{{.Case.State}}"><span class="c-state-dot" aria-hidden="true"></span>{{.Case.StateLabel}}</span><span class="c-when">Pidió ayuda · {{.TriggeredShort}}</span></p>
+  <div data-key="name-row" data-live-children class="title-row">
   <h1 data-key="name-{{.Case.Name}}-{{.Case.Number}}" class="c-name-big">{{if .Case.Name}}{{.Case.Name}}{{else}}{{.Case.Number}}{{end}}</h1>
+  {{- template "alarm-chip" .}}
+  </div>
   {{- with .Situation}}
   <p data-key="situation-{{.}}" class="c-situation-line">{{.}}</p>
   {{- end}}

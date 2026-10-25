@@ -10,8 +10,6 @@
 //   tap-to-seek on the waveform and on each turn, and the playing turn
 //   highlighted.
 // - The demo page (/demo/next) waits for the next incident and opens it.
-// - The duress alarm (#143) is server-rendered; this only keeps <body
-//   data-alarm> in step with it.
 (function () {
   "use strict";
 
@@ -106,7 +104,6 @@
     });
     body.setAttribute("data-state", s.state);
     if (s.live) { body.setAttribute("data-open", ""); } else { body.removeAttribute("data-open"); }
-    syncAlarm();
     afterUpdate();
     document.dispatchEvent(new CustomEvent("ficha:update")); // route-map.js redraws the map
   }
@@ -147,13 +144,6 @@
         .catch(function () { setBadge("reconnecting"); setTimeout(tick, 4000); });
     }
     tick();
-  }
-
-  // syncAlarm mirrors the alarm section's level (#143) on <body data-alarm>:
-  // the one-screen layout makes a row for the banner from it.
-  function syncAlarm() {
-    var a = document.querySelector('[data-live="alarm"] [data-alarm-level]');
-    if (a) { body.setAttribute("data-alarm", a.getAttribute("data-alarm-level")); } else { body.removeAttribute("data-alarm"); }
   }
 
   // ------------------------------------------------------------ tickers

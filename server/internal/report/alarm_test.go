@@ -13,12 +13,14 @@ import (
 	"github.com/platanus-hack/platanus-hack-26-ve-team-27/server/internal/contract"
 )
 
-// The moment Twilio hears the phrase, the page alarms: red, pulsing, with
-// when it was said in the call and on the clock, before any verdict (#143).
+// The moment Twilio hears the phrase, a red chip beside the name alarms,
+// pulsing, with when it was said in the call and on the clock, before any
+// verdict (#143).
 func TestAlarmFiresWhenThePhraseIsHeardLive(t *testing.T) {
 	opts := Options{Token: testToken, Channel: "WhatsApp", CanSeal: true, Now: liveNow}
 	p := Build(liveRecord(), opts)
-	want := &AlarmView{Level: AlarmHeard, Title: "¡Dijo la frase de alerta!", Detail: "A los 0:06 de la llamada · 09:10:12", Status: "Confirmando…", Pulse: true}
+	want := &AlarmView{Level: AlarmHeard, Chip: "Frase de alerta · 0:06", Sub: "09:10:12 · confirmando…",
+		Hint: "Dijo la frase de alerta a los 0:06 de la llamada (09:10:12).", Pulse: true}
 	if !reflect.DeepEqual(p.Alarm, want) {
 		t.Fatalf("alarm = %+v\nwant  %+v", p.Alarm, want)
 	}
@@ -26,16 +28,15 @@ func TestAlarmFiresWhenThePhraseIsHeardLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	alarm := html.UnescapeString(s.Sections["alarm"])
-	for _, w := range []string{`data-alarm-level="heard"`, "¡Dijo la frase de alerta!", "A los 0:06 de la llamada · 09:10:12", "Confirmando…", `class="alarm-frame"`, `role="alert"`} {
-		if !strings.Contains(alarm, w) {
-			t.Errorf("alarm section lacks %q:\n%s", w, alarm)
+	head := html.UnescapeString(s.Sections["header"])
+	for _, w := range []string{`data-alarm-level="heard"`, "Frase de alerta · 0:06", "09:10:12 · confirmando…", `class="alarm-frame"`, `role="alert"`} {
+		if !strings.Contains(head, w) {
+			t.Errorf("header lacks %q:\n%s", w, head)
 		}
 	}
 }
 
-// Live turns that do not say the phrase raise no alarm, and the section is
-// empty so the page keeps its layout.
+// Live turns that do not say the phrase raise no alarm: no chip.
 func TestNoAlarmWithoutThePhrase(t *testing.T) {
 	rec := liveRecord()
 	rec.Calls[0].LiveTurns[1].Message = "Hola mami, todo bien, ya voy saliendo."
@@ -47,17 +48,18 @@ func TestNoAlarmWithoutThePhrase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(s.Sections["alarm"]) != "" {
-		t.Errorf("alarm section = %q", s.Sections["alarm"])
+	if strings.Contains(s.Sections["header"], "alarm") {
+		t.Errorf("header has an alarm:\n%s", s.Sections["header"])
 	}
 }
 
 // The duress verdict confirms it and says when the family was told; once
-// sealed the banner stays, still: no pulse and no frame.
+// sealed the chip stays, still: no pulse and no frame.
 func TestAlarmConfirmedThenStill(t *testing.T) {
 	rec := openRecord()
 	p := Build(rec, Options{Token: testToken, CanSeal: true, Now: at("2026-10-24T13:11:10Z")})
-	want := &AlarmView{Level: AlarmConfirmed, Title: "Coacción confirmada", Detail: "A los 0:15 de la llamada · 09:10:19", Status: "Familia avisada 09:11:08", Pulse: true}
+	want := &AlarmView{Level: AlarmConfirmed, Chip: "Coacción confirmada", Sub: "Familia avisada 09:11:08",
+		Hint: "Coacción confirmada por la transcripción final a los 0:15 de la llamada (09:10:19). Familia avisada 09:11:08.", Pulse: true}
 	if !reflect.DeepEqual(p.Alarm, want) {
 		t.Fatalf("alarm = %+v\nwant  %+v", p.Alarm, want)
 	}
@@ -77,8 +79,8 @@ func TestAlarmConfirmedThenStill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a := s.Sections["alarm"]; !strings.Contains(a, `data-alarm-level="confirmed"`) || strings.Contains(a, "alarm-frame") || strings.Contains(a, " pulse") {
-		t.Errorf("sealed alarm section:\n%s", a)
+	if a := s.Sections["header"]; !strings.Contains(a, `data-alarm-level="confirmed"`) || strings.Contains(a, "alarm-frame") || strings.Contains(a, " pulse") {
+		t.Errorf("sealed header:\n%s", a)
 	}
 }
 
@@ -89,7 +91,7 @@ func TestAlarmUnclearIsSofter(t *testing.T) {
 	c.Transcript = []contract.TranscriptTurn{{Role: "user", Message: "Sí, mami, vine con Pablo… bueno, solo.", TimeInCallSecs: 4}}
 	c.Verdict, c.VerdictReason = contract.VerdictUnclear, "the user said part of the duress phrase (2 of 4 key words)"
 	p := Build(rec, Options{Token: testToken, Now: at("2026-10-24T13:11:10Z")})
-	if p.Alarm == nil || p.Alarm.Level != AlarmUnclear || p.Alarm.Red() || p.Alarm.Pulse || p.Alarm.Status != "Familia avisada 09:11:08" {
+	if p.Alarm == nil || p.Alarm.Level != AlarmUnclear || p.Alarm.Red() || p.Alarm.Pulse || p.Alarm.Sub != "Familia avisada 09:11:08" {
 		t.Errorf("alarm = %+v", p.Alarm)
 	}
 }
@@ -106,7 +108,7 @@ func TestAlarmStepsDownWhenTheVerdictSaysNoDuress(t *testing.T) {
 	rec.Incident.NotifiedAt = nil
 	opts := Options{Token: testToken, Now: at("2026-10-24T13:11:10Z")}
 	p := Build(rec, opts)
-	if p.Alarm == nil || p.Alarm.Level != AlarmCleared || p.Alarm.Red() || p.Alarm.Pulse || p.Alarm.Title != "La frase en vivo no se confirmó" {
+	if p.Alarm == nil || p.Alarm.Level != AlarmCleared || p.Alarm.Red() || p.Alarm.Pulse || p.Alarm.Chip != "Frase no confirmada" {
 		t.Fatalf("alarm = %+v", p.Alarm)
 	}
 	for _, tv := range p.Call.Turns {
@@ -118,8 +120,8 @@ func TestAlarmStepsDownWhenTheVerdictSaysNoDuress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a := s.Sections["alarm"]; !strings.Contains(a, `data-alarm-level="cleared"`) || strings.Contains(a, "alarm-frame") {
-		t.Errorf("alarm section:\n%s", a)
+	if a := s.Sections["header"]; !strings.Contains(a, `data-alarm-level="cleared"`) || strings.Contains(a, "alarm-frame") {
+		t.Errorf("header:\n%s", a)
 	}
 }
 
@@ -135,11 +137,11 @@ func TestAlarmKeepsThePhraseOutOfThePage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(s.Sections["alarm"], `data-alarm-level="heard"`) {
-		t.Fatalf("no alarm:\n%s", s.Sections["alarm"])
+	if !strings.Contains(s.Sections["header"], `data-alarm-level="heard"`) {
+		t.Fatalf("no alarm:\n%s", s.Sections["header"])
 	}
-	if strings.Contains(html.UnescapeString(s.Sections["alarm"]), "gato") {
-		t.Errorf("the alarm quotes the phrase:\n%s", s.Sections["alarm"])
+	if strings.Contains(html.UnescapeString(s.Sections["header"]), "gato") {
+		t.Errorf("the alarm quotes the phrase:\n%s", s.Sections["header"])
 	}
 
 	rec.Calls[0].LiveTurns[1].Message = "Hola mami, todo bien."
@@ -208,8 +210,8 @@ func TestCentralShowsTheAlarm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a := s.Sections["alarm"]; !strings.Contains(a, `data-alarm-level="heard"`) || !strings.Contains(a, "alarm-frame") {
-		t.Errorf("central alarm section:\n%s", a)
+	if a := s.Sections["c-head"]; !strings.Contains(a, `data-alarm-level="heard"`) || !strings.Contains(a, "alarm-frame") || !strings.Contains(a, `class="c-name-big"`) {
+		t.Errorf("central header:\n%s", a)
 	}
 
 	now := at("2026-10-24T13:12:00Z")

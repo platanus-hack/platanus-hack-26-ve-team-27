@@ -102,7 +102,7 @@
   // ------------------------------------------------------------ alarm sound (#143)
 
   // A short siren when an alarm fires while the screen is open: the detail's
-  // banner turning red, or a list row turning into an alarm. Browsers allow
+  // chip turning red, or a list row turning into an alarm. Browsers allow
   // sound only after the viewer touched the page, so it stays quiet until
   // then; it never plays over a recording that is playing, nor once muted.
   var SOUND = "mama-central-alarma";
@@ -122,11 +122,11 @@
   // alarms are the red alarms on screen, by key.
   function alarms() {
     var now = {};
-    var banner = document.querySelector('[data-live="alarm"] [data-alarm-level]');
-    var level = banner && banner.getAttribute("data-alarm-level");
+    var chip = document.querySelector("[data-alarm-level]");
+    var level = chip && chip.getAttribute("data-alarm-level");
     if (level === "heard" || level === "confirmed") { now.caso = true; }
     Array.prototype.forEach.call(document.querySelectorAll("[data-alarm]"), function (r) {
-      if (r !== body) { now[r.getAttribute("data-alarm")] = true; }
+      now[r.getAttribute("data-alarm")] = true;
     });
     return now;
   }
@@ -158,7 +158,7 @@
           o.stop(at + 0.21);
         });
       }
-    } catch (e) { /* no sound: the banner still shows */ }
+    } catch (e) { /* no sound: the chip still shows */ }
   }
 
   function watchAlarms() {

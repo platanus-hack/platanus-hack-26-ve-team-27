@@ -42,7 +42,7 @@ var CentralSections = []string{"c-counts", "c-list"}
 // central's own header (with the call's one-line summary), the phone's
 // preparation strip (#125) and notified people. The horizontal track is its
 // only timeline.
-var CentralCaseSections = []string{"status", "c-head", "alarm", "track", "c-prep", "call", "route", "c-family"}
+var CentralCaseSections = []string{"status", "c-head", "track", "c-prep", "call", "route", "c-family"}
 
 // Central is the central dashboard, mounted by Handler.WithCentral.
 type Central struct {
