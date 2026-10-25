@@ -151,6 +151,11 @@ type Report struct {
 	// dashboard GET /central/ (#99), which sees every incident. Given once
 	// as ?key=, it becomes a cookie. Blank leaves the dashboard off (404).
 	CentralKey string
+	// CentralPublic is CENTRAL_PUBLIC, "true" or "1"; off by default. On,
+	// the central dashboard needs no key: anyone with the URL sees every
+	// incident, its position and its recording. For a demo, never for real
+	// users. Off, CENTRAL_KEY decides as before.
+	CentralPublic bool
 	// MapKey is CARTO_BASEMAPS_KEY, optional: the free key of CARTO's
 	// basemaps (carto.com/basemaps/apikey), which the route map's tiles
 	// need. Blank leaves the route as the drawing, with no map. It is not a
@@ -229,6 +234,7 @@ func LoadFrom(getenv func(string) string) Config {
 			DemoKey:           get("DEMO_KEY"),
 			LiveTranscription: isOn(get("LIVE_TRANSCRIPTION_ENABLED")),
 			CentralKey:        get("CENTRAL_KEY"),
+			CentralPublic:     isOn(get("CENTRAL_PUBLIC")),
 			MapKey:            get("CARTO_BASEMAPS_KEY"),
 		},
 		Limits: Limits{

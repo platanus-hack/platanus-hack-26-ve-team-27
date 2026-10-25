@@ -237,6 +237,34 @@ func TestCentralOffWithoutKey(t *testing.T) {
 	}
 }
 
+// CENTRAL_PUBLIC: no key and no cookie are needed, a key or a forged cookie
+// changes nothing, and the pages keep the privacy headers.
+func TestCentralPublicNeedsNoKey(t *testing.T) {
+	store := &fakeCentral{}
+	store.setCase(openRecord(), CaseExtras{})
+	for _, key := range []string{"", testCentralKey} {
+		h := NewHandler(fakeSource{}, Options{CanSeal: true, Channel: "WhatsApp"}).
+			WithCentral(&Central{Key: key, Public: true, Store: store})
+		h.Now = func() time.Time { return centralNow }
+		mux := http.NewServeMux()
+		h.Register(mux)
+		srv := httptest.NewServer(mux)
+		t.Cleanup(srv.Close)
+		for _, r := range []string{"/central/", "/central/estado.json", "/central/r/" + testIncidentID,
+			"/central/r/" + testIncidentID + "/estado.json"} {
+			resp, _ := cget(t, srv.URL+r, nil)
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("public, key %q: GET %s = %d, want 200", key, r, resp.StatusCode)
+				continue
+			}
+			checkPrivacy(t, "public "+r, resp.Header)
+		}
+		if resp, _ := cget(t, srv.URL+"/central/?key=wrong", nil); resp.StatusCode != http.StatusOK || len(resp.Cookies()) > 0 {
+			t.Errorf("public, wrong key = %d %v, want 200 and no cookie", resp.StatusCode, resp.Cookies())
+		}
+	}
+}
+
 // caseAt is a list item for state tests: a call-branch case that reached
 // the server at created.
 func caseAt(id string, created time.Time) CaseItem {

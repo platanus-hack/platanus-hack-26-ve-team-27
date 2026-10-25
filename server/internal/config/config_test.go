@@ -286,6 +286,19 @@ func TestCentralKeyIsReadAndNeverPrinted(t *testing.T) {
 	}
 }
 
+func TestCentralPublicIsOffUnlessTrue(t *testing.T) {
+	for _, v := range []string{"", "false", "yes", "0"} {
+		if LoadFrom(envFrom(map[string]string{"CENTRAL_PUBLIC": v})).Report.CentralPublic {
+			t.Errorf("CENTRAL_PUBLIC=%q turned the public central on", v)
+		}
+	}
+	for _, v := range []string{"true", "TRUE", "1", " true "} {
+		if !LoadFrom(envFrom(map[string]string{"CENTRAL_PUBLIC": v})).Report.CentralPublic {
+			t.Errorf("CENTRAL_PUBLIC=%q left the public central off", v)
+		}
+	}
+}
+
 // CARTO_BASEMAPS_KEY is optional (not in Missing): without it the route is
 // drawn with no map.
 func TestMapKeyIsRead(t *testing.T) {

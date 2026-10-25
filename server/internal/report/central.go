@@ -19,8 +19,9 @@ import (
 // The central dashboard (#99): GET /central/ lists every incident as it
 // arrives, newest first, and GET /central/r/{incident_id} follows one case
 // live, on the same sections and live loop as the family page. It sees every
-// incident, so it is never public: CENTRAL_KEY, given once as ?key=, becomes
-// a cookie; without it every /central route answers 404.
+// incident, so it is private by default: CENTRAL_KEY, given once as ?key=,
+// becomes a cookie; without it every /central route answers 404. Only
+// CENTRAL_PUBLIC=true opens it to anyone (a demo).
 const (
 	CentralPrefix = "/central/"
 	// centralCookie holds HMAC(CENTRAL_KEY, centralCookieContext), never
@@ -46,8 +47,11 @@ var CentralCaseSections = []string{"status", "c-head", "track", "c-prep", "call"
 
 // Central is the central dashboard, mounted by Handler.WithCentral.
 type Central struct {
-	Key   string // CENTRAL_KEY; blank leaves the dashboard unmounted
-	Store CentralStore
+	Key string // CENTRAL_KEY; blank leaves the dashboard unmounted unless Public
+	// Public is CENTRAL_PUBLIC: every route answers without a key or cookie.
+	// Key is then ignored.
+	Public bool
+	Store  CentralStore
 	// TTLDays is the life of the report link the detail creates when the
 	// case has none yet: its recording and PDF are served from /i/{token}.
 	TTLDays int
@@ -62,8 +66,8 @@ type CentralStore interface {
 	Ensure(ctx context.Context, incidentID string, ttlDays int) (Link, error)
 }
 
-// WithCentral mounts the central dashboard; nil or a blank Key leaves it
-// off (every /central route answers 404).
+// WithCentral mounts the central dashboard; nil, or a blank Key without
+// Public, leaves it off (every /central route answers 404).
 func (h *Handler) WithCentral(c *Central) *Handler {
 	h.central = c
 	return h
@@ -71,7 +75,7 @@ func (h *Handler) WithCentral(c *Central) *Handler {
 
 func (h *Handler) registerCentral(mux *http.ServeMux) {
 	c := h.central
-	if c == nil || c.Key == "" || c.Store == nil {
+	if c == nil || (c.Key == "" && !c.Public) || c.Store == nil {
 		return
 	}
 	mux.HandleFunc("GET /central", c.gate(func(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +94,8 @@ func (h *Handler) registerCentral(mux *http.ServeMux) {
 
 // ---------------------------------------------------------------- access
 
-// gate lets a request through only with the key: ?key= right sets the
+// gate lets a request through only with the key (every request when Public):
+// ?key= right sets the
 // cookie and redirects to the same URL without it (so the key leaves the
 // address bar and the history); a valid cookie passes. Anything else, a
 // wrong key included, is 404, as if the dashboard did not exist. Every
@@ -98,6 +103,10 @@ func (h *Handler) registerCentral(mux *http.ServeMux) {
 func (c *Central) gate(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		privacy(w)
+		if c.Public {
+			next(w, r)
+			return
+		}
 		q := r.URL.Query()
 		if q.Has("key") {
 			if !c.keyMatches(q.Get("key")) {
