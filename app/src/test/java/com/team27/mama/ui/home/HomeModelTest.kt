@@ -194,4 +194,28 @@ class HomeModelTest {
         advance(100, TriggerProgress.Sending)
         assertEquals(TriggerProgress.Sending, model.state.progress)
     }
+
+    @Test
+    fun anIncidentStartedElsewhereIsShownAsProcessingOrListening() {
+        advance(100, TriggerProgress.Sending)
+        assertEquals(HomePhase.Processing, phase)
+        assertEquals(0, requests)
+        advance(HomeModel.MIN_PROCESSING_MS, TriggerProgress.Active)
+        assertEquals(HomePhase.Listening, phase)
+    }
+
+    @Test
+    fun anActiveIncidentFoundOnCreationIsListening() {
+        advance(100, TriggerProgress.Active)
+        assertEquals(HomePhase.Listening, phase)
+        assertEquals(0, requests)
+    }
+
+    @Test
+    fun formatsTheElapsedTimeAsMinutesAndSeconds() {
+        assertEquals("00:00", HomeModel.formatElapsed(0))
+        assertEquals("00:59", HomeModel.formatElapsed(59))
+        assertEquals("01:05", HomeModel.formatElapsed(65))
+        assertEquals("12:00", HomeModel.formatElapsed(720))
+    }
 }

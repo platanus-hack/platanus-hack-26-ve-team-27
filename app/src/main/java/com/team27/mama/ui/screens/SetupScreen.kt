@@ -186,7 +186,11 @@ private class SetupActions(
 )
 
 @Composable
-fun SetupScreen(viewModel: SetupViewModel = viewModel(), onOpenSettings: (() -> Unit)? = null) {
+fun SetupScreen(
+    viewModel: SetupViewModel = viewModel(),
+    onOpenSettings: (() -> Unit)? = null,
+    onDone: (() -> Unit)? = null,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = LocalActivity.current
@@ -242,8 +246,8 @@ fun SetupScreen(viewModel: SetupViewModel = viewModel(), onOpenSettings: (() -> 
         onRetry = viewModel::retry,
         onEdit = viewModel::edit,
         onReviewPermissions = viewModel::reviewPermissions,
-        // The app has no other home: MAMÁ works in the background, so leaving the screen is the way on.
-        onContinue = { activity?.finish() },
+        // The done state goes on to the home screen; without one, MAMÁ works in the background, so leaving is the way on.
+        onContinue = { if (onDone != null) onDone() else activity?.finish() },
     )
     val mamaNumber = PhoneNumbers.normalize(BuildConfig.TWILIO_NUMBER)?.let(PhoneNumbers::display)
     SetupContent(state = state, mamaNumber = mamaNumber, actions = actions, onOpenSettings = onOpenSettings)

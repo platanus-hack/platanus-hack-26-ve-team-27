@@ -34,7 +34,7 @@ data class HomeState(
  * Hold the portrait for [HOLD_MS] and [requestTrigger] runs once. Processing lasts at least
  * [MIN_PROCESSING_MS] so the animation reads even when the service answers at once. When the
  * service stays idle for [START_TIMEOUT_MS] after the request, or ends having only sent, the
- * phase is [HomePhase.Failed]. Cancelled and Failed show for a moment, then the screen is idle.
+ * phase is [HomePhase.Failed]. An incident started elsewhere is adopted (see [adopt]). Cancelled and Failed show for a moment, then the screen is idle.
  *
  * Not thread safe: call it from one thread (the UI's).
  */
@@ -80,7 +80,7 @@ class HomeModel(private val requestTrigger: () -> Unit) {
         if (progress == TriggerProgress.Active) sawActive = true
         state = state.copy(progress = progress)
         when (state.phase) {
-            HomePhase.Idle -> Unit
+            HomePhase.Idle -> adopt(nowMs, progress)
             HomePhase.Arming -> {
                 val fraction = ((nowMs - armedAt).toFloat() / HOLD_MS).coerceIn(0f, 1f)
                 if (fraction >= 1f) request(nowMs) else state = state.copy(armProgress = fraction)
@@ -95,6 +95,24 @@ class HomeModel(private val requestTrigger: () -> Unit) {
             }
             HomePhase.Cancelled -> if (nowMs - endedAt >= CANCELLED_MS) state = HomeState()
             HomePhase.Failed -> if (nowMs - endedAt >= FAILED_MS) state = HomeState()
+        }
+    }
+
+    /**
+     * An incident this model did not request is running (the screen was recreated, or the widget
+     * or the volume pattern started it): show it instead of a ready screen.
+     */
+    private fun adopt(nowMs: Long, progress: TriggerProgress) {
+        when (progress) {
+            TriggerProgress.Idle -> Unit
+            TriggerProgress.Sending -> {
+                requestedAt = nowMs
+                state = state.copy(phase = HomePhase.Processing, armProgress = 1f)
+            }
+            TriggerProgress.Active -> {
+                listeningAt = nowMs
+                state = state.copy(phase = HomePhase.Listening, armProgress = 1f, listeningSeconds = 0)
+            }
         }
     }
 
@@ -127,6 +145,10 @@ class HomeModel(private val requestTrigger: () -> Unit) {
     }
 
     companion object {
+        /** "mm:ss" for the listening timer. */
+        fun formatElapsed(totalSeconds: Int): String =
+            "%02d:%02d".format(java.util.Locale.ROOT, totalSeconds / 60, totalSeconds % 60)
+
         const val HOLD_MS = 1_500L
         const val MIN_PROCESSING_MS = 1_200L
         const val START_TIMEOUT_MS = 4_000L
