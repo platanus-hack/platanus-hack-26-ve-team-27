@@ -24,9 +24,11 @@ does not break those calls. The default phrases stay empty so no ordinary
 answer can match one by chance.
 
 How Mamá talks: she greets by name and asks "¿Cómo vas, mi amor?". She
-talks like a mother, not a form: she reacts to each answer, says hello to
-whoever is named, tells something short from home now and then, and puts a
-comment between two questions.
+talks like a mother, not a form: warm in every turn (pet names, diminutives,
+"qué rico oírte"), she reacts to each answer, says hello to whoever is named,
+tells something short from home now and then, and puts a comment between two
+questions. She never asks dry: a question comes softened, often with a
+mother's reason ("¿y por dónde andas ya? Para saber a qué hora esperarte").
 - Safe phrase: something warm, then a quick goodbye.
 - Alert phrase (or close to it): same tone, "Ah, ok... yo le digo", then she
   keeps chatting and finds out, one question at a time, where they are and
