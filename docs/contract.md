@@ -257,9 +257,69 @@ a GPS point. An emergency already cancelled opens nothing.
   "points": [
     {"lat": 10.4961, "lng": -66.8531, "accuracy_m": 12.5, "speed_mps": 0.4, "recorded_at": "2026-10-24T09:10:00Z"}
   ],
-  "has_audio": false
+  "has_audio": false,
+  "device_state": {
+    "captured_at": "2026-10-24T09:10:00.251Z",
+    "permissions": {
+      "location_fine": true, "location_background": true, "microphone": true, "contacts": true, "sms": true,
+      "notifications": true, "accessibility_service": true, "battery_unrestricted": false, "hibernation_exempt": true
+    }
+  }
 }
 ```
+
+`device_state` (optional, #125, approved by the Tech lead on Oct 24) is what
+the phone's permissions were at the gesture, read without asking for
+anything. `captured_at` is the phone clock. `permissions` maps a name to
+whether it was granted:
+
+| Name | Granted when |
+| --- | --- |
+| `location_fine` | precise location (`ACCESS_FINE_LOCATION`) |
+| `location_background` | location "all the time" (`ACCESS_BACKGROUND_LOCATION`; before Android 10 it comes with the foreground one) |
+| `microphone` | `RECORD_AUDIO` |
+| `contacts` | `READ_CONTACTS` and `WRITE_CONTACTS` |
+| `sms` | `SEND_SMS` |
+| `notifications` | the app's notifications are on |
+| `accessibility_service` | the volume gesture's accessibility service is on |
+| `battery_unrestricted` | battery optimization is off for the app |
+| `full_screen_intent` | `NotificationManager.canUseFullScreenIntent()`; Android 14+ only |
+| `hibernation_exempt` | unused-app restrictions are off (`isAutoRevokeWhitelisted`); Android 11+ only |
+
+A permission that does not apply to the phone is left out, never `null`
+(the sample's phone runs Android 13, so it has no `full_screen_intent`). An
+app without #125 sends no `device_state` and the alert works as before. The
+server stores it in `incidents.device_state` and **never rejects an alert
+because of it**: unknown fields are ignored and unknown names kept, a value
+that is not a boolean is dropped, a malformed `captured_at` is left out, and
+a `device_state` with no boolean permission (or that is not an object)
+stores nothing.
+
+### PermissionEvents (phone → server, `POST /devices/{device_id}/permissions`, #125)
+
+When each permission was granted or lost, as the phone saw it, with the
+names of `device_state`. A route of its own so `POST /devices` stays as it
+is. The phone sends every grant of first-run setup once the device is
+registered, then only what changed, when the app opens or an alert is
+triggered; it keeps what the server has not confirmed and sends it again.
+Sample: `permission_events.json`.
+
+```json
+{
+  "events": [
+    {"permission": "notifications", "granted": true, "at": "2026-10-24T08:02:11.512Z"},
+    {"permission": "location_fine", "granted": true, "at": "2026-10-24T08:02:40.127Z"},
+    {"permission": "location_background", "granted": true, "at": "2026-10-24T08:02:53.648Z"},
+    {"permission": "location_background", "granted": false, "at": "2026-10-24T09:40:03.951Z"}
+  ]
+}
+```
+
+`at` is the phone clock. The server answers `204` and stores each event once:
+a resent one (same device, `permission` and `at`) is ignored. `400` for a bad
+body, no events or more than 50, a `permission` that is not a snake_case name
+of at most 40 characters (a name the server does not know yet is stored), or
+a missing `at`; `422` when the device is not registered.
 
 ### AlertResponse (server → phone, reply to `POST /incidents`)
 
@@ -442,7 +502,9 @@ by the Tech lead on Oct 24); `0005_device_setup.sql` adds `user_name`,
 Oct 24); `0006_notify_deliveries.sql` adds `notify_deliveries` (#76); `0007_device_voice_consent.sql` adds
 `voice_consent_at` and `voice_consent_sha256` to `devices` (#107);
 `0008_offline_incidents.sql` adds `offline` to the `incidents.trigger` check (#59);
-`0009_call_ficha.sql` adds `ficha` (JSONB) to `calls` (#106). The
+`0009_call_ficha.sql` adds `ficha` (JSONB) to `calls` (#106);
+`0010_device_permissions.sql` adds `device_state` (JSONB) to `incidents` and the
+`device_permission_events` table (#125). The
 server applies pending migrations on
 every boot (`db.Migrate`, under a Postgres advisory lock), so each Render
 deploy migrates the live database with no manual step, and booting again is a
@@ -451,7 +513,7 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 | Table | Key | Holds |
 | --- | --- | --- |
 | `devices` | `id` = `device_id` | phone number, family numbers, duress phrase; `user_name`, `safe_phrase` and `voice_id` (the cloned voice, #107), NULL until set; `voice_consent_at` and `voice_consent_sha256` (when the owner consented and the SHA-256 of the audio, never the audio), set with `voice_id`; `ed25519_public_key` (unique, 32 bytes) and `key_id` (unique, 8 bytes: the payload device_id derived from it), both NULL or both set |
-| `incidents` | `id` = `incident_id` | device, trigger, branch, speed used, `notified_at` |
+| `incidents` | `id` = `incident_id` | device, trigger, branch, speed used, `notified_at`; `device_state` (JSONB, #125): the alert's permission snapshot, NULL when it had none |
 | `gps_points` | identity; unique `(incident_id, recorded_at)` | every fix of an incident |
 | `calls` | identity; unique `conversation_id` | call status, transcript (JSONB), duration, **verdict**; `ficha` (JSONB, #106): the call's context, set with the verdict on `duress` and `unclear` calls, NULL otherwise |
 | `emergencies` | `emergency_id` (16 hex) | offline emergency: device, status, highest seq, last fix, channels, min hops (#57) |
@@ -460,6 +522,7 @@ no-op. Without `DATABASE_URL` the server boots and skips migrations.
 | `incident_seals` | `incident_id` | the seal: `sealed_at`, `document` (exact bytes of `ficha.json`), `signature`, `public_key` (#76) |
 | `call_progress` | `call_id` | what the call engine saw polling Twilio: last `twilio_status`, `ringing_at`, `answered_at` (server clock, #76) |
 | `notify_deliveries` | identity; unique `message_id` | each family message the notifier sent: masked `recipient`, `channel`, provider `message_id` (Kapso wamid), `status` (`accepted`, `failed`, `sent`, `delivered`, `read`), `error`, `sent_at`, `delivered_at`, `read_at` (#76) |
+| `device_permission_events` | `(device_id, permission, at)` | when each permission of a device was granted or lost: `granted`, `at` (phone clock), `received_at` (#125) |
 | `schema_migrations` | `version` | applied migration files |
 
 The verdict lives on `calls` (`verdict`, `verdict_reason`, `verdict_at`)

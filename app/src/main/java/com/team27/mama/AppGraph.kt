@@ -24,6 +24,10 @@ import com.team27.mama.mesh.MeshGateway
 import com.team27.mama.onboarding.ConnectivityNetworkStatus
 import com.team27.mama.onboarding.DeviceRegistrar
 import com.team27.mama.onboarding.OnboardingGate
+import com.team27.mama.permissions.AndroidPermissions
+import com.team27.mama.permissions.PermissionEventsClient
+import com.team27.mama.permissions.PermissionLog
+import com.team27.mama.permissions.PermissionSync
 import com.team27.mama.relay.GatewayRelayMesh
 import com.team27.mama.relay.MeshRelay
 import com.team27.mama.relay.DelegatingRelayControls
@@ -35,6 +39,8 @@ import com.team27.mama.relay.SharedPreferencesRelayStore
 import com.team27.mama.server.HttpServerApi
 import com.team27.mama.server.ServerApi
 import com.team27.mama.server.UrlConnectionTransport
+import com.team27.mama.setup.SetupStore
+import com.team27.mama.setup.SharedPreferencesStore
 import com.team27.mama.trigger.PhoneCallOnlyLauncher
 import com.team27.mama.trigger.IncomingCallLauncher
 import java.util.concurrent.Executor
@@ -163,6 +169,26 @@ class AppGraph(
     }
 
     fun deviceRegistrar(signer: PayloadSigner): DeviceRegistrar = DeviceRegistrar(serverApi, signer)
+
+    /**
+     * Capa 2 of #125: when each permission was granted or lost. Setup syncs on every
+     * permission change and when it finishes, [MainActivity] on every resume, the trigger
+     * after each alert. Events reach the server only once setup is done (the device is
+     * registered); until then they wait in their own preferences file.
+     */
+    val permissionSync: PermissionSync by lazy {
+        val setup = SetupStore(SharedPreferencesStore.forSetup(app))
+        val client = PermissionEventsClient(BuildConfig.SERVER_URL)
+        val reader = AndroidPermissions(app)
+        PermissionSync(
+            log = PermissionLog(SharedPreferencesStore(app.getSharedPreferences("mama_permissions", Context.MODE_PRIVATE))),
+            read = reader::snapshot,
+            send = { events -> client.send(setup.deviceId, events) },
+            ready = { setup.setupCompleted },
+            executor = Executors.newSingleThreadExecutor(),
+            onError = { Log.w("MamaPermissions", it) },
+        )
+    }
 
     /**
      * What the trigger (#16) runs when the server answers an alert with branch

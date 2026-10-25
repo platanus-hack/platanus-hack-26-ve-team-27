@@ -24,4 +24,10 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /** Every time the app opens or comes back: send the permission changes since the last time (#125). */
+    override fun onResume() {
+        super.onResume()
+        (application as MamaApp).graph.permissionSync.sync()
+    }
 }

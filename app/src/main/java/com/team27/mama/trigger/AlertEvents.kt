@@ -2,6 +2,7 @@ package com.team27.mama.trigger
 
 import com.team27.mama.contract.AlertEvent
 import com.team27.mama.contract.ContractJson
+import com.team27.mama.contract.DeviceState
 import com.team27.mama.contract.LocationUpdate
 import com.team27.mama.contract.Point
 import com.team27.mama.contract.Trigger
@@ -60,8 +61,16 @@ object AlertEvents {
     /**
      * The AlertEvent for one trigger. [incidentId] is made once per trigger
      * and reused by every retry, so the server keeps one incident.
+     * [deviceState] is the permission snapshot (#125); null leaves it out.
      */
-    fun alertEvent(incidentId: String, deviceId: String, trigger: Trigger, triggeredAtMs: Long, points: List<Point>) = AlertEvent(
+    fun alertEvent(
+        incidentId: String,
+        deviceId: String,
+        trigger: Trigger,
+        triggeredAtMs: Long,
+        points: List<Point>,
+        deviceState: DeviceState? = null,
+    ) = AlertEvent(
         incidentId = incidentId,
         deviceId = deviceId,
         trigger = trigger,
@@ -69,6 +78,7 @@ object AlertEvents {
         points = points,
         // No audio is recorded or uploaded yet.
         hasAudio = false,
+        deviceState = deviceState,
     )
 
     fun alertBody(event: AlertEvent): String = ContractJson.encodeToString(AlertEvent.serializer(), event)

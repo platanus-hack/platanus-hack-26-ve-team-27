@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 // Each canonical sample in testdata/ must parse into its Go type with no
@@ -26,6 +27,7 @@ func TestRoundTripSamples(t *testing.T) {
 		{"location_update.json", func() any { return new(LocationUpdate) }},
 		{"call_webhook.json", func() any { return new(CallWebhook) }},
 		{"notifier_message.json", func() any { return new(NotifierMessage) }},
+		{"permission_events.json", func() any { return new(PermissionEvents) }},
 	}
 	for _, c := range cases {
 		t.Run(c.file, func(t *testing.T) {
@@ -62,8 +64,8 @@ func TestEverySampleHasACase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 7 {
-		t.Fatalf("testdata has %d samples, TestRoundTripSamples covers 7: add the new one there", len(files))
+	if len(files) != 8 {
+		t.Fatalf("testdata has %d samples, TestRoundTripSamples covers 8: add the new one there", len(files))
 	}
 }
 
@@ -142,5 +144,69 @@ func TestCallWebhookIncidentID(t *testing.T) {
 	}
 	if got, want := w.IncidentID(), "9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f"; got != want {
 		t.Fatalf("IncidentID = %q, want %q", got, want)
+	}
+}
+
+// An alert is never rejected over its device_state (#125): whatever the
+// phone sends there decodes, even under the intake's strict decoder, and
+// keeps only the well-formed permissions.
+func TestDeviceStateDecodesLeniently(t *testing.T) {
+	cases := []struct {
+		name  string
+		state string
+		want  DeviceState
+	}{
+		{"null permission and a non-boolean are dropped", `{"captured_at":"2026-10-24T09:10:00.251Z","permissions":{"sms":true,"full_screen_intent":null,"microphone":"yes"}}`,
+			DeviceState{CapturedAt: time.Date(2026, 10, 24, 9, 10, 0, 251_000_000, time.UTC), Permissions: map[string]bool{"sms": true}}},
+		{"unknown fields are ignored", `{"captured_at":"2026-10-24T09:10:00Z","permissions":{"location_fine":false},"android":36}`,
+			DeviceState{CapturedAt: time.Date(2026, 10, 24, 9, 10, 0, 0, time.UTC), Permissions: map[string]bool{"location_fine": false}}},
+		{"malformed captured_at stays zero", `{"captured_at":"ayer","permissions":{"sms":false}}`,
+			DeviceState{Permissions: map[string]bool{"sms": false}}},
+		{"not an object", `"todo bien"`, DeviceState{}},
+		{"permissions not an object", `{"permissions":[true]}`, DeviceState{}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			raw := `{"incident_id":"9b2e4f1d-3c5a-4e7b-8d6f-1a2b3c4d5e6f","device_id":"d","trigger":"in_app",` +
+				`"triggered_at":"2026-10-24T09:10:00Z","points":[],"has_audio":false,"device_state":` + c.state + `}`
+			dec := json.NewDecoder(bytes.NewReader([]byte(raw)))
+			dec.DisallowUnknownFields()
+			var ev AlertEvent
+			if err := dec.Decode(&ev); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if ev.DeviceState == nil || !reflect.DeepEqual(*ev.DeviceState, c.want) {
+				t.Fatalf("device_state = %+v, want %+v", ev.DeviceState, c.want)
+			}
+		})
+	}
+}
+
+// An alert from an app without #125 has no device_state, and none is sent back.
+func TestAlertEventWithoutDeviceState(t *testing.T) {
+	var ev AlertEvent
+	if err := json.Unmarshal([]byte(`{"incident_id":"i","device_id":"d","trigger":"in_app","triggered_at":"2026-10-24T09:10:00Z","points":[],"has_audio":false}`), &ev); err != nil {
+		t.Fatal(err)
+	}
+	if ev.DeviceState != nil {
+		t.Fatalf("device_state = %+v, want nil", ev.DeviceState)
+	}
+	out, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(out, []byte("device_state")) {
+		t.Fatalf("re-emitted %s carries device_state", out)
+	}
+}
+
+// A malformed captured_at is left out when the snapshot is stored again.
+func TestDeviceStateWithoutCaptureTimeLeavesItOut(t *testing.T) {
+	out, err := json.Marshal(DeviceState{Permissions: map[string]bool{"sms": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(out); got != `{"permissions":{"sms":true}}` {
+		t.Fatalf("encoded %s", got)
 	}
 }

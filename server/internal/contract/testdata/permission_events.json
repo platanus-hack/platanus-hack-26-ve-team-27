@@ -1,0 +1,24 @@
+{
+  "events": [
+    {
+      "permission": "notifications",
+      "granted": true,
+      "at": "2026-10-24T08:02:11.512Z"
+    },
+    {
+      "permission": "location_fine",
+      "granted": true,
+      "at": "2026-10-24T08:02:40.127Z"
+    },
+    {
+      "permission": "location_background",
+      "granted": true,
+      "at": "2026-10-24T08:02:53.648Z"
+    },
+    {
+      "permission": "location_background",
+      "granted": false,
+      "at": "2026-10-24T09:40:03.951Z"
+    }
+  ]
+}
