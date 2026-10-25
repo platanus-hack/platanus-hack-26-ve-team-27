@@ -319,7 +319,7 @@ func Build(rec Record, opts Options) Page {
 	case rec.Incident.Branch != contract.BranchCall:
 		p.CallNote = noCallReason(rec.Incident.Branch)
 	case len(rec.Calls) > 0 && p.Fallback:
-		p.CallNote = "Ninguna llamada conectó: MAMÁ abrió la página de respaldo para hablar por el navegador."
+		p.CallNote = "Ninguna llamada conectó: Aló Mamá abrió la página de respaldo para hablar por el navegador."
 	case len(rec.Calls) > 0:
 		p.CallNote = "La llamada no conectó."
 	case p.Live:
@@ -429,7 +429,7 @@ func Timeline(rec Record, opts Options) []Event {
 			at = *last.EndedAt
 		}
 		add(Event{Key: "fallback", Kind: EventFallback, At: at, Clock: ClockServer, Error: true,
-			Title: "Se abrió el respaldo por el navegador", Detail: "Ninguna llamada conectó: MAMÁ abrió la página de respaldo (WebRTC). Deducido del registro de llamadas."})
+			Title: "Se abrió el respaldo por el navegador", Detail: "Ninguna llamada conectó: Aló Mamá abrió la página de respaldo (WebRTC). Deducido del registro de llamadas."})
 	}
 	for _, em := range rec.Emergencies {
 		add(Event{Key: "emergency-" + em.ID, Kind: EventEmergency, At: em.FirstReceivedAt, Clock: ClockServer,
@@ -586,9 +586,9 @@ func noAudioReason(c Call) string {
 func noCallReason(b contract.Branch) string {
 	switch b {
 	case contract.BranchImmediateAlert:
-		return "No hubo llamada: estaba quieta, así que MAMÁ avisó a la familia de una vez."
+		return "No hubo llamada: estaba quieta, así que Aló Mamá avisó a la familia de una vez."
 	case contract.BranchSilentTracker:
-		return "No hubo llamada: iba rápido (en carro), así que MAMÁ rastrea en silencio."
+		return "No hubo llamada: iba rápido (en carro), así que Aló Mamá rastrea en silencio."
 	}
 	return "Todavía no hay llamada registrada."
 }

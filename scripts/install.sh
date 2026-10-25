@@ -69,7 +69,7 @@ for serial in "${SERIALS[@]}"; do
   if "$ADB" -s "$serial" shell monkey -p "$PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1; then
     echo "install: launched $PACKAGE on $serial"
   else
-    echo "install: installed on $serial but could not launch it, open MAMÁ from the launcher" >&2
+    echo "install: installed on $serial but could not launch it, open Aló Mamá from the launcher" >&2
   fi
 done
 

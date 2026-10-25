@@ -1,12 +1,12 @@
 {
   // Your project's name, as it will appear on the voting page.
-  "project-name": "MAMÁ",
+  "project-name": "Aló Mamá",
 
   // Short one-line summary of your project (in Spanish).
   "project-oneliner-spanish": "Pide ayuda en secreto: una llamada de \"Mamá\" que, si estás en peligro, avisa a tu familia por WhatsApp.",
 
   // Brief description of your project (in Spanish).
-  "project-description-spanish": "MAMÁ es una app Android para pedir ayuda sin que nadie lo note, por ejemplo durante un secuestro o un robo. Presionas volumen arriba-abajo-arriba, aunque el teléfono esté bloqueado, y en menos de 15 segundos te llama \"Mamá\", un agente de voz con IA que te saluda por tu nombre. Si dices tu frase de alerta, te quedas callado o no dices tu frase de todo bien, tu familia recibe un WhatsApp con tu ubicación, el veredicto, lo que se entendió de la llamada y el enlace a la ficha del caso. Una central web muestra cada alerta en vivo. Si usas el widget, MAMÁ no llama y avisa de una vez. Para quien te esté mirando, es solo una llamada normal con tu mamá.",
+  "project-description-spanish": "Aló Mamá es una app Android para pedir ayuda sin que nadie lo note, por ejemplo durante un secuestro o un robo. Presionas volumen arriba-abajo-arriba, aunque el teléfono esté bloqueado, y en menos de 15 segundos te llama \"Mamá\", un agente de voz con IA que te saluda por tu nombre. Si dices tu frase de alerta, te quedas callado o no dices tu frase de todo bien, tu familia recibe un WhatsApp con tu ubicación, el veredicto, lo que se entendió de la llamada y el enlace a la ficha del caso. Una central web muestra cada alerta en vivo. Si usas el widget, Aló Mamá no llama y avisa de una vez. Para quien te esté mirando, es solo una llamada normal con tu mamá.",
 
   // Public URL where your project is deployed and running.
   // Must be a valid URL, for example: https://my-project.vercel.app

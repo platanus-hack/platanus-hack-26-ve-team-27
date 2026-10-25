@@ -58,6 +58,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "firma válida")
 	fmt.Fprintf(stdout, "incidente %s, sellado %s, %d llamada(s)\n", sealed.IncidentID, sealed.SealedAt, sealed.Calls)
 	fmt.Fprintf(stdout, "llave %s\n", report.Fingerprint(pub))
-	fmt.Fprintln(stdout, "El sello prueba que el registro no cambió desde que el servidor de MAMÁ lo cerró. No es una firma electrónica certificada ni reemplaza una experticia.")
+	fmt.Fprintln(stdout, "El sello prueba que el registro no cambió desde que el servidor de Aló Mamá lo cerró. No es una firma electrónica certificada ni reemplaza una experticia.")
 	return 0
 }

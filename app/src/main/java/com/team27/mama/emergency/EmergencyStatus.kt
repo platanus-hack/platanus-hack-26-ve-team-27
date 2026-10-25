@@ -17,7 +17,7 @@ fun EmergencyState.toStatus(): EmergencyStatus? {
     }
     val detail = if (phase == EmergencyPhase.SEARCHING_NEARBY || phase == EmergencyPhase.NO_CHANNEL) {
         when (meshIssue) {
-            MeshIssue.NO_SERVER_KEYS -> "Para avisar sin internet, abre MAMÁ una vez con internet."
+            MeshIssue.NO_SERVER_KEYS -> "Para avisar sin internet, abre Aló Mamá una vez con internet."
             MeshIssue.UNAVAILABLE -> "Activa Bluetooth para buscar ayuda cercana."
             null -> null
         }

@@ -208,7 +208,7 @@ main() {
 
   # Publish: one Release per commit, holding only the APK, marked latest.
   local tag="apk-${sha:0:7}" notes
-  notes="MAMÁ signed release APK built from $sha (main).
+  notes="Aló Mamá signed release APK built from $sha (main).
 
 - Server: $server_url
 - sha256: \`$sum\`
@@ -224,7 +224,7 @@ Stable download link: $STABLE_URL"
     gh release edit "$tag" --repo "$REPO" --draft=false --prerelease=false --latest --notes "$notes"
   else
     log "creating Release $tag"
-    gh release create "$tag" "$apk" --repo "$REPO" --target "$sha" --title "MAMÁ APK ${sha:0:7}" --notes "$notes" --latest
+    gh release create "$tag" "$apk" --repo "$REPO" --target "$sha" --title "Aló Mamá APK ${sha:0:7}" --notes "$notes" --latest
   fi
 
   assets="$(gh release view "$tag" --repo "$REPO" --json assets --jq '.assets[].name')"

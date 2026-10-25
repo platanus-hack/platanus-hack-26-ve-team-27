@@ -45,7 +45,7 @@
 
 {{define "sec-calls" -}}
 {{if .NoCall}}<p data-key="nocall" class="hint">{{.NoCall}}</p>{{end}}
-{{- if .Fallback}}<p data-key="fallback" class="notice notice-error">Ninguna llamada conectó: MAMÁ abrió la página de respaldo (WebRTC) para hablar por el navegador. Esto se deduce del registro de llamadas.</p>{{end}}
+{{- if .Fallback}}<p data-key="fallback" class="notice notice-error">Ninguna llamada conectó: Aló Mamá abrió la página de respaldo (WebRTC) para hablar por el navegador. Esto se deduce del registro de llamadas.</p>{{end}}
 {{- range $c := .Calls}}
 <article data-key="{{.Key}}" data-live-children class="card call{{if .Active}} active{{end}}{{if .Failed}} failed{{end}}" id="llamada-{{.N}}">
   <div data-key="head" class="call-head">
@@ -117,7 +117,7 @@
   </dl>
   <p class="downloads"><a class="button" href="{{.JSONURL}}" download="ficha.json">Descargar ficha.json</a><a class="button secondary" href="{{.SigURL}}" download="ficha.sig">Descargar ficha.sig</a></p>
   <div class="honest">
-    <p>El sello prueba que el registro no cambió desde que el servidor de MAMÁ lo cerró. No es una firma electrónica certificada ni reemplaza una experticia.</p>
+    <p>El sello prueba que el registro no cambió desde que el servidor de Aló Mamá lo cerró. No es una firma electrónica certificada ni reemplaza una experticia.</p>
     <p>Para comprobarlo: <code>go run ./cmd/verify-ficha ficha.json ficha.sig {{.Key}}</code></p>
   </div>
 </div>

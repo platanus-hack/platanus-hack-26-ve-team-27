@@ -26,7 +26,7 @@ var (
 	ErrBadKey       = errors.New("la llave pública debe ser Base64 estándar de 32 bytes, como la de GET /config")
 	ErrBadSignature = errors.New("la firma debe tener 64 bytes (o su Base64)")
 	ErrSealInvalid  = errors.New("la firma no corresponde a esta ficha con esta llave: la ficha cambió después de sellarla, o la selló otra llave")
-	ErrNotAReport   = errors.New("la firma es válida, pero el archivo no es una ficha de MAMÁ v1")
+	ErrNotAReport   = errors.New("la firma es válida, pero el archivo no es una ficha de Aló Mamá v1")
 )
 
 // document is ficha.json, version 1. Field order is the byte order: the

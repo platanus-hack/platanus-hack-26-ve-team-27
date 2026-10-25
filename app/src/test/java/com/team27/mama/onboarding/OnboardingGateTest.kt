@@ -57,7 +57,7 @@ class OnboardingGateTest {
         val result = gate(false, CountingApi { sample }).finish()
         assertEquals(OnboardingResult.Offline, result)
         assertEquals(
-            "Necesitas internet para terminar de configurar MAMÁ. Conéctate a wifi o datos y vuelve a intentarlo.",
+            "Necesitas internet para terminar de configurar Aló Mamá. Conéctate a wifi o datos y vuelve a intentarlo.",
             result.userMessage(),
         )
     }
@@ -102,11 +102,11 @@ class OnboardingGateTest {
     @Test fun messages() {
         assertNull(OnboardingResult.Done.userMessage())
         assertEquals(
-            "Necesitas internet para terminar de configurar MAMÁ. Conéctate a wifi o datos y vuelve a intentarlo.",
+            "Necesitas internet para terminar de configurar Aló Mamá. Conéctate a wifi o datos y vuelve a intentarlo.",
             OnboardingResult.Offline.userMessage(),
         )
         assertEquals(
-            "No pudimos conectar con MAMÁ. Revisa tu conexión y vuelve a intentarlo.",
+            "No pudimos conectar con Aló Mamá. Revisa tu conexión y vuelve a intentarlo.",
             OnboardingResult.ServerUnavailable.userMessage(),
         )
     }
