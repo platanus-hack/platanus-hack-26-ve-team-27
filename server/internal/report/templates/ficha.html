@@ -117,14 +117,40 @@
 
 {{define "sec-track" -}}
 {{range .Stages -}}
-<li data-key="{{.Key}}-{{.State}}-{{.Time}}-{{.Sub}}-{{.Mark}}-{{.Error}}" data-reveal class="node node-{{.State}}{{if .Error}} node-error{{end}}" data-stage="{{.Key}}">
-  <span class="node-dot" aria-hidden="true">{{if eq .State "done"}}{{if .Error}}!{{else}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9.5 16.6 5.4 12.5 4 13.9l5.5 5.5L20 8.9l-1.4-1.4z"/></svg>{{end}}{{end}}</span>
+<li data-key="{{.Key}}-{{.State}}-{{.Time}}-{{.Sub}}-{{.Mark}}-{{.Error}}-{{.Warn}}" data-reveal class="node node-{{.State}}{{if .Error}} node-error{{end}}{{if .Warn}} node-warn{{end}}" data-stage="{{.Key}}">
+  {{- if .Ready}}
+  <button type="button" class="node-btn" popovertarget="phone-ready" title="Ver los permisos">
+  {{- end}}
+  <span class="node-dot" aria-hidden="true">{{if eq .State "done"}}{{if or .Error .Warn}}!{{else}}<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9.5 16.6 5.4 12.5 4 13.9l5.5 5.5L20 8.9l-1.4-1.4z"/></svg>{{end}}{{end}}</span>
   <span class="node-time">{{if .Time}}{{.Time}}{{else if eq .State "skipped"}}—{{else if eq .State "current"}}ahora{{else}}·{{end}}</span>
   <span class="node-label">{{.Label}}</span>
   {{- if .Sub}}<span class="node-sub">{{.Sub}}</span>{{end}}
   {{- if .Mark}}<span class="node-mark">{{.Mark}}</span>{{end}}
+  {{- with .Ready}}
+  </button>
+  {{template "phone-ready" .}}
+  {{- end}}
 </li>
 {{end -}}
+{{- end}}
+
+{{/* The phone's permissions at the gesture (#125), opened by a tap on the
+  "Teléfono listo" node. A popover sits in the top layer, so the track's
+  sideways scroll does not clip it, and needs no script. */}}
+{{define "phone-ready" -}}
+<div id="phone-ready" popover class="ready-pop{{if .Warn}} warn{{end}}">
+  <p class="ready-title">Cómo estaba el teléfono</p>
+  <p class="ready-when">Al pedir ayuda · {{.Time}} (reloj del teléfono)</p>
+  {{- if .Warn}}
+  <p class="ready-warn">Falta: {{.Missing}}</p>
+  {{- end}}
+  <ul class="ready-chips">
+  {{- range .Chips}}
+    <li class="perm{{if .OK}} perm-ok{{else if .Important}} perm-missing{{else}} perm-off{{end}}"><span class="perm-mark" aria-hidden="true">{{if .OK}}✓{{else}}✗{{end}}</span>{{.Label}}</li>
+  {{- end}}
+  </ul>
+  <button type="button" class="ready-close" popovertarget="phone-ready" popovertargetaction="hide">Cerrar</button>
+</div>
 {{- end}}
 
 {{define "sec-call" -}}

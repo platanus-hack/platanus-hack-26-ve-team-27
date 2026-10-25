@@ -19,6 +19,10 @@ type Stage struct {
 	State string // done, current (next expected, pulsing while live), pending, skipped (passed without a time)
 	Error bool   // a failure: the call never connected
 	Mark  string // a small marker: "2 intentos", "respaldo web"
+	Warn  bool   // done, but with a warning: the phone missed an important permission
+	// Ready is the "Teléfono listo" node's permission list (#125), which a
+	// tap opens; nil on every other node.
+	Ready *PhoneReady
 }
 
 // StageState values.
@@ -32,10 +36,11 @@ const (
 // Stages are the track's nodes for the record: for a call incident,
 // Pidió ayuda → Llegó al servidor → Mamá llamó → Sonó → Contestó → Colgó →
 // Veredicto → Familia avisada → Sellado; without a call, Pidió ayuda →
-// Llegó al servidor → Familia avisada (those are never sealed). A step with
-// a time is done; one passed without a time (no Twilio data, so no "Sonó")
-// is skipped; while live, the first step after the last done one is
-// current.
+// Llegó al servidor → Familia avisada (those are never sealed). When the
+// alert carried the phone's permissions (#125), "Teléfono listo" comes
+// first. A step with a time is done; one passed without a time (no Twilio
+// data, so no "Sonó") is skipped; while live, the first step after the last
+// done one is current.
 func Stages(rec Record, channel string, live bool) []Stage {
 	inc := rec.Incident
 	type step struct {
@@ -47,6 +52,10 @@ func Stages(rec Record, channel string, live bool) []Stage {
 	add := func(key, label, sub string, t *time.Time) *step {
 		steps = append(steps, step{Stage: Stage{Key: "stage-" + key, Label: label, Sub: sub}, at: t})
 		return &steps[len(steps)-1]
+	}
+	if r := phoneReady(rec); r != nil {
+		s := add("ready", "Teléfono listo", r.Summary, at(rec.Incident.TriggeredAt))
+		s.Warn, s.Ready = r.Warn, r
 	}
 	add("trigger", "Pidió ayuda", triggerShort(inc.Trigger), at(inc.TriggeredAt))
 	add("server", "Llegó al servidor", "", at(inc.CreatedAt))
@@ -118,6 +127,8 @@ func Stages(rec Record, channel string, live bool) []Stage {
 	for i, s := range steps {
 		st := s.Stage
 		switch {
+		case s.Ready != nil:
+			st.State, st.Time = StageDone, s.Ready.Time
 		case s.at != nil:
 			st.State, st.Time = StageDone, clock(*s.at)
 		case i < last:

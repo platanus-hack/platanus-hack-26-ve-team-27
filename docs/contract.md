@@ -631,7 +631,11 @@ default; then every route below answers `404`). Code:
   - a header with the state and the clock since the gesture;
   - a horizontal track of the case's stages (Pidió ayuda → Llegó al servidor →
     Mamá llamó → Sonó → Contestó → Colgó → Veredicto → Familia avisada →
-    Sellado);
+    Sellado). When the alert carried `device_state` (#125), "Teléfono listo"
+    comes first, with "7 de 8 ✓" over the permissions that apply to the
+    phone; it is yellow when precise or background location, accessibility,
+    notifications or the unrestricted battery is missing, and a tap opens
+    the permissions in plain words;
   - three panels: the route, the call (the player and the transcript, once it
     ends) and the family (one chip per relative with what Kapso reported).
   - `devices.user_name`, when the column exists (#104), names the person.
@@ -644,7 +648,11 @@ default; then every route below answers `404`). Code:
   and confianza (those with a value), and a note that an AI extracted them
   and they must be checked against the recording. The seal signs that
   context too, as the optional `calls[].context` in `ficha.json` (ADR 0005).
-  It uses `github.com/go-pdf/fpdf` with Lexend embedded.
+  "Preparación del teléfono" (#125) lists the permissions at the gesture
+  and when each was granted, with later changes marked; it comes from the
+  live record and is labelled as outside the seal (`ficha.json` stays v1).
+  The central detail shows the same strip under its track; the family page
+  does not. It uses `github.com/go-pdf/fpdf` with Lexend embedded.
 - **Family messages.** With the report on, the notifier records every send in
   `notify_deliveries`, with the number masked. Kapso's message status webhook
   (`whatsapp.message.sent`, `.delivered`, `.read`, `.failed`) goes to

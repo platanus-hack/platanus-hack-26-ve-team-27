@@ -119,6 +119,7 @@
       <ol class="track" data-live="track">{{template "sec-track" .}}</ol>
     </div>
   </div>
+  <div class="c-prep" data-live="c-prep">{{template "sec-c-prep" .}}</div>
 </section>
 
 <main class="c-grid">
@@ -154,6 +155,19 @@
   {{- if .Live}}<span class="clock-label">desde el gesto</span><span class="big-clock ticker" data-since="{{.TriggerISO}}" data-format="clock">—</span>
   {{- else if .Elapsed}}<span class="clock-label">duró</span><span class="big-clock">{{.Elapsed}}</span>{{end -}}
 </div>
+{{- end}}
+
+{{/* How the phone was set up (#125): each permission's first grant, then
+  any later change, marked. Empty when the device sent none. */}}
+{{define "sec-c-prep" -}}
+{{if .Prep -}}
+<p data-key="prep-title" class="c-prep-title">Preparación del teléfono</p>
+<ol data-key="prep-steps" data-live-children class="c-prep-steps">
+{{- range .Prep}}
+  <li data-key="{{.Key}}" data-reveal class="c-prep-step{{if .Later}} later{{end}}{{if .Lost}} lost{{end}}"><span class="c-prep-label">{{if .Lost}}✗ {{else if .Later}}✓ {{end}}{{.Label}}</span> <span class="c-prep-time">{{.Time}}</span></li>
+{{- end}}
+</ol>
+{{- end}}
 {{- end}}
 
 {{define "sec-c-family" -}}
