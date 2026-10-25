@@ -19,6 +19,7 @@ import com.team27.mama.MamaApp
 import com.team27.mama.contract.DeviceState
 import com.team27.mama.contract.Trigger
 import com.team27.mama.emergency.OfflineFallback
+import com.team27.mama.onboarding.ConnectivityNetworkStatus
 import com.team27.mama.permissions.AndroidPermissions
 import com.team27.mama.permissions.PermissionSnapshot
 import com.team27.mama.setup.RegistrationClient
@@ -47,7 +48,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  *    [IncomingCallLauncher], the other branches open the confirmation screen;
  * 4. follows with fresh fixes as LocationUpdates for [FOLLOW_UP_MS];
  * 5. when the alert did not reach the server, declares the offline emergency
- *    ([offlineFallback], only with OFFLINE_EMERGENCY_ENABLED).
+ *    ([offlineFallback], only with OFFLINE_EMERGENCY_ENABLED). With the flag a
+ *    phone with no network skips steps 1–4, and the first failed attempt
+ *    hands off without retries, so SMS and the mesh start within seconds.
  *
  * The alert carries the phone's permissions at the gesture ([deviceState],
  * #125), and after it the permission changes are synced in the background.
@@ -144,8 +147,10 @@ class TriggerService : Service() {
         val base = BuildConfig.SERVER_URL
         val graph = (application as MamaApp).graph
         val override = graph.channelOverride.value
-        if (OfflineFallback.skipsOnlineAlert(override, graph.emergency != null)) {
-            TriggerLog.log(this, "alert $incidentId skipped: channel override $override")
+        val offlineEnabled = graph.emergency != null
+        val hasNetwork = ConnectivityNetworkStatus(this).isOnline()
+        if (OfflineFallback.skipsOnlineAlert(override, offlineEnabled, hasNetwork)) {
+            TriggerLog.log(this, "alert $incidentId skipped: channel override $override, network=$hasNetwork")
             offlineFallback(null)
             return
         }
@@ -170,6 +175,7 @@ class TriggerService : Service() {
                 val outcome = AlertSender(
                     post = { body -> postAlert(base, body) },
                     reregister = { reregister(store) },
+                    retryDelaysMs = OfflineFallback.alertRetryDelaysMs(offlineEnabled, AlertSender.DEFAULT_RETRY_DELAYS_MS),
                     onAttempt = { attempt, result ->
                         TriggerLog.log(
                             this,

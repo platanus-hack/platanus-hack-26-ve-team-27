@@ -86,6 +86,54 @@ class MeshPolicyTest {
     }
 
     @Test
+    fun bluetoothOffAndOnRestartsTheGateway() = runTest {
+        val bluetooth = MutableStateFlow(true)
+        val calls = mutableListOf<String>()
+        MeshController(
+            MutableStateFlow(false),
+            MutableStateFlow(true),
+            MutableStateFlow(false),
+            startGateway = { calls += "startGateway" },
+            stopGateway = { calls += "stopGateway" },
+            startService = { calls += "startService" },
+            stopService = { calls += "stopService" },
+            scope = backgroundScope,
+            bluetoothOn = bluetooth,
+        ).start()
+        runCurrent()
+        assertEquals(listOf("startService", "startGateway"), calls)
+        calls.clear()
+        // The service keeps the relay's process alive while the radio is off.
+        bluetooth.value = false
+        runCurrent()
+        assertEquals(listOf("startService", "stopGateway"), calls)
+        calls.clear()
+        bluetooth.value = true
+        runCurrent()
+        assertEquals(listOf("startService", "startGateway"), calls)
+    }
+
+    @Test
+    fun bluetoothOnDoesNotStartTheGatewayWhenTheMeshIsOff() = runTest {
+        val bluetooth = MutableStateFlow(false)
+        val calls = mutableListOf<String>()
+        MeshController(
+            MutableStateFlow(false),
+            MutableStateFlow(false),
+            MutableStateFlow(false),
+            startGateway = { calls += "startGateway" },
+            stopGateway = { calls += "stopGateway" },
+            startService = { calls += "startService" },
+            stopService = { calls += "stopService" },
+            scope = backgroundScope,
+            bluetoothOn = bluetooth,
+        ).start()
+        bluetooth.value = true
+        runCurrent()
+        assertFalse("startGateway" in calls)
+    }
+
+    @Test
     fun failingCallDoesNotEndTheController() = runTest {
         val visible = MutableStateFlow(false)
         val relay = MutableStateFlow(true)

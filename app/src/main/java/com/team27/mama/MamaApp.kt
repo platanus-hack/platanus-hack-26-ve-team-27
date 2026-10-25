@@ -5,6 +5,7 @@ import android.util.Log
 import com.team27.mama.emergency.config.ConfigRefresher
 import com.team27.mama.mesh.MeshGateway
 import com.team27.mama.relay.AppVisibility
+import com.team27.mama.relay.BluetoothRadio
 import com.team27.mama.relay.MeshController
 import com.team27.mama.relay.RelayForegroundService
 import com.team27.mama.relay.keepsMeshOn
@@ -45,6 +46,7 @@ class MamaApp : Application() {
             stopService = { RelayForegroundService.stop(this) },
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1)),
             onError = { Log.w("MamaRelay", it) },
+            bluetoothOn = BluetoothRadio.isOn(this),
         ).start()
     }
 }
