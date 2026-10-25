@@ -26,6 +26,9 @@
 <script src="{{static "route-map.js"}}" defer></script>
 {{end}}
 
+{{/* The alarm sound (#143): on unless the viewer turns it off on this screen. */}}
+{{define "central-sound"}}<button type="button" class="c-theme c-sound" data-alarm-sound aria-pressed="true" aria-label="Silenciar la alarma"><svg class="i-on" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14 3.23v17.54a1 1 0 0 1-1.65.76L7.2 17H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h3.2l5.15-4.53A1 1 0 0 1 14 3.23Zm2.5 4.27a1 1 0 0 1 1.4.15 6.5 6.5 0 0 1 0 8.7 1 1 0 1 1-1.55-1.26 4.5 4.5 0 0 0 0-6.18 1 1 0 0 1 .15-1.41Z"/></svg><svg class="i-off" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14 3.23v17.54a1 1 0 0 1-1.65.76L7.2 17H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h3.2l5.15-4.53A1 1 0 0 1 14 3.23Zm2.3 5.06a1 1 0 0 1 1.4 0L19 9.59l1.3-1.3a1 1 0 1 1 1.4 1.42L20.42 11l1.3 1.3a1 1 0 0 1-1.42 1.4L19 12.42l-1.3 1.3a1 1 0 0 1-1.4-1.42L17.58 11l-1.3-1.3a1 1 0 0 1 0-1.4Z"/></svg></button>{{end}}
+
 {{define "central-theme"}}<button type="button" class="c-theme" data-theme-toggle aria-label="Cambiar el tema"><svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.3 2a10 10 0 1 0 9.7 12.4 8 8 0 0 1-9.7-12.4Z"/></svg><svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm0-5a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm0 17a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM3 11h2a1 1 0 1 1 0 2H3a1 1 0 1 1 0-2Zm16 0h2a1 1 0 1 1 0 2h-2a1 1 0 1 1 0-2ZM5.6 4.2l1.4 1.4a1 1 0 0 1-1.4 1.4L4.2 5.6a1 1 0 0 1 1.4-1.4Zm12.8 12.8 1.4 1.4a1 1 0 0 1-1.4 1.4l-1.4-1.4a1 1 0 0 1 1.4-1.4Zm1.4-12.8a1 1 0 0 1 0 1.4l-1.4 1.4a1 1 0 1 1-1.4-1.4l1.4-1.4a1 1 0 0 1 1.4 0ZM7 17a1 1 0 0 1 0 1.4l-1.4 1.4a1 1 0 0 1-1.4-1.4L5.6 17A1 1 0 0 1 7 17Z"/></svg></button>{{end}}
 
 {{define "central-list"}}<!doctype html>
@@ -41,6 +44,7 @@
   <div class="c-top-right">
     <span class="chip chip-live" data-live-badge><span class="live-dot" aria-hidden="true"></span><span data-live-text>En vivo</span></span>
     <span class="c-now" data-now aria-label="Hora de Caracas">—</span>
+    {{template "central-sound"}}
     {{template "central-theme"}}
   </div>
 </header>
@@ -63,7 +67,7 @@
 
 {{define "sec-c-list" -}}
 {{range .Rows -}}
-<a data-key="{{.Key}}" data-live-children class="c-row c-row-{{.State}}{{if .New}} c-row-new{{end}}" href="{{.URL}}"{{if .New}} data-new{{end}}>
+<a data-key="{{.Key}}" data-live-children class="c-row c-row-{{.State}}{{if .New}} c-row-new{{end}}{{if .Alarm}} c-row-alarm{{if .AlarmPulse}} pulse{{end}}{{end}}" href="{{.URL}}"{{if .New}} data-new{{end}}{{if .Alarm}} data-alarm="{{.Key}}"{{end}}>
   <span data-key="st-{{.State}}" data-reveal class="c-state c-state-{{.State}}"><span class="c-state-dot" aria-hidden="true"></span>{{.StateLabel}}</span>
   <span data-key="who-{{.Name}}-{{.Number}}-{{.New}}" class="c-who">
     <span class="c-avatar" aria-hidden="true">{{if .Initials}}{{.Initials}}{{else}}<img src="{{static "mama_mark.webp"}}" alt="" width="40" height="40">{{end}}</span>
@@ -104,6 +108,7 @@
   <div class="c-top-right">
     <span class="status" data-live="status">{{template "sec-status" .}}</span>
     <span class="c-now" data-now aria-label="Hora de Caracas">—</span>
+    {{template "central-sound"}}
     {{template "central-theme"}}
     <a class="pdf-btn c-trace-link" href="/central/r/{{.Case.ID}}/traza">Ver traza</a>
     <a class="pdf-btn" href="{{.PDFURL}}" download aria-label="Descargar PDF"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V9h5.5L13 3.5ZM12 11a1 1 0 0 0-1 1v4.59l-1.3-1.3a1 1 0 1 0-1.4 1.42l3 3a1 1 0 0 0 1.4 0l3-3a1 1 0 0 0-1.4-1.42L13 16.6V12a1 1 0 0 0-1-1Z"/></svg><span class="pdf-text">PDF</span></a>
@@ -145,7 +150,10 @@
 <img data-key="art-{{.Character}}" data-reveal class="mama" src="{{static (print "mama_" .Character ".webp")}}" alt="" width="80" height="80">
 <div data-key="c-head-text" data-live-children class="c-hero-text">
   <p data-key="eyebrow-{{.Case.State}}-{{.TriggeredShort}}" class="c-eyebrow"><span data-reveal class="c-state c-state-{{.Case.State}}"><span class="c-state-dot" aria-hidden="true"></span>{{.Case.StateLabel}}</span><span class="c-when">Pidió ayuda · {{.TriggeredShort}}</span></p>
+  <div data-key="name-row" data-live-children class="title-row">
   <h1 data-key="name-{{.Case.Name}}-{{.Case.Number}}" class="c-name-big">{{if .Case.Name}}{{.Case.Name}}{{else}}{{.Case.Number}}{{end}}</h1>
+  {{- template "alarm-chip" .}}
+  </div>
   {{- with .Situation}}
   <p data-key="situation-{{.}}" class="c-situation-line">{{.}}</p>
   {{- end}}

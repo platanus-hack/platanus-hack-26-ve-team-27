@@ -8,9 +8,10 @@
  * this page is served by the Go server and cannot read the app's theme. If you
  * change a color or the font in Theme.kt, change it here too, and the reverse.
  *
- * Red (--error*) is for errors only, never for emphasis. Lexend 400/500/700,
- * self-hosted (no third-party request). Every animation stops under
- * prefers-reduced-motion.
+ * Red (--error*) is for errors only, never for emphasis, with one exception:
+ * the duress alarm (--alarm*, #143), the one place red dominates. Lexend
+ * 400/500/700, self-hosted (no third-party request). Every animation stops
+ * under prefers-reduced-motion.
  */
 
 @font-face { font-family: "Lexend"; font-weight: 400; font-display: swap; src: url("/ficha/static/lexend_regular.ttf") format("truetype"); }
@@ -53,6 +54,10 @@
   --on-warn: #181918;
   --warn-container: #FFEBB8;
   --on-warn-container: #3D2B00;
+  /* Alarm red, page-only (#143): the duress alarm, never anything else. */
+  --alarm: #C8102E;
+  --on-alarm: #FFFFFF;
+  --alarm-glow: rgba(200, 16, 46, 0.45);
 
   /* MamaShapes and MamaSpacing */
   --r-s: 12px; --r-m: 16px; --r-l: 24px;
@@ -94,6 +99,9 @@
     --on-warn: #181918;
     --warn-container: #4A3800;
     --on-warn-container: #FFEBB8;
+    --alarm: #E5243B;
+    --on-alarm: #FFFFFF;
+    --alarm-glow: rgba(255, 59, 72, 0.5);
   }
 }
 
@@ -176,6 +184,46 @@ body[data-open] .mama { animation: float 5s ease-in-out infinite; }
 .head-clock { flex: none; display: flex; flex-direction: column; align-items: flex-end; }
 .clock-label { font-size: 12px; line-height: 16px; color: var(--on-surface-variant); }
 .big-clock { font-weight: 700; font-size: 22px; line-height: 28px; font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- the alarm (#143)
+ * A chip beside the name, the height of the state chips: red from the
+ * moment the phrase is heard, amber for an unclear verdict, quiet when it
+ * steps down. While the case is live it pulses, and a thin frame breathes
+ * around the screen. */
+
+@keyframes alarm-in { 0% { opacity: 0; transform: scale(.8); } 40% { opacity: 1; transform: scale(1.08); filter: brightness(1.5); } 100% { transform: none; filter: none; } }
+@keyframes alarm-beat { 0%, 100% { box-shadow: 0 0 0 0 var(--alarm-glow); } 50% { box-shadow: 0 0 0 6px transparent; } }
+@keyframes alarm-ring { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(16deg); } 30% { transform: rotate(-14deg); } 45% { transform: rotate(8deg); } 60% { transform: none; } }
+@keyframes alarm-frame { 0%, 100% { opacity: .55; } 50% { opacity: .15; } }
+
+.title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.title-row > h1 { min-width: 0; }
+.alarm-chip {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  padding: 4px 12px 4px 8px; border-radius: 999px;
+  background: var(--alarm); color: var(--on-alarm);
+  font-weight: 700; font-size: 14px; line-height: 20px; white-space: nowrap; cursor: default;
+}
+.alarm-icon { display: grid; place-items: center; width: 18px; height: 18px; }
+.alarm-icon svg { width: 18px; height: 18px; }
+.alarm-sub { flex: none; font-size: 13px; line-height: 18px; font-weight: 500; color: var(--alarm); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.alarm-chip.pulse { animation: alarm-beat 1.2s ease-in-out infinite; }
+.alarm-chip.pulse .alarm-icon { animation: alarm-ring 1.6s ease-in-out infinite; }
+.alarm-chip.reveal { animation: alarm-in .7s var(--ease) both; }
+.alarm-unclear { background: var(--warn-container); color: var(--on-warn-container); }
+.alarm-unclear + .alarm-sub { color: var(--warn); }
+.alarm-cleared { background: var(--surface-high); color: var(--on-surface-variant); font-weight: 500; }
+.alarm-cleared + .alarm-sub { color: var(--on-surface-variant); }
+.alarm-frame {
+  position: fixed; inset: 0; z-index: 40; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--alarm), inset 0 0 48px var(--alarm-glow);
+  opacity: .55; animation: alarm-frame 1.6s ease-in-out infinite;
+}
+.node.node-alarm .node-dot { background: var(--alarm); border-color: var(--alarm); color: var(--on-alarm); box-shadow: 0 0 0 4px var(--alarm-glow); }
+.node.node-alarm .node-sub { color: var(--alarm); font-weight: 700; }
+.turn.phrase.alarm { background: var(--alarm); color: var(--on-alarm); border-color: var(--alarm); box-shadow: 0 0 0 4px var(--alarm-glow); animation: none; }
+.turn.phrase.alarm .phrase-tag { background: var(--on-alarm); color: var(--alarm); }
+body[data-open] .turn.phrase.alarm { animation: alarm-beat 1.2s ease-in-out infinite; }
 
 /* ---------------------------------------------------------------- track */
 
@@ -365,6 +413,8 @@ body[data-expanded] .more { display: none; }
     display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); row-gap: 10px;
     padding: 0 32px 24px;
   }
+  .alarm-chip { font-size: 15px; padding: 5px 14px 5px 10px; }
+  .alarm-sub { font-size: 14px; }
   .top { min-height: 60px; }
   .wordmark { font-size: 22px; }
   .mark { width: 32px; height: 32px; }
@@ -492,5 +542,6 @@ code { font-family: inherit; font-size: 13px; background: var(--surface-high); p
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+  .alarm-frame { opacity: .45; }
   .seg { stroke-dashoffset: 0; }
 }

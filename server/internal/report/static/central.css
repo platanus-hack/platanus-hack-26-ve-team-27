@@ -10,7 +10,8 @@
  * COLOR TOKENS MIRROR app/src/main/java/com/team27/mama/ui/theme/Theme.kt,
  * like ficha.css (same exception as the launcher icon in app/UI_RULES.md).
  * Change them together. Red is for errors only: an alert is the brand's
- * chartreuse, the loudest color it has.
+ * chartreuse, the loudest color it has. The one exception is the duress
+ * alarm (--alarm*, #143): its chip, frame and list row are red.
  */
 
 /* MamaDarkColors (the logo: chartreuse on charcoal) */
@@ -46,6 +47,9 @@
   --on-warn: #181918;
   --warn-container: #4A3800;
   --on-warn-container: #FFEBB8;
+  --alarm: #E5243B;
+  --on-alarm: #FFFFFF;
+  --alarm-glow: rgba(255, 59, 72, 0.5);
 }
 
 /* MamaLightColors */
@@ -81,6 +85,9 @@
   --on-warn: #181918;
   --warn-container: #FFEBB8;
   --on-warn-container: #3D2B00;
+  --alarm: #C8102E;
+  --on-alarm: #FFFFFF;
+  --alarm-glow: rgba(200, 16, 46, 0.45);
 }
 
 /* ---------------------------------------------------------------- state colors
@@ -187,6 +194,10 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--primary); outli
 .c-row::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--st); transition: background-color .6s; }
 .c-row:hover { background: var(--surface-container); transform: translateX(3px); }
 .c-row-alerta { border-color: var(--primary); background: linear-gradient(90deg, var(--alert-wash), transparent 60%), var(--surface-low); }
+.c-row-alarm { --st: var(--alarm); border-color: var(--alarm); background: linear-gradient(90deg, var(--alarm-glow), transparent 55%), var(--surface-low); }
+.c-row-alarm .c-what { color: var(--alarm); }
+.c-row-alarm .c-state { background: var(--alarm); border-color: var(--alarm); color: var(--on-alarm); box-shadow: none; animation: none; }
+.c-row-alarm.pulse { animation: alarm-beat 1.1s ease-in-out infinite; }
 .c-row-cancelado .c-name, .c-row-cerrado .c-name { color: var(--on-surface-variant); }
 .c-row-cerrado::before { opacity: .45; }
 .c-row-new { box-shadow: 0 0 0 2px var(--glow); }
@@ -509,3 +520,10 @@ body.c-case-page[data-state="llamada"]::before { opacity: .9; }
   .tr-turns .tr-who { grid-column: 2; }
   .tr-turns .tr-text, .tr-turns .tr-tag { grid-column: 1 / -1; }
 }
+
+/* ---------------------------------------------------------------- the alarm (#143) */
+
+.c-sound .i-off, .c-sound[aria-pressed="false"] .i-on { display: none; }
+.c-sound[aria-pressed="false"] .i-off { display: block; }
+.c-sound[aria-pressed="false"] { color: var(--on-surface-variant); }
+.c-hero-text .title-row { gap: 4px 12px; }
