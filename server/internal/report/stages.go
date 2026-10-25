@@ -40,7 +40,8 @@ func Stages(rec Record, channel string, live bool) []Stage {
 	inc := rec.Incident
 	type step struct {
 		Stage
-		at *time.Time
+		at     *time.Time
+		passed bool // reached with no time of its own: no family message was needed
 	}
 	at := func(t time.Time) *time.Time { return &t }
 	var steps []step
@@ -99,7 +100,10 @@ func Stages(rec Record, channel string, live bool) []Stage {
 		add("verdict", "Veredicto", sub, verdictAt)
 	}
 
-	add("family", "Familia avisada", familySummary(rec, channel), inc.NotifiedAt)
+	s := add("family", "Familia avisada", familySummary(rec, channel), inc.NotifiedAt)
+	if familyNotNeeded(rec) {
+		s.Label, s.Sub, s.passed = "Familia sin aviso", "no hizo falta", true
+	}
 	if inc.Branch == contract.BranchCall {
 		var sealed *time.Time
 		if rec.Seal != nil {
@@ -110,7 +114,7 @@ func Stages(rec Record, channel string, live bool) []Stage {
 
 	last := -1
 	for i, s := range steps {
-		if s.at != nil {
+		if s.at != nil || s.passed {
 			last = i
 		}
 	}
@@ -120,7 +124,7 @@ func Stages(rec Record, channel string, live bool) []Stage {
 		switch {
 		case s.at != nil:
 			st.State, st.Time = StageDone, clock(*s.at)
-		case i < last:
+		case s.passed, i < last:
 			st.State = StageSkipped
 		case i == last+1 && live:
 			st.State = StageCurrent
@@ -202,15 +206,26 @@ func familyNote(rec Record, channel string, live bool) string {
 	if channel == "" {
 		channel = "WhatsApp"
 	}
+	_, kind := headline(rec)
 	switch {
 	case rec.Incident.NotifiedAt != nil:
 		return notifiedLabel(channel, rec.Device.FamilyNumbers) + "."
-	case live && rec.Incident.Branch == contract.BranchCall:
+	case familyNotNeeded(rec):
+		return "No hizo falta avisar a la familia: no hubo coacción."
+	case live && rec.Incident.Branch == contract.BranchCall && kind == "none":
 		return "Se avisa a la familia apenas haya veredicto."
 	case live:
 		return "Avisando a la familia…"
 	}
 	return "No se registró el aviso a la familia."
+}
+
+// familyNotNeeded reports whether the verdict leaves the family without a
+// message: the calls say no duress and nothing was sent (the notifier's
+// rule, docs/contract.md).
+func familyNotNeeded(rec Record) bool {
+	_, kind := headline(rec)
+	return rec.Incident.NotifiedAt == nil && kind == string(contract.VerdictNoDuress)
 }
 
 // title is the header's state title.
