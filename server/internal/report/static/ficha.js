@@ -403,6 +403,57 @@
     return out;
   }
 
+  // ------------------------------------------------------------ the alarm burst (#143)
+
+  // alarmRed reports whether the alarm chip is red: the phrase was heard live,
+  // or the verdict confirmed duress.
+  function alarmRed() {
+    var chip = document.querySelector("[data-alarm-level]");
+    var level = chip && chip.getAttribute("data-alarm-level");
+    return level === "heard" || level === "confirmed";
+  }
+
+  // flash lights the screen's edges red for a few seconds (ficha.css,
+  // .alarm-flash) and removes itself. Under reduced motion it is one soft
+  // vignette that fades over 2 s, with no flashing.
+  function flash() {
+    var old = document.querySelector(".alarm-flash");
+    if (old) { old.remove(); }
+    var el = document.createElement("div");
+    el.className = "alarm-flash" + (motion ? "" : " calm");
+    el.setAttribute("aria-hidden", "true");
+    body.appendChild(el);
+    var done = function () { if (el.parentNode) { el.remove(); } };
+    if (motion) {
+      el.addEventListener("animationend", function (e) { if (e.target === el) { done(); } });
+      setTimeout(done, 5000); // animationend never comes in a hidden tab
+      return;
+    }
+    var t0 = Date.now();
+    (function fade() {
+      var k = 1 - (Date.now() - t0) / 2000;
+      if (k <= 0) { done(); return; }
+      el.style.opacity = String(0.8 * k);
+      requestAnimationFrame(fade);
+    })();
+  }
+
+  // watchAlarm flashes when the chip turns red while the page is open, and
+  // when a live case opens with it already red. Each turn to red also fires
+  // "ficha:alarm", which central.js answers with its siren.
+  function watchAlarm() {
+    var red = alarmRed();
+    if (red && body.hasAttribute("data-open")) { flash(); }
+    document.addEventListener("ficha:update", function () {
+      var now = alarmRed();
+      if (now && !red) {
+        flash();
+        document.dispatchEvent(new CustomEvent("ficha:alarm"));
+      }
+      red = now;
+    });
+  }
+
   // ------------------------------------------------------------ demo wait
 
   function demoWait(url) {
@@ -427,6 +478,7 @@
     tick();
     setInterval(tick, 100);
     window.addEventListener("resize", afterUpdate);
+    watchAlarm();
     startLive();
   }
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", start); } else { start(); }
