@@ -446,7 +446,7 @@ func TestCentralCaseWithAndWithoutSituationAndName(t *testing.T) {
 	_, body = cget(t, srv.URL+"/central/r/"+testIncidentID, ck)
 	text = html.UnescapeString(body)
 	name, sit := strings.Index(text, `class="c-name-big">María Rodríguez</h1>`), strings.Index(text, `class="c-situation-line" data-summary>Parece que se la llevan en un carro.</p>`)
-	if name < 0 || sit < name || !strings.Contains(text, "<title>María Rodríguez · Central · MAMÁ</title>") {
+	if name < 0 || sit < name || !strings.Contains(text, "<title>María Rodríguez · Central · Aló Mamá</title>") {
 		t.Errorf("the situation is not under the name (name at %d, situation at %d)", name, sit)
 	}
 	for _, gone := range []string{"Autopista Caracas-La Guaira", "Dos hombres", "Carro gris", "Confianza", "Sin nombre registrado"} {
