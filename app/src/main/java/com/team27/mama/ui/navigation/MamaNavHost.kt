@@ -63,12 +63,18 @@ fun MamaNavHost(
                 onOpenSettings = relay?.let {
                     { navController.navigate(Route.Settings.path) { launchSingleTop = true } }
                 },
+                onEditData = { navController.navigate(Route.Setup.path) { launchSingleTop = true } },
             )
         }
         composable(Route.Setup.path) {
             // First-run setup (#15). A finished setup opens on its "done" state, which goes on to Home.
+            // Opened from Home to change the data, it goes back to that Home.
             SetupScreen(
                 onDone = {
+                    if (navController.previousBackStackEntry != null) {
+                        navController.popBackStack()
+                        return@SetupScreen
+                    }
                     navController.navigate(Route.Home.path) {
                         popUpTo(Route.Setup.path) { inclusive = true }
                         launchSingleTop = true
@@ -165,6 +171,7 @@ private fun HomeDestination(
     emergency: EmergencyControls?,
     onOpenProfile: () -> Unit,
     onOpenSettings: (() -> Unit)?,
+    onEditData: () -> Unit,
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
@@ -203,6 +210,7 @@ private fun HomeDestination(
         },
         onOpenProfile = onOpenProfile,
         onOpenSettings = onOpenSettings,
+        onEditData = onEditData,
     )
 }
 
