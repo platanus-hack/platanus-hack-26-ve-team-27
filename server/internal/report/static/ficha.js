@@ -250,6 +250,22 @@
     seek(audio, parseFloat(el.getAttribute("data-seek")) || 0);
   });
 
+  // One recording at a time: playing one pauses every other on the page
+  // and, through a BroadcastChannel, in the reader's other tabs of this
+  // server (the ficha and the central of the same case side by side).
+  var tabId = String(Math.random()).slice(2);
+  var channel = null;
+  try { channel = window.BroadcastChannel ? new BroadcastChannel("mama-audio") : null; } catch (e) { channel = null; }
+  function pauseOthers(keep) {
+    Array.prototype.forEach.call(document.querySelectorAll("audio"), function (a) { if (a !== keep && !a.paused) { a.pause(); } });
+  }
+  document.addEventListener("play", function (ev) { // play does not bubble: listen in the capture phase
+    if (ev.target.tagName !== "AUDIO") { return; }
+    pauseOthers(ev.target);
+    if (channel) { channel.postMessage({ from: tabId }); }
+  }, true);
+  if (channel) { channel.onmessage = function (ev) { if (ev.data && ev.data.from !== tabId) { pauseOthers(null); } }; }
+
   // initMarks highlights, for each call, the turn that is playing.
   function initMarks() {
     Array.prototype.forEach.call(document.querySelectorAll("audio[data-call]"), function (audio) {
