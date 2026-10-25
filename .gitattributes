@@ -1,0 +1,6 @@
+# Vendored Leaflet 1.9.4 must stay byte for byte the release: its SRI hashes
+# are pinned in server/internal/report/route_map_test.go. Without this,
+# core.autocrlf=true on Windows checks the files out with CRLF and the hash
+# test fails.
+server/internal/report/static/leaflet.js -text
+server/internal/report/static/leaflet.css -text
