@@ -31,7 +31,7 @@ import com.team27.mama.ui.theme.MamaSpacing
 import com.team27.mama.ui.theme.MamaTheme
 import com.team27.mama.ui.theme.MamaWordmark
 
-/** Opt-in switch for relaying nearby alerts, plus how many this phone has relayed. */
+/** On/off switch (on by default) for relaying nearby alerts, plus how many this phone has relayed. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(

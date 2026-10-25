@@ -10,10 +10,14 @@ import kotlinx.coroutines.flow.asStateFlow
 
 private const val PREFS = "mama_relay"
 
-/** The relay opt-in (default off). Read by [MeshController] and #60's settings screen. */
+/**
+ * The relay switch. Read by [MeshController] and #60's settings screen. On until the person turns it
+ * off: it only takes effect once setup's nearby-devices permissions are granted (the service start
+ * checks [MeshPermissions]), so accepting that permission is what turns the relay on.
+ */
 class RelaySettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    private val mutableEnabled = MutableStateFlow(prefs.getBoolean(KEY_ENABLED, false))
+    private val mutableEnabled = MutableStateFlow(prefs.getBoolean(KEY_ENABLED, true))
 
     val enabled: StateFlow<Boolean> = mutableEnabled.asStateFlow()
 
