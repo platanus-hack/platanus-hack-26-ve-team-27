@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Monochrome launcher layer (themed icons): one colour, Android tints it. The lens and the
+  hoop are holes in the silhouette (even-odd), so they stay visible in any tint.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.6"
+        android:scaleY="0.6"
+        android:translateX="24"
+        android:translateY="24">
+        <path
+            android:fillColor="#FF181918"
+            android:fillType="evenOdd"
+            android:pathData="M42,6 C58,6 66,14 65,26 C67,30 69,32 68,36 C66,38 66,40 68,42 C72,44 75,46 73,48 C70,50 68,50 68,52 C72,53 72,56 68,57 C71,58 72,61 69,62 C72,64 71,67 66,69 C62,71 58,72 57,76 C56,82 58,88 60,94 L38,94 C40,88 38,82 36,76 C28,84 14,88 5,80 C12,74 20,70 22,62 C12,56 8,44 12,32 C16,18 28,6 42,6 Z M44,14 C49,5 63,6 68,17 C62,21 50,21 44,14 Z M48.1,64 a6.9,6.9 0 1,0 13.8,0 a6.9,6.9 0 1,0 -13.8,0 Z M50.9,64 a4.1,4.1 0 1,0 8.2,0 a4.1,4.1 0 1,0 -8.2,0 Z" />
+    </group>
+</vector>

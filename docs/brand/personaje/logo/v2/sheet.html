@@ -1,0 +1,86 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1800px;background:#FBFBF2;color:#1B1C16;font-family:Lexend,sans-serif;padding:48px 56px 40px}
+h1{font-size:34px;font-weight:700}h1 span{color:#4A5400;font-weight:500}
+.sub{color:#46483B;font-size:14px;margin-top:6px}
+.row{display:grid;grid-template-columns:300px 1fr;gap:28px;margin-top:40px;padding-top:28px;border-top:1px solid #E4E4D4}
+.row h2{font-size:22px;font-weight:700}.row p{font-size:14px;color:#46483B;line-height:1.45;margin-top:8px}
+.badge{display:inline-flex;width:28px;height:28px;border-radius:14px;background:#EFFE00;align-items:center;justify-content:center;font-weight:700;font-size:14px;margin-bottom:10px}
+.cells{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
+.cell{display:flex;flex-direction:column;gap:8px;align-items:center}
+.cap{font-size:12px;color:#46483B;text-align:center}
+.card{border-radius:22px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.paper{background:#FFFFFF;box-shadow:0 1px 0 rgba(0,0,0,.05),0 8px 28px rgba(24,25,24,.07)}
+.dark{background:#181918}
+.icons{display:grid;grid-template-columns:auto auto auto auto;gap:10px 12px;align-items:center;justify-items:center;background:#E8E8DF;border-radius:18px;padding:12px 14px}
+.icons img{display:block}.px{image-rendering:pixelated}
+.lbl{grid-column:1/-1;font-size:11px;color:#46483B;letter-spacing:.4px;text-transform:uppercase;justify-self:start}
+.lock{display:flex;align-items:center;justify-content:center;gap:22px}
+.wm{font-weight:700;letter-spacing:-1px;line-height:1}
+.a{position:relative;display:inline-block}.a img{position:absolute;left:50%;transform:translateX(-50%)}
+</style></head><body>
+<h1>MAMÁ <span>· ronda 2: la marca es ella</span></h1>
+<div class="sub">Cada candidato parte de la ilustración de Mamá. Ícono adaptativo de Android: lienzo 108 dp, zona segura 66 dp, máscaras círculo y squircle a 108 px y 48 px; los 48 px se muestran también ampliados ×4 sin suavizado.</div>
+
+<section class="row">
+  <div><div class="badge">1</div><h2>Ilustración directa</h2><p>El dibujo riso tal cual, recortado del círculo (el fondo del ícono ya es chartreuse) y encuadrado para que el pelo llene la zona segura. Dos versiones: con el grano original y con el grano suavizado (mediana 7 px).</p></div>
+  <div class="cells">
+    <div class="cell"><div class="card paper" style="width:160px;height:160px"><img src="raster/mama-knockout.png" style="width:144px"></div><div class="cap">Recorte sin círculo</div></div>
+    <div class="cell"><div class="card" style="width:160px;height:160px;border-radius:32px"><img src="raster/play_smooth_512.png" style="width:160px"></div><div class="cap">Play Store 512 px</div></div>
+    <div class="cell"><div class="icons">
+      <div class="lbl">Grano original</div>
+      <img src="raster/icon_grain_circle_108.png" width="108"><img src="raster/icon_grain_squircle_108.png" width="108"><img src="raster/icon_grain_circle_48.png" width="48"><img src="raster/icon_grain_squircle_48.png" width="48">
+      <img class="px" src="raster/icon_grain_circle_48.png" width="192" style="grid-column:1/3"><img class="px" src="raster/icon_grain_squircle_48.png" width="192" style="grid-column:3/5">
+    </div><div class="cap">108 px · 48 px · 48 px ×4</div></div>
+    <div class="cell"><div class="icons">
+      <div class="lbl">Grano suavizado</div>
+      <img src="raster/icon_smooth_circle_108.png" width="108"><img src="raster/icon_smooth_squircle_108.png" width="108"><img src="raster/icon_smooth_circle_48.png" width="48"><img src="raster/icon_smooth_squircle_48.png" width="48">
+      <img class="px" src="raster/icon_smooth_circle_48.png" width="192" style="grid-column:1/3"><img class="px" src="raster/icon_smooth_squircle_48.png" width="192" style="grid-column:3/5">
+    </div><div class="cap">108 px · 48 px · 48 px ×4</div></div>
+  </div>
+</section>
+
+<section class="row">
+  <div><div class="badge">2</div><h2>Sticker vectorial</h2><p>Mamá calcada sobre la ilustración, en tintas planas y sin grano: pelo, cara, lentes, argollas, blusa de lunares, cejas (la derecha levantada), pestañas, nariz, labios y la cadenita. Escala sin perder nitidez y da versión monocroma.</p></div>
+  <div class="cells">
+    <div class="cell"><div class="card paper" style="width:240px;height:240px"><img src="svg/mark.svg" style="width:210px"></div><div class="cap">Color, fondo claro</div></div>
+    <div class="cell"><div class="card dark" style="width:240px;height:240px"><img src="svg/mark.svg" style="width:210px"></div><div class="cap">Modo oscuro</div></div>
+    <div class="cell"><div class="card paper" style="width:240px;height:240px"><img src="svg/mark-mono.svg" style="width:210px"></div><div class="cap">Monocromo</div></div>
+    <div class="cell"><div class="icons">
+      <div class="lbl">Ícono adaptativo</div>
+      <img src="raster/vec_full_circle_108.png" width="72" style="width:108px"><img src="raster/vec_full_squircle_108.png" style="width:108px"><img src="raster/vec_full_circle_48.png" width="48"><img src="raster/vec_full_squircle_48.png" width="48">
+      <img class="px" src="raster/vec_full_circle_48.png" width="192" style="grid-column:1/3"><img class="px" src="raster/vec_full_squircle_48.png" width="192" style="grid-column:3/5">
+    </div><div class="cap">108 px · 48 px · 48 px ×4</div></div>
+  </div>
+</section>
+
+<section class="row">
+  <div><div class="badge">3</div><h2>Sticker mínimo</h2><p>La misma silueta con menos rasgos, para ver qué sobrevive a 48 px. <b>A</b>: sin pestañas ni cadena, trazos más gruesos. <b>B</b>: solo lentes, argollas y labios.</p></div>
+  <div class="cells">
+    <div class="cell"><div class="card paper" style="width:200px;height:200px"><img src="svg/mark-minA.svg" style="width:176px"></div><div class="cap">A · trazos gruesos</div></div>
+    <div class="cell"><div class="icons">
+      <div class="lbl">A</div>
+      <img src="raster/vec_minA_circle_108.png" style="width:108px"><img src="raster/vec_minA_squircle_108.png" style="width:108px"><img src="raster/vec_minA_circle_48.png" width="48"><img src="raster/vec_minA_squircle_48.png" width="48">
+      <img class="px" src="raster/vec_minA_circle_48.png" width="192" style="grid-column:1/3"><img class="px" src="raster/vec_minA_squircle_48.png" width="192" style="grid-column:3/5">
+    </div></div>
+    <div class="cell"><div class="card paper" style="width:200px;height:200px"><img src="svg/mark-minB.svg" style="width:176px"></div><div class="cap">B · solo lentes, argollas y labios</div></div>
+    <div class="cell"><div class="icons">
+      <div class="lbl">B</div>
+      <img src="raster/vec_minB_circle_108.png" style="width:108px"><img src="raster/vec_minB_squircle_108.png" style="width:108px"><img src="raster/vec_minB_circle_48.png" width="48"><img src="raster/vec_minB_squircle_48.png" width="48">
+      <img class="px" src="raster/vec_minB_circle_48.png" width="192" style="grid-column:1/3"><img class="px" src="raster/vec_minB_squircle_48.png" width="192" style="grid-column:3/5">
+    </div></div>
+  </div>
+</section>
+
+<section class="row">
+  <div><div class="badge">4</div><h2>Lockup con el wordmark</h2><p>MAMÁ en Lexend 700 (la fuente de la app) con ella como parte de la marca. <b>a</b>: su cabeza es el acento de la Á. <b>b</b>: marca a la izquierda. <b>c</b>: wordmark bajo el círculo.</p></div>
+  <div class="cells">
+    <div class="cell"><div class="card paper lock" style="width:420px;height:230px"><div class="wm" style="font-size:108px;padding-top:30px">MAM<span class="a">A<img src="svg/mark.svg" style="width:62px;top:-50px"></span></div></div><div class="cap">a · ella es el acento</div></div>
+    <div class="cell"><div class="card dark lock" style="width:420px;height:230px;color:#FBFBF2"><div class="wm" style="font-size:108px;padding-top:30px">MAM<span class="a">A<img src="svg/mark.svg" style="width:62px;top:-50px"></span></div></div><div class="cap">a · oscuro</div></div>
+    <div class="cell"><div class="card paper lock" style="width:420px;height:230px"><img src="svg/mark.svg" style="width:120px"><div class="wm" style="font-size:84px">MAMÁ</div></div><div class="cap">b · marca + wordmark</div></div>
+    <div class="cell"><div class="card dark lock" style="width:420px;height:230px;color:#FBFBF2;flex-direction:column;gap:10px"><img src="svg/mark.svg" style="width:124px"><div class="wm" style="font-size:52px;letter-spacing:2px">MAMÁ</div></div><div class="cap">c · wordmark bajo el círculo (oscuro)</div></div>
+  </div>
+</section>
+</body></html>
