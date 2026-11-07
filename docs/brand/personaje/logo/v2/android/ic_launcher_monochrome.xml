@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon layer: Mamá's silhouette, with the face, the lenses and the hoops as holes. Android tints it. Generated from logo/v2/svg (see "Regenerar vectores" in logo/README.md); edit the SVG, not this file. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.07088" android:scaleY="0.07088" android:translateX="9.20307" android:translateY="15.35441">
+        <path
+            android:pathData="M540 148 C590 128 660 130 720 152 C790 178 850 230 885 300 C915 360 950 410 990 450 C1035 488 1080 525 1112 578 C1108 616 1072 640 1032 652 C1050 692 1082 745 1092 790 C1055 824 990 844 930 840 C905 870 860 890 810 876 C745 915 625 915 570 876 C525 892 455 892 395 874 C340 862 295 850 262 836 C228 822 218 804 222 790 C228 762 252 732 275 702 C245 668 200 648 160 630 C140 615 130 600 132 594 C170 540 240 475 290 440 C330 385 375 305 425 245 C455 205 490 170 540 148 Z M620 318 C662 292 748 290 790 316 C828 346 850 420 844 505 C840 575 822 640 782 682 C742 716 660 718 606 688 C552 656 524 584 528 500 C532 432 576 352 620 318 Z M417 213 C462 188 550 180 595 196 L588 280 C540 298 470 303 440 298 Z M626 152 C668 130 740 122 776 136 L774 206 C735 223 665 230 624 222 Z M486,660 a36,36 0 1,0 72,0 a36,36 0 1,0 -72,0 z M502,660 a20,20 0 1,0 40,0 a20,20 0 1,0 -40,0 z M839,562 a33,33 0 1,0 66,0 a33,33 0 1,0 -66,0 z M854,562 a18,18 0 1,0 36,0 a18,18 0 1,0 -36,0 z"
+            android:fillColor="#FFFFFF"
+            android:fillType="evenOdd"/>
+        <path
+            android:pathData="M672 606 C700 585 730 574 760 572 C780 570 795 576 796 584 C785 598 760 610 735 614 C710 618 688 615 672 606 Z"
+            android:fillColor="#FFFFFF"/>
+    </group>
+</vector>

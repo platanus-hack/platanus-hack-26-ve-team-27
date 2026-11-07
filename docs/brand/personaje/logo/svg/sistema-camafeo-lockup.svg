@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -20 520 130" width="520" height="130">
+
+<g transform="translate(0,-10) scale(1.3)"><circle cx="50" cy="50" r="48" fill="#EFFE00"/>
+<path d="M42,6 C58,6 66,14 65,26 C67,30 69,32 68,36 C66,38 66,40 68,42 C72,44 75,46 73,48 C70,50 68,50 68,52 C72,53 72,56 68,57 C71,58 72,61 69,62 C72,64 71,67 66,69 C62,71 58,72 57,76 C56,82 58,88 60,94 L38,94 C40,88 38,82 36,76 C28,84 14,88 5,80 C12,74 20,70 22,62 C12,56 8,44 12,32 C16,18 28,6 42,6 Z" fill="#181918" clip-path="circle(48 at 50 50)"/>
+<path d="M44,14 C49,5 63,6 68,17 C62,21 50,21 44,14 Z" fill="#EFFE00" stroke="#FBFBF2" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="55" cy="64" r="5.5" fill="none" stroke="#EFFE00" stroke-width="2.8"/></g><path d="M0,0 H22 L45,46 L68,0 H90 V100 H72 V30 L50,74 H40 L18,30 V100 H0 Z" fill="#181918" fill-rule="evenodd" transform="translate(150.00,15.00) scale(0.9000)"/>
+<path d="M36,0 H54 L90,100 H71 L62,75 H28 L19,100 H0 Z M33,58 H57 L45,24 Z" fill="#181918" fill-rule="evenodd" transform="translate(243.60,15.00) scale(0.9000)"/>
+<path d="M0,0 H22 L45,46 L68,0 H90 V100 H72 V30 L50,74 H40 L18,30 V100 H0 Z" fill="#181918" fill-rule="evenodd" transform="translate(337.20,15.00) scale(0.9000)"/>
+<path d="M36,0 H54 L90,100 H71 L62,75 H28 L19,100 H0 Z M33,58 H57 L45,24 Z" fill="#181918" fill-rule="evenodd" transform="translate(430.80,15.00) scale(0.9000)"/>
+<circle cx="484.80" cy="-8.40" r="10.80" fill="#EFFE00"/>
+</svg>

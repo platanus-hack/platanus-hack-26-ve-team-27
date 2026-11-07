@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1254 1254" width="1254" height="1254">
+  <!-- Mamá sticker, traced on the master illustration (same coordinates). Flat inks only. -->
+  <circle cx="628" cy="620" r="567" fill="#EFFE00"/>
+  <path d="M110 1210 C170 1010 400 885 560 866 L690 1100 L820 858 C980 880 1150 1010 1150 1210 Z" fill="#4A5400"/>
+  <g fill="#EFFE00">
+    <circle cx="345" cy="935" r="15"/><circle cx="510" cy="968" r="15"/><circle cx="410" cy="1012" r="15"/><circle cx="252" cy="1038" r="15"/>
+    <circle cx="610" cy="1065" r="15"/><circle cx="468" cy="1105" r="15"/><circle cx="178" cy="1127" r="15"/><circle cx="320" cy="1125" r="15"/>
+    <circle cx="710" cy="1130" r="15"/><circle cx="560" cy="1178" r="15"/><circle cx="255" cy="1195" r="15"/><circle cx="850" cy="880" r="15"/>
+    <circle cx="948" cy="955" r="15"/><circle cx="804" cy="1010" r="15"/><circle cx="1020" cy="1030" r="15"/><circle cx="880" cy="1083" r="15"/>
+    <circle cx="940" cy="1170" r="15"/><circle cx="770" cy="1170" r="15"/><circle cx="1083" cy="1130" r="15"/><circle cx="400" cy="1185" r="15"/>
+  </g>
+  <path id="hair" d="M540 148 C590 128 660 130 720 152 C790 178 850 230 885 300 C915 360 950 410 990 450 C1035 488 1080 525 1112 578 C1108 616 1072 640 1032 652 C1050 692 1082 745 1092 790 C1055 824 990 844 930 840 C905 870 860 890 810 876 C745 915 625 915 570 876 C525 892 455 892 395 874 C340 862 295 850 262 836 C228 822 218 804 222 790 C228 762 252 732 275 702 C245 668 200 648 160 630 C140 615 130 600 132 594 C170 540 240 475 290 440 C330 385 375 305 425 245 C455 205 490 170 540 148 Z" fill="#181918"/>
+  <path id="neck" d="M626 650 L628 868 L560 866 L690 1100 L820 858 L744 858 L746 650 Z" fill="#FBFBF2"/>
+  <path id="face" d="M620 318 C662 292 748 290 790 316 C828 346 850 420 844 505 C840 575 822 640 782 682 C742 716 660 718 606 688 C552 656 524 584 528 500 C532 432 576 352 620 318 Z" fill="#FBFBF2"/>
+  <g id="features" fill="none" stroke="#181918" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M582 444 C605 421 640 418 660 432" stroke-width="20"/>
+    <path d="M718 402 C745 375 775 362 796 372" stroke-width="21"/>
+    <path d="M600 510 C620 492 655 490 672 505" stroke-width="18"/>
+    <path d="M757 462 C775 444 805 440 822 455" stroke-width="18"/>
+    <path d="M742 522 C760 530 770 545 752 552" stroke-width="13"/>
+  </g>
+  <g fill="#181918">
+    <circle cx="645" cy="516" r="20"/>
+    <circle cx="802" cy="462" r="20"/>
+    <path id="lips" d="M672 606 C700 585 730 574 760 572 C780 570 795 576 796 584 C785 598 760 610 735 614 C710 618 688 615 672 606 Z"/>
+  </g>
+  <path d="M684 604 C715 599 755 593 790 586" fill="none" stroke="#FBFBF2" stroke-width="7" stroke-linecap="round"/>
+  <g id="hoops" fill="none" stroke="#EFFE00">
+    <circle cx="522" cy="660" r="27" stroke-width="16"/>
+    <circle cx="872" cy="562" r="25" stroke-width="15"/>
+  </g>
+  <g id="glasses" stroke="#FBFBF2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M417 213 C462 188 550 180 595 196 L588 280 C540 298 470 303 440 298 Z" fill="#EFFE00" stroke-width="18"/>
+    <path d="M626 152 C668 130 740 122 776 136 L774 206 C735 223 665 230 624 222 Z" fill="#EFFE00" stroke-width="18"/>
+    <path d="M595 198 L626 193" fill="none" stroke-width="16"/>
+    <path d="M424 236 C412 268 420 308 440 343" fill="none" stroke-width="16"/>
+  </g>
+</svg>
